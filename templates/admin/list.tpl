@@ -1,0 +1,8 @@
+<div class="table-responsive"><table class="table table-hover align-middle"><thead><tr><th>#</th><th>{if $section == 'users'}E-mail{else}Név{/if}</th>{if $section == 'users'}<th>Jogosultság</th><th>Szerverek</th>{elseif $section == 'nodes'}<th>SSH-kapcsolat</th><th>Szerverek</th>{else}<th>Játék</th><th>Tulajdonos</th><th>Linux-gép / unit</th>{/if}<th>Művelet</th></tr></thead><tbody>
+{foreach $rows as $row}<tr><td>{$row.id}</td><td class="text-break">{if $section == 'users'}{$row.email}{else}{$row.name}{/if}</td>
+{if $section == 'users'}<td><span class="badge {if $row.is_admin}text-bg-success{else}text-bg-secondary{/if}">{if $row.is_admin}Admin{else}Ügyfél{/if}</span></td><td>{$row.server_count}</td>
+{elseif $section == 'nodes'}<td class="text-break"><code>{$row.ssh_user}@{$row.ssh_host}:{$row.ssh_port}</code></td><td>{$row.server_count}</td>
+{else}<td>{$games[$row.game]}</td><td class="text-break">{$row.owner_email}</td><td class="text-break">{$row.node_name}<br><code>{$row.unit_name}</code></td>{/if}
+<td><div class="d-flex flex-wrap gap-2"><a class="btn btn-sm btn-outline-secondary" href="/admin.php?section={$section}&edit={$row.id}">Szerkesztés</a>{if $section == 'servers'}<a class="btn btn-sm btn-outline-success" href="/?server={$row.id}">Kezelés</a>{elseif $section == 'nodes'}<form method="post" action="/admin.php?section=nodes">{include file='partials/csrf.tpl'}<input type="hidden" name="id" value="{$row.id}"><button name="action" value="test" class="btn btn-sm btn-outline-info">SSH-teszt</button></form>{/if}</div></td></tr>
+{foreachelse}<tr><td colspan="7" class="text-body-secondary py-4">Még nincs bejegyzés. Az Új hozzáadása gombbal hozhatsz létre egyet.</td></tr>{/foreach}
+</tbody></table></div>

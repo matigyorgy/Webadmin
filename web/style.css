@@ -6,3 +6,7 @@ body {
 .brand-label { font-size: .75rem; letter-spacing: .14em; }
 .console-output { max-height: 28rem; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
 .installer-container { max-width: 900px; }
+.nav-link { color: var(--bs-secondary-color); }
+.nav-link:hover { color: var(--bs-success-text-emphasis); }
+.setup-code { white-space: pre-wrap; overflow-wrap: anywhere; background: var(--bs-tertiary-bg); padding: 1rem; border-radius: .75rem; }
+.table td { max-width: 24rem; }

@@ -1,0 +1,2 @@
+#!/bin/sh
+cat /home/minecraft/game.log 2>/dev/null || true

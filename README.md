@@ -1,3 +1,39 @@
+# Használat és frissítés — admin- és kliensfelület
+
+A panel főoldala a kliensfelület (`/`); admin bejelentkezés után az **Adminisztráció** menü vagy a **/admin.php** nyitja meg az adminfelületet. Composer nem szükséges, PHP 8.2+ és MySQL szükséges, a dokumentumgyökér `web/`.
+
+## Meglévő sikeres telepítés frissítése
+
+1. Készíts mentést a fájlokról és az adatbázisról.
+2. Töltsd fel a friss kiadás fájljait azonos könyvtárelrendezésben. A saját `config/local.json`, `config/ssh-private.pem`, `config/ssh-public.pub` fájlokat őrizd meg. A `web/` tartalma a tárhely `web/` mappájába kerül, a többi könyvtár mellé, egy szinttel feljebb.
+3. A `var/` könyvtár legyen a PHP-folyamatnak írható (ide kerül a Smarty-fordítás és a bejelentkezési védelem állapota). A korábbi generált Smarty-fordítások törölhetők a `var/smarty/compile/` könyvtárból. A konfigurációt ne töröld.
+4. **Ehhez a verzióhoz nem kell adatbázist újratelepíteni vagy SQL-migrációt futtatni.** A telepítőt ne indítsd újra.
+5. Jelentkezz be újra: a korábbi munkamenetekből hiányzó hitelesítési verzió miatt a frissítés kijelentkeztet.
+
+## Admin munkafolyamat
+
+- **Felhasználók:** ügyfél/admin létrehozása, e-mail és szerepkör szerkesztése, új jelszó beállítása, törlés. Szerverrel rendelkező felhasználó csak az átrendelés után törölhető. A saját adminfiók nem törölhető/demotálható; az utolsó admin védett.
+- **Linux-gépek:** név, SSH-cím, port, korlátozott felhasználó és ellenőrzött SHA256 hostkulcs rögzítése/szerkesztése; kulcsos kapcsolat tesztelése; üres gép törlése.
+- **Játékszerverek:** név, játék, tulajdonos, Linux-gép és már létező systemd-unit kiválasztása; szerkesztés/átrendelés; kivétel a panelből. Azonos unit egy node-on egyszer szerepelhet. A kivétel nem állítja le és nem törli a játékot a Linux-gépről.
+- **SSH és Linux-beállítások:** a tényleges panelkulcs nyilvános részének megtekintése, SSH-fiók és kulcs telepítési útmutatója, a nyilvántartott szerverekből generált pontos sudoers-sorok és konzolbeállítási útmutató.
+- **Műveleti napló:** az utolsó 200 admin-, fiók- és szerverművelet. Konzolparancsok szövegét nem naplózzuk.
+
+Javasolt sorrend: Linux-fiók és nyilvános kulcs → Linux-gép hozzáadása → SSH-teszt → ügyfélfiók → szerver hozzáadása és tulajdonoshoz rendelése → sudoers/systemd/konzol beállítása → vezérlés tesztje.
+
+## Kliens munkafolyamat
+
+- Saját szerverek kereshető listája; szerverenként állapotlekérdezés.
+- **Kezelés és konzol:** indítás, leállítás, újraindítás; az utolsó 150 journalsor; játékparancs küldése.
+- Konzolfrissítés kézzel vagy bekapcsolható 5 másodperces időzítéssel. Ez időszakos SSH-lekérdezés, nem WebSocket-stream. Háttérbe tett lapon az automatikus frissítés szünetel. A lista nem vár végig minden SSH-gépet.
+- Saját műveleti előzmények és fiókbeállítások. E-mail-/jelszócseréhez a jelenlegi jelszó szükséges.
+- Az ügyfél a szerverazonosító átírásával sem kap hozzáférést más tulajdonos szerveréhez. Admin-végpontokon szerveroldali szerepkör-ellenőrzés van.
+
+Minden módosító űrlap CSRF-védett. Sikeres művelet után átirányítás következik, így egy egyszerű oldalfrissítés nem ismétli meg a parancsot. Jelszócsere/reset érvényteleníti a többi munkamenetet. A bejelentkezési próbálkozások fiókonként/IP-nként korlátozottak 15 perces ablakban; a PHP webszerver valós REMOTE_ADDR értékét használjuk, nem bízunk tetszőleges proxyfejlécekben.
+
+**A játékokat és a Linux szolgáltatásait előzetesen be kell állítani.** A panel nem telepíti automatikusan a Minecraft/CS2/FiveM/CSS szerverfájlokat, nem fogad el licenceket, és nem ad magának rootjogot. Nincs még fájlkezelő, mentés-visszaállítás, erőforrásmérés, e-mailes jelszó-visszaállítás vagy számlázás. Éles bevezetés előtt a saját Linux-konfiguráción és játékpéldányokon is ellenőrizd a működést.
+
+---
+
 # Egyszerű webes telepítés
 
 1. Töltsd le a GitHub ZIP-et, és csomagold ki a tárhelyre. PHP 8.2+ és a **pdo_mysql** bővítmény szükséges; Composer nem kell.
@@ -53,7 +89,7 @@ A hostkulcs SHA256 ujjlenyomatát a Linux-gép megbízható konzolján kérdezd 
 
 ## Csomópont és szerver felvétele
 
-Jelenleg adminisztrátori adatbáziseszközből történik, nem webes űrlapról:
+A webes adminmenü a javasolt megoldás. Az alábbi SQL csak alternatív, kézi üzemeltetési példa:
 
 ```sql
 INSERT INTO nodes (name, ssh_host, ssh_port, ssh_user, ssh_fingerprint)
@@ -82,11 +118,11 @@ A game értékei: minecraft, cs2, fivem, css. Az SSH host és user megbízható 
 
 `php tests/templates.php` hat renderelési ellenőrzést futtat: login, CSRF, üres lista, admin fejléc, HTML-escape, szerverműveletek. A PHP-fájlokat `php -l` paranccsal ellenőrizd. A teljes integrációhoz MySQL és valódi SSH/systemd gép kell: két normál felhasználóval ellenőrizd az elszigetelést, majd a vezérlést, állapotot és audit_log rekordokat.
 
-Nem éles használatra kész termék. Nincs még webes fiók-/csomópont-/szerveradminisztráció, játéktelepítés, fájlkezelés, mérőszám, jelszó-visszaállítás vagy login rate limit. Az állapot szinkron lekérdezése sok nem elérhető csomóponttal lassú lehet. Az elfogadott systemctl parancs nem bizonyítja a játék hálózati elérhetőségét. A környezetből végzett teljes integrációs teszt külön szükséges.
+Az admin-/kliensmunkafolyamatokhoz van webes felület és bejelentkezési próbálkozás-korlátozás. A további korlátokat a dokumentum eleje sorolja fel. Az elfogadott systemctl parancs nem bizonyítja a játék hálózati elérhetőségét; a saját játékpéldányokon külön ellenőrzés szükséges.
 
 ## Konzol és naplók
 
-A szerverkártyák **Konzol** gombja az utolsó 150 systemd-journalsort jeleníti meg (legfeljebb 128 KiB). A napló kézzel frissül; ez nem folyamatos WebSocket-stream. Az oldal automatikusan HTML-escape-eli a naplót. A konzolparancs-küldés egyetlen, legfeljebb 500 bájtos sort fogad, CSRF- és tulajdonosi ellenőrzéssel. A művelet és eredménye auditálódik; a parancsszöveg nem kerül az auditba, mert titkot tartalmazhat.
+A szerverkártyák **Konzol** gombja az utolsó 150 systemd-journalsort jeleníti meg (legfeljebb 128 KiB). A napló kézzel vagy bekapcsolható időzítéssel frissül; ez nem folyamatos WebSocket-stream. Az oldal automatikusan HTML-escape-eli a naplót. A konzolparancs-küldés egyetlen, legfeljebb 500 bájtos sort fogad, CSRF- és tulajdonosi ellenőrzéssel. A művelet és eredménye auditálódik; a parancsszöveg nem kerül az auditba, mert titkot tartalmazhat.
 
 A Linux-gépen rendszergazdaként:
 
@@ -159,3 +195,11 @@ A projekt már `web/` könyvtárat tartalmaz. Ezt másold a tárhely azonos nev�
 ```
 
 Ha a naplóban `Failed opening required '/home/www/dev.vgh.hu/autoload.php'` szerepel, a gyökérben lévő fájlokat is fel kell tölteni, nem elég csak a `web/` tartalma. A betöltési útvonalat ne irányítsd át egy véletlen másik autoload.php fájlra. A `lib/`, `config/` és más belső könyvtárakat ne tedd a nyilvános `web/` alá.
+
+## Admin-/kliensintegrációs tesztek
+
+- `php tests/templates.php`: login, szerverlista, kezelőnézet, konzol-escape, SSH-parancspolitika, installer, adminűrlapok és profil.
+- `php tests/accounts.php`: külön teszt-MySQL-lel CRUD, jogosultságok, tulajdonosváltás, duplikált unitok tiltása, törlési korlátok, jelszó-/session-érvénytelenítés, profil és rate limit. `TEST_MYSQL_HOST` és `TEST_MYSQL_PASSWORD` kell, kizárólag tesztadatbázis-rendszergazdai kapcsolathoz. A teszt saját véletlen nevű adatbázist hoz létre és eltávolít.
+- `tests/http_workflow.py`: kizárólag izolált, loopback címen elérhető friss tesztpanelhez és SSH-fixture-höz. Felhasználókat, node-ot és szervereket készít/töröl; éles panelen tilos futtatni. A fájl eleje írja le a szükséges környezeti változókat.
+
+Az ellenőrzés PHP 8.2 + MySQL 8.4 alatt megtörtént: admin CRUD, két ügyfél elszigetelése, CSRF, XSS-escape, hostkulcs-eltérés elutasítása, valódi OpenSSH kulcsos hitelesítés, start/stop/restart, tmux konzolparancs és napló, tulajdonosváltás, jelszó-reset utáni kijelentkeztetés és profilmentés. A Linux-fixture systemctl/journalctl parancsai kontrollált tesztprogramok voltak; a négy tényleges játék futását ez nem teszteli.

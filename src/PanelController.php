@@ -10,57 +10,49 @@ final class PanelController
     public function handle(): void
     {
         $_SESSION['csrf'] ??= bin2hex(random_bytes(32));
-        $error=''; $notice=''; $user=false; $servers=[]; $console=null;
-        try {
-         $user=isset($_SESSION['uid']) ? $this->database->query('SELECT id,email,is_admin FROM users WHERE id=?',[$_SESSION['uid']])->fetch() : false;
-         if ($_SERVER['REQUEST_METHOD']==='POST') {
-          if (!hash_equals($_SESSION['csrf'], (string)($_POST['csrf']??''))) throw new RuntimeException('Érvénytelen űrlap.');
-          $action=(string)($_POST['action']??'');
-          if ($action==='login') {
-           $account=$this->database->query('SELECT * FROM users WHERE email=?',[trim((string)($_POST['email']??''))])->fetch();
-           if (!$account || !password_verify((string)($_POST['password']??''),$account['password_hash'])) { usleep(500000); throw new RuntimeException('Hibás bejelentkezési adatok.'); }
-           session_regenerate_id(true); $_SESSION['uid']=$account['id']; $_SESSION['csrf']=bin2hex(random_bytes(32)); header('Location: /'); exit;
-          }
-          if (!$user) throw new RuntimeException('Jelentkezz be.');
-          if ($action==='logout') { $_SESSION=[]; session_destroy(); header('Location: /'); exit; }
-          if (!in_array($action,['start','stop','restart','logs','command'],true)) throw new RuntimeException('Ismeretlen művelet.');
-          $server=$this->database->query('SELECT s.*,n.ssh_host,n.ssh_port,n.ssh_user,n.ssh_fingerprint FROM servers s JOIN nodes n ON n.id=s.node_id WHERE s.id=? AND (s.user_id=? OR ?=1)',[(int)($_POST['server_id']??0),$user['id'],(int)$user['is_admin']])->fetch();
-          if (!$server) throw new RuntimeException('A szerver nem érhető el.');
-          $command = trim((string)($_POST['command'] ?? ''));
-          if ($action === 'command' && ($command === '' || strlen($command) > 500 || preg_match('/[\\x00-\\x1f\\x7f]/', $command))) {
-              throw new RuntimeException('Érvénytelen konzolparancs. Egy sor, legfeljebb 500 bájt engedélyezett.');
-          }
-          $this->database->query('INSERT INTO audit_log(user_id,server_id,action,outcome) VALUES(?,?,?,?)',[$user['id'],$server['id'],$action,'requested']);
-          $auditId=$this->database->lastInsertId();
-          try {
-              $result=$this->ssh->execute($server,$action,$command);
-              $this->database->query('UPDATE audit_log SET outcome=? WHERE id=?',['accepted',$auditId]);
-              if ($action === 'logs') {
-                  $console=['id'=>$server['id'],'name'=>$server['name'],'logs'=>$result['logs']];
-              } elseif ($action === 'command') {
-                  $notice='A parancsot továbbítottuk a játék konzoljának. A végrehajtás eredményét a naplóban ellenőrizd.';
-                  $console=['id'=>$server['id'],'name'=>$server['name'],'logs'=>'Frissítsd a konzolnaplót az eredmény megtekintéséhez.'];
-              } else {
-                  $notice='Az SSH-parancs sikeresen lefutott. Frissítés után ellenőrizd az állapotot.';
-              }
-          } catch (Throwable $e) {
-              $this->database->query('UPDATE audit_log SET outcome=? WHERE id=?',['failed',$auditId]);
-              throw $e;
-          }
-         }
-         $servers=$user ? $this->database->query('SELECT s.*,n.name AS node_name,n.ssh_host,n.ssh_port,n.ssh_user,n.ssh_fingerprint FROM servers s JOIN nodes n ON n.id=s.node_id WHERE s.user_id=? OR ?=1 ORDER BY s.name',[$user['id'],(int)$user['is_admin']])->fetchAll() : [];
-        } catch (Throwable $e) { $error=$e instanceof RuntimeException && !($e instanceof PDOException) ? $e->getMessage() : 'Adatbázis- vagy szolgáltatáshiba. Ellenőrizd a konfigurációt.'; }
-
-        $cards = [];
-        $gameNames = ['minecraft'=>'Minecraft','cs2'=>'Counter-Strike 2','fivem'=>'FiveM','css'=>'Counter-Strike: Source'];
-        foreach ($servers as $server) {
-            $state = 'ismeretlen';
-            try { $state = $this->ssh->execute($server, 'status')['state'] ?? 'ismeretlen'; } catch (Throwable $e) {}
-            // Only presentation data crosses the template boundary.
-            $cards[] = ['id'=>$server['id'], 'name'=>$server['name'], 'node_name'=>$server['node_name'],
-                'game_name'=>$gameNames[$server['game']] ?? $server['game'], 'state'=>$state];
+        $auth=new AuthService($this->database); $service=new ServerService($this->database,$this->ssh);
+        $user=$auth->current(); $error=''; $flash=$_SESSION['flash'] ?? []; unset($_SESSION['flash']);
+        $notice=$flash['notice'] ?? ''; $page=(string)($_GET['page'] ?? 'servers');
+        if (!in_array($page,['servers','account','history'],true)) $page='servers';
+        $selected=null; $console=null;
+        if ($_SERVER['REQUEST_METHOD']==='POST') {
+            try {
+                $auth->csrf(); $action=(string)($_POST['action'] ?? '');
+                if ($action==='login') { $auth->login($_POST); $this->redirect('/'); }
+                if (!$user) throw new RuntimeException('Jelentkezz be a folytatáshoz.');
+                if ($action==='logout') { $_SESSION=[]; session_destroy(); $this->redirect('/'); }
+                if ($action==='account') {
+                    $auth->updateAccount($user,$_POST); $_SESSION['flash']=['notice'=>'A fiókadatokat elmentettük. Jelszóváltoztatás után a többi munkamenet kijelentkezik.'];
+                    $this->redirect('/?page=account');
+                }
+                if (!in_array($action,['start','stop','restart','logs','command','status'],true)) throw new RuntimeException('Ismeretlen művelet.');
+                $id=Validation::id($_POST['server_id'] ?? 0);
+                $result=$service->perform($user,$id,$action,(string)($_POST['command'] ?? ''));
+                $_SESSION['flash']=['notice'=>match($action){'command'=>'A parancsot továbbítottuk. Az eredményt a konzolnaplóban ellenőrizd.','logs'=>'A konzolnapló frissült.','status'=>'Állapot: '.($result['state'] ?? 'ismeretlen'),default=>'A vezérlési parancs lefutott. Ellenőrizd a szerver állapotát.'}];
+                if ($action==='logs') $_SESSION['flash']['logs']=$result['logs'];
+                $this->redirect('/?server='.$id);
+            } catch (Throwable $e) {
+                $error=$e instanceof RuntimeException && !$e instanceof PDOException ? $e->getMessage() : 'A mentés nem sikerült. Az e-mail-cím már használatban lehet, vagy adatbázishiba történt.';
+            }
         }
-        $this->view->render('panel.tpl', ['user'=>$user, 'servers'=>$cards, 'server_count'=>count($cards),
-            'console'=>$console, 'csrf'=>$_SESSION['csrf'], 'error'=>$error, 'notice'=>$notice]);
+        $servers=[]; $history=[];
+        if ($user) {
+            $user=$auth->current();
+            if ($user) {
+                try {
+                    $servers=$service->listing($user,mb_substr(trim((string)($_GET['q'] ?? '')),0,100));
+                    foreach ($servers as &$server) { $server['game_name']=Validation::GAMES[$server['game']] ?? $server['game']; $server['state']='nincs lekérdezve'; } unset($server);
+                    if (isset($_GET['server'])) {
+                        $s=$service->find($user,Validation::id($_GET['server']));
+                        $selected=['id'=>$s['id'],'name'=>$s['name'],'game_name'=>Validation::GAMES[$s['game']],'node_name'=>$s['node_name']];
+                        $console=['id'=>$s['id'],'name'=>$s['name'],'logs'=>$flash['logs'] ?? 'A napló a Frissítés gombbal kérdezhető le.'];
+                        $history=$service->audit($user,(int)$s['id']);
+                    } elseif ($page==='history') $history=$service->audit($user);
+                } catch (Throwable $e) { $error=$e instanceof RuntimeException && !$e instanceof PDOException ? $e->getMessage() : 'A lista nem tölthető be.'; }
+            }
+        }
+        $this->view->render('panel.tpl',['user'=>$user,'servers'=>$servers,'server_count'=>count($servers),'selected'=>$selected,
+            'console'=>$console,'history'=>$history,'page'=>$page,'search'=>(string)($_GET['q'] ?? ''),'csrf'=>$_SESSION['csrf'],'error'=>$error,'notice'=>$notice]);
     }
+    private function redirect(string $url): never { header('Location: '.$url,true,303); exit; }
 }

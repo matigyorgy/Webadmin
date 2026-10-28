@@ -1,0 +1,5 @@
+#!/bin/sh
+set -eu
+install -d -m 700 -o gamedock -g gamedock /home/gamedock/.ssh
+install -m 600 -o gamedock -g gamedock /keys/authorized_keys /home/gamedock/.ssh/authorized_keys
+exec /usr/sbin/sshd -D -e

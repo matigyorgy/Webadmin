@@ -1,0 +1,14 @@
+#!/bin/sh
+set -eu
+case "$1" in
+show) cat /var/lib/gamedock-fixture/state ;;
+start|restart)
+ /usr/sbin/runuser -u minecraft -- /usr/bin/tmux -L gamedock kill-session -t minecraft-survival 2>/dev/null || true
+ /usr/sbin/runuser -u minecraft -- /usr/bin/tmux -L gamedock new-session -d -s minecraft-survival -- /usr/bin/python3 /opt/fixture/game.py
+ /usr/sbin/runuser -u minecraft -- /usr/bin/tmux -L gamedock pipe-pane -t minecraft-survival:0.0 'cat >> /home/minecraft/game.log'
+ echo active > /var/lib/gamedock-fixture/state ;;
+stop)
+ /usr/sbin/runuser -u minecraft -- /usr/bin/tmux -L gamedock kill-session -t minecraft-survival
+ echo inactive > /var/lib/gamedock-fixture/state ;;
+*) exit 1 ;;
+esac

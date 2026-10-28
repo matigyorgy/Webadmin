@@ -10,7 +10,7 @@ function renderCase(GameDock\SmartyView $view, array $data): string {
 function check(bool $condition, string $message): void {
     if (!$condition) throw new RuntimeException($message);
 }
-$base = ['user'=>false,'servers'=>[],'server_count'=>0,'csrf'=>'test-token','error'=>'','notice'=>'','console'=>null];
+$base = ['user'=>false,'servers'=>[],'server_count'=>0,'csrf'=>'test-token','error'=>'','notice'=>'','console'=>null,'selected'=>null,'history'=>[],'page'=>'servers','search'=>''];
 $html = renderCase($view, $base);
 check(str_contains($html, 'autocomplete="current-password"'), 'Login form missing');
 check(str_contains($html, 'value="test-token"'), 'CSRF field missing');
@@ -20,6 +20,7 @@ $server = ['id'=>1,'name'=>'<script>alert(1)</script>','node_name'=>'Linux','gam
 $html = renderCase($view, array_replace($base, ['user'=>['email'=>'admin@example.com','is_admin'=>1], 'servers'=>[$server], 'server_count'=>1]));
 check(str_contains($html, 'Összes szerver'), 'Admin heading missing');
 check(!str_contains($html, '<script>') && str_contains($html, '&lt;script&gt;'), 'HTML escaping failed');
+$html = renderCase($view, array_replace($base, ['user'=>['email'=>'admin@example.com','is_admin'=>1], 'selected'=>['id'=>1,'name'=>'Survival','game_name'=>'Minecraft','node_name'=>'Linux']]));
 check(str_contains($html, 'value="restart"'), 'Server actions missing');
 $html = renderCase($view, array_replace($base, ['user'=>['email'=>'test@example.com','is_admin'=>0], 'console'=>['id'=>1,'name'=>'Survival','logs'=>'<script>bad()</script>']]));
 check(str_contains($html, 'name="command"') && !str_contains($html, '<script>') && str_contains($html, '&lt;script&gt;'), 'Console rendering/escaping failed');
@@ -52,3 +53,22 @@ function renderCaseForInstaller(GameDock\SmartyView $view,array $data): string {
     ob_start();
     try { $view->render('install.tpl',$data); return ob_get_contents(); } finally { ob_end_clean(); }
 }
+
+$adminBase=['user'=>['id'=>1,'email'=>'admin@example.com','is_admin'=>1],'csrf'=>'admin-csrf','section'=>'servers','error'=>'','notice'=>'','rows'=>[],
+    'record'=>null,'users'=>[],'nodes'=>[],'public_key'=>'ssh-rsa example','games'=>GameDock\Validation::GAMES];
+function renderTemplate(GameDock\SmartyView $view,string $template,array $data): string {
+    ob_start();
+    try { $view->render($template,$data); return ob_get_contents(); } finally { ob_end_clean(); }
+}
+$record=['id'=>'','email'=>'','is_admin'=>0,'name'=>'','ssh_host'=>'','ssh_port'=>22,'ssh_user'=>'gamedock','ssh_fingerprint'=>'', 'user_id'=>'','node_id'=>'','game'=>'minecraft','unit_name'=>''];
+foreach (['users','nodes','servers'] as $section) {
+    $html=renderTemplate($view,'admin.tpl',array_replace($adminBase,['section'=>$section,'record'=>$record]));
+    check(str_contains($html,'value="save"') && str_contains($html,'admin-csrf'),'Admin form missing');
+}
+$html=renderTemplate($view,'admin.tpl',array_replace($adminBase,['section'=>'setup']));
+check(str_contains($html,'ssh-rsa example'),'Public key page missing');
+$html=renderTemplate($view,'admin.tpl',array_replace($adminBase,['section'=>'audit']));
+check(str_contains($html,'Műveleti napló'),'Admin audit missing');
+$html=renderTemplate($view,'panel.tpl',array_replace($base,['user'=>['id'=>2,'email'=>'client@example.com','is_admin'=>0],'page'=>'account']));
+check(str_contains($html,'name="current_password"') && !str_contains($html,'href="/admin.php"'),'Client profile/admin separation failed');
+echo "6 admin/client template checks passed.\n";

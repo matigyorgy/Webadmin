@@ -9,6 +9,23 @@ final class SshClient
     public function execute(array $server, string $action, string $input = ''): array
     {
         $command = (new ServerCommand())->build($server['unit_name'], $action, $input);
+        $ssh = $this->connect($server);
+        $output = $ssh->exec($command);
+        $exitCode = $ssh->getExitStatus();
+        if ($output === false || $ssh->isTimeout() || $exitCode !== 0) {
+            throw new RuntimeException('Az SSH-művelet nem sikerült. Ellenőrizd a szerver állapotát és a sudoers beállítást.');
+        }
+        if ($action === 'logs') return ['logs'=>$output];
+        return $action === 'status' ? ['state'=>trim($output)] : ['accepted'=>true];
+    }
+    public function test(array $node): void
+    {
+        $ssh=$this->connect($node);
+        $output=$ssh->exec('/usr/bin/true');
+        if ($output===false || $ssh->isTimeout() || $ssh->getExitStatus()!==0) throw new RuntimeException('Az SSH-tesztparancs nem futott le.');
+    }
+    private function connect(array $server): SSH2
+    {
         $ssh = new SSH2($server['ssh_host'], (int)$server['ssh_port'], 10);
         $ssh->setTimeout(12);
         // Verify host identity before sending authentication credentials.
@@ -27,12 +44,7 @@ final class SshClient
         if (!$ssh->login($server['ssh_user'], $key)) {
             throw new RuntimeException('Sikertelen SSH-hitelesítés.');
         }
-        $output = $ssh->exec($command);
-        $exitCode = $ssh->getExitStatus();
-        if ($output === false || $ssh->isTimeout() || $exitCode !== 0) {
-            throw new RuntimeException('Az SSH-művelet nem sikerült. Ellenőrizd a szerver állapotát és a sudoers beállítást.');
-        }
-        if ($action === 'logs') return ['logs'=>$output];
-        return $action === 'status' ? ['state'=>trim($output)] : ['accepted'=>true];
+        return $ssh;
     }
+
 }
