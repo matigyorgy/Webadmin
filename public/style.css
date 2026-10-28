@@ -5,3 +5,4 @@ body {
 }
 .brand-label { font-size: .75rem; letter-spacing: .14em; }
 .console-output { max-height: 28rem; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
+.installer-container { max-width: 900px; }

@@ -1,8 +1,28 @@
+# Egyszerű webes telepítés
+
+1. Töltsd le a GitHub ZIP-et, és csomagold ki a tárhelyre. PHP 8.2+ és a **pdo_mysql** bővítmény szükséges; Composer nem kell.
+2. A domain dokumentumgyökere a projekt **public/** könyvtára legyen. A **config/** és **var/** könyvtár a PHP-folyamat számára írható legyen; ne használj 777 jogosultságot. Nyilvános szerveren HTTPS-t használj, és a frissen feltöltött telepítőt csak te érhesd el a telepítés befejezéséig.
+3. Nyisd meg a domaint: automatikusan a webes telepítőre irányít. Add meg az előzetesen létrehozott, **üres** MySQL-adatbázis címét, portját, nevét, felhasználóját, jelszavát, valamint az első admin e-mail-címét és jelszavát. Opcionálisan megadhatod az első Linux-gépet és a már telepített játékszerverét is.
+4. Kattints a **Telepítés indítása** gombra. A táblák, adminfiók, SSH-kulcspár és a helyi konfiguráció automatikusan elkészülnek. Nem kell SQL-t importálni, környezeti változókat megadni vagy parancssorban adminfiókot készíteni. Siker után a telepítő lezárul.
+5. Másold a sikeroldalon megjelenő nyilvános SSH-kulcsot a Linux-gép kijelölt SSH-felhasználójának `~/.ssh/authorized_keys` fájljába. A nyilvános kulcs később a `config/ssh-public.pub` fájlból is kiolvasható. A privát kulcsot ne másold és ne tedd a webgyökérbe.
+
+A MySQL-felhasználónak CREATE, SELECT, INSERT, UPDATE, DELETE, valamint sikertelen telepítés visszavonásához DROP jogosultság kell az adott adatbázison. Az adatbázist és felhasználót a tárhely kezelőfelületén kell előre létrehozni. Meglévő táblákat a telepítő nem ír felül; korábbi telepítés frissítéséhez ne futtasd újra.
+
+A konfiguráció a `config/local.json` fájlba kerül, 0600 jogosultsággal, a publikus könyvtáron kívül. Az SSH privát kulcs ugyanitt található, szintén korlátozott jogosultsággal. A környezeti változók továbbra is felülírják a fájl értékeit. A konfigurációt a PHP-folyamat felhasználójának kell tudnia olvasni. A `config/` könyvtárról biztonságos, nem nyilvános mentést készíts.
+
+A `config/local.json` jelenléte lezárja a telepítőt; külön telepítőzárat nem kell kézzel törölni. A párhuzamos telepítéseket fájlzár akadályozza meg. Normál hiba esetén a telepítő csak az adott próbálkozás során létrehozott táblákat és kulcsokat takarítja el. Folyamatleállás vagy adatbázis-kapcsolatszakadás után maradhatnak részleges táblák: ilyenkor csak a telepítéshez fenntartott üres adatbázist állítsd helyre, más adatokat ne törölj.
+
+A webes telepítő **a panelt** állítja be. A játékszerverek telepítése, az SSH-kulcs engedélyezése, a systemd/sudoers és konzolhoz a tmux-segédprogram beállítása a Linux-gépen továbbra is szükséges; ezek lépései lejjebb találhatók. A beállított hostkulcs-ujjlenyomatot a telepítő nem ellenőrzi távoli kapcsolattal.
+
+Reverse proxy mögötti HTTPS-nél a webszerver/PHP-FPM felé helyesen jelezni kell a HTTPS-t, vagy a `COOKIE_SECURE=1` környezeti változót kell beállítani. A kliens által küldött X-Forwarded-Proto fejlécben az alkalmazás önmagában nem bízik meg.
+
+---
+
 # GameDock — PHP + Smarty + SSH2
 
 Kezdeti, objektumorientált PHP 8.2+ / MySQL 8 játékszerver-kezelő. Játékok: Minecraft, Counter-Strike 2, FiveM, Counter-Strike: Source. Felhasználónként több szerver, több Linux-gép; az admin minden szervert lát. Bootstrap 5.3.8, helyben kiszolgálva.
 
-## Telepítés
+## Kézi telepítés (alternatíva a webes telepítő helyett)
 
 1. PHP 8.2+, pdo_mysql és mbstring szükséges. Composer nem kell.
 2. Töltsd le és csomagold ki a teljes projektet. A `lib/` könyvtár már tartalmazza a szükséges Smarty és SSH2 könyvtárakat; nincs függőségtelepítési lépés.
@@ -99,3 +119,9 @@ A telepítés és futtatás teljesen Composer nélkül történik. A mellékelt 
 Frissítéskor a korábbi `vendor/` könyvtár már nem használt. Az adatbázis- és SSH-környezeti változók, a dokumentumgyökér és a Smarty írható fordítási könyvtára változatlan marad.
 
 A mellékelt könyvtárak és az SSH-kulcsok betöltésének önálló tesztje: `php tests/dependencies.php` (hálózati kapcsolat nélkül).
+
+## Webes telepítő tesztelése
+
+`php tests/installer.php` a mezők ellenőrzését teszteli. A MySQL-integrációhoz add meg a `TEST_MYSQL_HOST` és `TEST_MYSQL_PASSWORD` környezeti változókat egy **kizárólag tesztelésre használt**, root felhasználóval elérhető MySQL-példányhoz. A teszt saját véletlen nevű adatbázist készít és eltakarít. A `php tests/templates.php` a telepítő űrlapját, zárolt állapotát és sikeroldalát is ellenőrzi.
+
+A webes telepítési folyamat PHP 8.2 + MySQL 8.4 alatt ellenőrizve: űrlap, CSRF, hibás SQL-adatok, táblák létrehozása és hiba utáni visszavonása, admin/node/server felvétel, konfigurációs és kulcsjogosultságok, telepítőzár, első bejelentkezés. Valódi játékszerverhez SSH-kapcsolatot ezek a tesztek nem létesítenek.

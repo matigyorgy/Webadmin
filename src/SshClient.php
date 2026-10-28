@@ -19,11 +19,11 @@ final class SshClient
         if ($fingerprint === '' || !hash_equals($server['ssh_fingerprint'], $fingerprint)) {
             throw new RuntimeException('Az SSH hostkulcs nem egyezik a rögzített kulccsal.');
         }
-        $keyPath = getenv('SSH_PRIVATE_KEY_PATH') ?: '';
+        $keyPath = Config::get('SSH_PRIVATE_KEY_PATH');
         if ($keyPath === '' || !is_readable($keyPath)) {
             throw new RuntimeException('Az SSH privát kulcs nincs beállítva vagy nem olvasható.');
         }
-        $key = PublicKeyLoader::loadPrivateKey(file_get_contents($keyPath), getenv('SSH_KEY_PASSPHRASE') ?: false);
+        $key = PublicKeyLoader::loadPrivateKey(file_get_contents($keyPath), Config::get('SSH_KEY_PASSPHRASE') ?: false);
         if (!$ssh->login($server['ssh_user'], $key)) {
             throw new RuntimeException('Sikertelen SSH-hitelesítés.');
         }

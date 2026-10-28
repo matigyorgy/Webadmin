@@ -35,3 +35,20 @@ foreach ([['x;id.service','start',''], ['minecraft.service','shell',''], ['minec
 $input = 'say hello; $(id)';
 check(str_ends_with($commands->build('minecraft.service','command',$input), escapeshellarg(base64_encode($input))), 'Console payload not encoded');
 echo "6 SSH command policy checks passed.\n";
+
+$installer = new GameDock\Installer(dirname(__DIR__));
+$values=['db_host'=>'localhost','db_port'=>'3306','db_name'=>'webadmin','db_user'=>'webadmin','admin_email'=>'',
+    'node_name'=>'Linux','ssh_host'=>'','ssh_port'=>'22','ssh_user'=>'gamedock','ssh_fingerprint'=>'',
+    'server_name'=>'','game'=>'minecraft','unit_name'=>'minecraft.service'];
+$installBase=['installed'=>false,'success'=>null,'error'=>'','values'=>$values,'requirements'=>[], 'csrf'=>'install-test-token','https'=>true];
+$html=renderCaseForInstaller($view,$installBase);
+check(str_contains($html,'name="db_password"') && str_contains($html,'name="admin_password"') && str_contains($html,'install-test-token'),'Installer form missing');
+$html=renderCaseForInstaller($view,array_replace($installBase,['installed'=>true]));
+check(str_contains($html,'már telepítve') && !str_contains($html,'name="db_password"'),'Installed form still visible');
+$html=renderCaseForInstaller($view,array_replace($installBase,['installed'=>true,'success'=>['public_key'=>'ssh-rsa <unsafe>','has_node'=>false]]));
+check(str_contains($html,'Sikeres telepítés') && str_contains($html,'&lt;unsafe&gt;') && !str_contains($html,'name="db_password"'),'Installer success escaping failed');
+echo "3 installer template checks passed.\n";
+function renderCaseForInstaller(GameDock\SmartyView $view,array $data): string {
+    ob_start();
+    try { $view->render('install.tpl',$data); return ob_get_contents(); } finally { ob_end_clean(); }
+}
