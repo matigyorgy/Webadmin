@@ -4,3 +4,4 @@ body {
     background: radial-gradient(ellipse at top right, rgba(25, 135, 84, .12), transparent 55%), var(--bs-body-bg);
 }
 .brand-label { font-size: .75rem; letter-spacing: .14em; }
+.console-output { max-height: 28rem; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
