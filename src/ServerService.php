@@ -8,7 +8,8 @@ final class ServerService
     public function __construct(private Database $db, private SshClient $ssh) {}
     public function listing(array $user, string $search=''): array
     {
-        $rows=$this->db->query('SELECT s.id,s.name,s.game,s.unit_name,n.name AS node_name,u.email AS owner_email FROM servers s JOIN nodes n ON n.id=s.node_id JOIN users u ON u.id=s.user_id WHERE (s.user_id=? OR ?=1) ORDER BY s.name',[$user['id'],(int)$user['is_admin']])->fetchAll();
+        $provision=(new SchemaUpdater($this->db))->provisionEnabled() ? 's.provision_state' : "'ready'";
+        $rows=$this->db->query('SELECT '.$provision.' AS provision_state,s.id,s.name,s.game,s.unit_name,n.name AS node_name,u.email AS owner_email FROM servers s JOIN nodes n ON n.id=s.node_id JOIN users u ON u.id=s.user_id WHERE (s.user_id=? OR ?=1) ORDER BY s.name',[$user['id'],(int)$user['is_admin']])->fetchAll();
         return array_values(array_filter($rows,static fn($s)=>$search==='' || mb_stripos($s['name'].' '.$s['node_name'].' '.(Validation::GAMES[$s['game']] ?? ''),$search)!==false));
     }
     public function find(array $user, int $id): array
@@ -19,13 +20,17 @@ final class ServerService
     }
     public function read(array $user, int $id, string $action): array
     {
+        if ($action==='provision') return (new ProvisionService($this->db,$this->ssh))->pollForUser($user,$id);
         if (!in_array($action,['status','logs'],true)) throw new RuntimeException('Nem engedélyezett lekérdezés.');
-        return $this->ssh->execute($this->find($user,$id),$action);
+        $server=$this->find($user,$id);
+        if (($server['provision_state'] ?? 'ready')!=='ready') throw new RuntimeException('A szerver fájljainak másolása még nem fejeződött be.');
+        return $this->ssh->execute($server,$action);
     }
     public function perform(array $user, int $id, string $action, string $command=''): array
     {
         $server=$this->find($user,$id);
-        (new ServerCommand())->build($server['unit_name'],$action,$command);
+        if (($server['provision_state'] ?? 'ready')!=='ready') throw new RuntimeException('A szerver csak sikeres fájlmásolás után vezérelhető.');
+        (new ServerCommand())->build($server['unit_name'],$action,$command,(string)($server['startup_command'] ?? ''));
         $this->db->query('INSERT INTO audit_log(user_id,server_id,action,outcome) VALUES(?,?,?,?)',[$user['id'],$id,$action,'requested']);
         $audit=$this->db->lastInsertId();
         try {
@@ -35,7 +40,7 @@ final class ServerService
         } catch (Throwable $e) {
             $this->db->query('UPDATE audit_log SET outcome=? WHERE id=?',['failed',$audit]);
             error_log('GameDock SSH action failed: '.get_class($e));
-            throw new RuntimeException('Az SSH-művelet nem sikerült. Ellenőrizd a Linux-gép elérhetőségét, a hostkulcsot, az SSH-kulcsot és a szolgáltatás jogosultságait.');
+            throw new RuntimeException('Az SSH-művelet nem sikerült. Ellenőrizd a Linux-gép elérhetőségét, a hostkulcsot, az SSH-kulcsot és a szolgáltatás jogosultságait.'.(!empty($server['startup_command']) ? ' Saját indítóparancsnál a gamedock-launch telepítése, a Linux-oldali engedélylista és egy nem ütköző unitnév is szükséges.' : ''));
         }
     }
     public function audit(array $user, ?int $id=null): array

@@ -1,2 +1,6 @@
-#!/bin/sh
-cat /home/minecraft/game.log 2>/dev/null || true
+#!/usr/bin/python3
+import sys
+from pathlib import Path
+unit=next((arg.split('=',1)[1] for arg in sys.argv if arg.startswith('--unit=')),'minecraft.service')
+file=Path('/home/minecraft/game.log') if unit=='minecraft.service' else Path('/var/lib/gamedock-fixture/units')/(unit+'.log')
+if file.exists():sys.stdout.buffer.write(file.read_bytes()[-131072:])

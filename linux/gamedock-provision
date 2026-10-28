@@ -1,0 +1,165 @@
+#!/usr/bin/python3
+"""Root-owned asynchronous template copier. Copies run as a pinned non-root game user."""
+import base64
+import fcntl
+import hashlib
+import json
+import os
+import pwd
+import re
+import shutil
+import stat
+import subprocess
+import sys
+import tempfile
+
+CONFIG='/etc/gamedock/servers.json'
+JOBS='/var/lib/gamedock/provision/jobs'
+SELF='/usr/local/sbin/gamedock-provision'
+GAMES=('minecraft','cs2','fivem','css')
+
+def secure(path, directory=False):
+    info=os.lstat(path)
+    if info.st_uid!=0 or info.st_mode & (stat.S_IWGRP|stat.S_IWOTH) or stat.S_ISLNK(info.st_mode): raise ValueError('Unsafe root-owned path')
+    if directory and not stat.S_ISDIR(info.st_mode): raise ValueError('Directory required')
+
+def config():
+    secure(os.path.dirname(CONFIG),True);secure(CONFIG)
+    with open(CONFIG,encoding='utf-8') as stream:return json.load(stream)
+
+def atomic(path,value):
+    descriptor,temporary=tempfile.mkstemp(prefix='.gamedock-',dir=os.path.dirname(path))
+    try:
+        with os.fdopen(descriptor,'w',encoding='utf-8') as stream:
+            json.dump(value,stream,ensure_ascii=False);stream.flush();os.fsync(stream.fileno())
+        os.replace(temporary,path)
+    finally:
+        if os.path.exists(temporary):os.unlink(temporary)
+
+def locked():
+    secure(os.path.dirname(CONFIG),True)
+    handle=open(CONFIG+'.lock','a')
+    fcntl.flock(handle,fcntl.LOCK_EX)
+    return handle
+
+def job_path(job):
+    if not isinstance(job,str) or not re.fullmatch(r'[a-f0-9]{32}',job):raise ValueError('Invalid job')
+    return JOBS+'/'+job+'.json'
+
+def read_job(job):
+    with open(job_path(job),encoding='utf-8') as stream:return json.load(stream)
+
+def public(job):return {name:job[name] for name in ('state','message')}
+
+def validate(payload,cfg):
+    job_path(payload['job'])
+    unit=payload['unit'];game=payload['game'];folder=payload['folder'];source=payload['source']
+    if not isinstance(unit,str) or not re.fullmatch(r'[A-Za-z0-9_-]+\.service',unit):raise ValueError('Invalid unit')
+    if game not in GAMES or not isinstance(folder,str) or not re.fullmatch(r'[a-zA-Z0-9_-]{1,120}',folder):raise ValueError('Invalid game/folder')
+    policy=cfg['_provision'];source_root=os.path.realpath(policy['source_root']);target_root=os.path.realpath(policy['target_root'])
+    secure(policy['source_root'],True);secure(policy['target_root'],True)
+    # Root controls the roots; an administrator may select only a source below the source root.
+    if not isinstance(source,str) or not os.path.isabs(source):raise ValueError('Absolute source required')
+    source=os.path.realpath(source)
+    if source==source_root or os.path.commonpath([source_root,source])!=source_root or not os.path.isdir(source):raise ValueError('Source outside template root')
+    user=policy['users'][game]
+    if not isinstance(user,str) or not re.fullmatch(r'[a-z_][a-z0-9_-]*',user):raise ValueError('Invalid user')
+    account=pwd.getpwnam(user)
+    if account.pw_uid==0 or account.pw_gid==0:raise ValueError('Non-root game user and group required')
+    target=target_root+'/'+folder
+    if os.path.lexists(target):raise ValueError('Destination already exists; never overwritten')
+    return dict(payload,source=source,target=target,user=user,uid=account.pw_uid,gid=account.pw_gid)
+
+def isolated_user(data):
+    name='gd_'+data['game']+'_'+hashlib.sha256((data['unit']+'\0'+data['target']).encode()).hexdigest()[:12]
+    try:account=pwd.getpwnam(name)
+    except KeyError:
+        subprocess.run(['/usr/sbin/useradd','--system','--gid',str(data['gid']),'--no-create-home',
+            '--home-dir',data['target'],'--shell','/usr/sbin/nologin',name],check=True,capture_output=True,timeout=8)
+        account=pwd.getpwnam(name)
+    if account.pw_uid==0 or account.pw_gid!=data['gid'] or account.pw_dir!=data['target']:raise ValueError('Instance account does not match its protected policy')
+    return dict(data,user=name,uid=account.pw_uid)
+
+def prepare():
+    os.makedirs(JOBS,mode=0o700,exist_ok=True)
+    for path in ('/var/lib/gamedock','/var/lib/gamedock/provision',JOBS):secure(path,True)
+
+def create(payload):
+    prepare();lock=locked()
+    try:
+        path=job_path(payload['job'])
+        if os.path.exists(path):
+            old=read_job(payload['job'])
+            if any(old['request'].get(k)!=payload.get(k) for k in ('job','unit','game','source','folder')):raise ValueError('Job request mismatch')
+            return public(old)
+        cfg=config();validated=validate(payload,cfg);unit=validated['unit'];target=validated['target']
+        if unit in cfg:raise ValueError('Unit already registered')
+        for existing in cfg.get('_copy_jobs',{}).values():
+            try:previous=read_job(existing)
+            except FileNotFoundError:continue
+            if previous['state'] in ('queued','running') and (previous['data']['target']==target or previous['data']['unit']==unit):raise ValueError('Copy already reserved')
+        result=subprocess.run(['/usr/bin/systemctl','show',unit,'--property=LoadState','--value'],capture_output=True,text=True,timeout=5)
+        if result.stdout.strip()!='not-found':raise ValueError('Unit already exists on Linux')
+        validated=isolated_user(validated)
+        job={'request':payload,'data':validated,'state':'queued','message':'A fájlmásolás indításra vár.'}
+        atomic(path,job)
+        cfg.setdefault('_copy_jobs',{})[unit]=payload['job'];atomic(CONFIG,cfg)
+        try:
+            subprocess.run(['/usr/bin/systemd-run','--unit=gamedock-copy-'+payload['job'], '--collect','--service-type=exec',
+                '/usr/bin/python3','-I',SELF,'worker',payload['job']],check=True,capture_output=True,timeout=8)
+        except (OSError,subprocess.SubprocessError):
+            job['state']='failed';job['message']='A Linux másolási munkafolyamata nem indítható.';atomic(path,job)
+        return public(job)
+    finally:fcntl.flock(lock,fcntl.LOCK_UN);lock.close()
+
+def copy_files(source,target):
+    if os.geteuid()==0:raise ValueError('Copy must run without root privileges')
+    count=0
+    for directory,dirs,files in os.walk(source,followlinks=False):
+        for name in dirs+files:
+            mode=os.lstat(os.path.join(directory,name)).st_mode
+            if not(stat.S_ISDIR(mode) or stat.S_ISREG(mode)):raise ValueError('Only ordinary files and directories are permitted')
+            if stat.S_ISREG(mode):count+=1
+    if count==0:raise ValueError('Template is empty')
+    shutil.copytree(source,target,dirs_exist_ok=True,symlinks=False)
+
+def worker(job_id):
+    job=read_job(job_id);path=job_path(job_id)
+    if job['state']!='queued':return
+    try:
+        data=isolated_user(validate(job['request'],config()))
+        if data!=job['data']:raise ValueError('Provision policy changed')
+        job['state']='running';job['message']='A szerverfájlok másolása folyamatban van.';atomic(path,job)
+        stage=os.path.dirname(data['target'])+'/.gamedock-copy-'+job_id
+        os.mkdir(stage,0o700);os.chown(stage,data['uid'],data['gid'])
+        # No shell and no root copy: template symlinks cannot expose root-only files.
+        subprocess.run(['/usr/sbin/runuser','-u',data['user'],'--','/usr/bin/python3','-I',SELF,'copy',data['source'],stage],check=True,timeout=3600,capture_output=True)
+        lock=locked()
+        try:
+            cfg=config()
+            if data['unit'] in cfg or os.path.lexists(data['target']):raise ValueError('Destination/unit occupied')
+            if cfg.get('_copy_jobs',{}).get(data['unit'])!=job_id:raise ValueError('Reservation changed')
+            os.chmod(stage,0o700)
+            os.rename(stage,data['target'])
+            cfg[data['unit']]={'launch':True,'user':data['user'],'directory':data['target'],'provision_job':job_id}
+            cfg['_copy_jobs'].pop(data['unit'],None);atomic(CONFIG,cfg)
+            job['state']='ready';job['message']='A fájlmásolás kész. A szerver indítható.';atomic(path,job)
+        finally:fcntl.flock(lock,fcntl.LOCK_UN);lock.close()
+    except (ValueError,KeyError,OSError,subprocess.SubprocessError) as error:
+        print('Copy failed: '+type(error).__name__+': '+str(error),file=sys.stderr)
+        job['state']='failed';job['message']='A másolás nem sikerült. Ellenőrizd, hogy a sablon nem üres, olvasható, van szabad hely, és helyes a Linux engedélylistája. Meglévő célmappát nem írunk felül.';atomic(path,job)
+
+if __name__=='__main__':
+    try:
+        action=sys.argv[1]
+        if action=='copy' and len(sys.argv)==4:copy_files(sys.argv[2],sys.argv[3])
+        elif os.geteuid()!=0:raise ValueError('Root helper required')
+        elif action=='worker' and len(sys.argv)==3:worker(sys.argv[2])
+        elif action=='status' and len(sys.argv)==3:
+            prepare();print(json.dumps(public(read_job(sys.argv[2])),ensure_ascii=False))
+        elif action=='create' and len(sys.argv)==3 and len(sys.argv[2])<=8192:
+            payload=json.loads(base64.b64decode(sys.argv[2],validate=True).decode('utf-8'))
+            print(json.dumps(create(payload),ensure_ascii=False))
+        else:raise ValueError('Invalid operation')
+    except (ValueError,KeyError,IndexError,OSError,subprocess.SubprocessError):
+        print('Provisioning failed: check root policy, template path, unit and destination',file=sys.stderr);sys.exit(1)

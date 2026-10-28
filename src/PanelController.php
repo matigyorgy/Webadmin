@@ -44,8 +44,8 @@ final class PanelController
                     foreach ($servers as &$server) { $server['game_name']=Validation::GAMES[$server['game']] ?? $server['game']; $server['state']='nincs lekérdezve'; } unset($server);
                     if (isset($_GET['server'])) {
                         $s=$service->find($user,Validation::id($_GET['server']));
-                        $selected=['id'=>$s['id'],'name'=>$s['name'],'game_name'=>Validation::GAMES[$s['game']],'node_name'=>$s['node_name']];
-                        $console=['id'=>$s['id'],'name'=>$s['name'],'logs'=>$flash['logs'] ?? 'A napló a Frissítés gombbal kérdezhető le.'];
+                        $selected=['id'=>$s['id'],'name'=>$s['name'],'game_name'=>Validation::GAMES[$s['game']],'node_name'=>$s['node_name'],'provision_state'=>$s['provision_state'] ?? 'ready'];
+                        if (($s['provision_state'] ?? 'ready')==='ready') $console=['id'=>$s['id'],'name'=>$s['name'],'logs'=>$flash['logs'] ?? 'A napló a Frissítés gombbal kérdezhető le.'];
                         $history=$service->audit($user,(int)$s['id']);
                     } elseif ($page==='history') $history=$service->audit($user);
                 } catch (Throwable $e) { $error=$e instanceof RuntimeException && !$e instanceof PDOException ? $e->getMessage() : 'A lista nem tölthető be.'; }

@@ -8,6 +8,7 @@ import http.cookiejar
 import json
 import os
 import re
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -70,13 +71,21 @@ assert 'hitelesítés sikeres' in body,body[-2000:]
 admin.admin('nodes',dict(node,id=node_id,ssh_fingerprint='SHA256:'+'B'*43))
 assert 'SSH-teszt sikertelen' in admin.admin('nodes',{'action':'test','id':node_id})[1]
 admin.admin('nodes',dict(node,id=node_id))
-server={'action':'save','name':'Survival <script>alert(1)</script>','game':'minecraft','unit_name':'minecraft.service','user_id':alice_id,'node_id':node_id}
+server={'action':'save','name':'Survival <script>alert(1)</script>','game':'minecraft','unit_name':'minecraft-panel.service','user_id':alice_id,'node_id':node_id,'startup_command':'/usr/bin/python3 -u server.py'}
 status,body=admin.admin('servers',server);server_id=record_id(body,server['name'])
 assert '<script>alert(1)</script>' not in body
 status,body=admin.admin('servers',dict(server,name='Duplicate'))
 assert 'már hozzá van adva' in body
 second=dict(server,name='Second game',game='cs2',unit_name='cs2.service')
 status,body=admin.admin('servers',second);second_id=record_id(body,second['name'])
+for sid in (server_id,second_id):
+    deadline=time.monotonic()+30
+    while True:
+        code,result=admin.request('/admin_api.php?server_id='+str(sid));assert code==200,result
+        state=json.loads(result)['state']
+        if state=='ready':break
+        assert state!='failed' and time.monotonic()<deadline,result
+        time.sleep(.1)
 assert alice.request('/')[1].count('Kezelés és konzol')==2
 assert 'Survival' not in bob.request('/')[1]
 assert bob.request('/api.php?action=status&server_id='+str(server_id))[0]==400
@@ -116,4 +125,4 @@ assert 'töröltük' in admin.admin('nodes',{'action':'delete','id':node_id,'con
 assert 'töröltük' in admin.admin('users',{'action':'delete','id':alice_id,'confirm':'1'})[1]
 for path in ('/config/local.json','/config/ssh-private.pem','/lib/smarty/src/Smarty.php'):
     assert admin.request(path)[0]==404
-print('HTTP workflow passed: admin CRUD, client isolation, CSRF, host-key pinning, actual SSH authentication, start/stop/restart, tmux console input/logs, reassignments, session invalidation and account change. Systemctl/journalctl were controlled fixture programs, not real games.')
+print('HTTP workflow passed: admin CRUD, client isolation, CSRF, host-key pinning, actual SSH authentication, start/stop/restart, PTY console input/logs and independent template copy, reassignments, session invalidation and account change. Systemctl/journalctl were controlled fixture programs, not real games.')

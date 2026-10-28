@@ -3,3 +3,6 @@ gamedock ALL=(root) NOPASSWD: /usr/bin/systemctl stop minecraft.service
 gamedock ALL=(root) NOPASSWD: /usr/bin/systemctl restart minecraft.service
 gamedock ALL=(root) NOPASSWD: /usr/local/sbin/gamedock-console minecraft.service logs
 gamedock ALL=(root) NOPASSWD: /usr/local/sbin/gamedock-console minecraft.service command *
+gamedock ALL=(root) NOPASSWD: /usr/local/sbin/gamedock-provision create *
+gamedock ALL=(root) NOPASSWD: /usr/local/sbin/gamedock-provision status *
+gamedock ALL=(root) NOPASSWD: /usr/local/sbin/gamedock-launch *

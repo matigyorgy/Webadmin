@@ -104,7 +104,7 @@ final class Installer
                 $nodeId=$pdo->lastInsertId();
                 if ($data['server']) {
                     $s=$data['server'];
-                    $pdo->prepare('INSERT INTO servers(user_id,node_id,name,game,unit_name) VALUES(?,?,?,?,?)')->execute([$userId,$nodeId,$s['name'],$s['game'],$s['unit']]);
+                    $pdo->prepare('INSERT INTO servers(user_id,node_id,name,game,unit_name,startup_command,install_source,install_folder,provision_job,provision_state) VALUES(?,?,?,?,?,?,?,?,?,?)')->execute([$userId,$nodeId,$s['name'],$s['game'],$s['unit'],Validation::STARTUP[$s['game']],'/srv/gamedock/templates/'.$s['game'],substr($s['unit'],0,-8),bin2hex(random_bytes(16)),'queued']);
                 }
             }
             $settings=['DB_DSN'=>$data['dsn'],'DB_USER'=>$data['db_user'],'DB_PASSWORD'=>$data['db_password'],

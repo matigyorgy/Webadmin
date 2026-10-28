@@ -19,6 +19,12 @@ CREATE TABLE servers (
  name VARCHAR(120) NOT NULL,
  game ENUM('minecraft','cs2','fivem','css') NOT NULL,
  unit_name VARCHAR(120) NOT NULL,
+ startup_command TEXT NULL,
+ install_source VARCHAR(255) NULL,
+ install_folder VARCHAR(120) NULL,
+ provision_job VARCHAR(32) NULL,
+ provision_state VARCHAR(16) NOT NULL DEFAULT 'ready',
+ provision_message VARCHAR(500) NULL,
  FOREIGN KEY (user_id) REFERENCES users(id),
  FOREIGN KEY (node_id) REFERENCES nodes(id)
 );

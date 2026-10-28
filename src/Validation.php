@@ -5,6 +5,7 @@ use RuntimeException;
 final class Validation
 {
     public const GAMES = ['minecraft'=>'Minecraft','cs2'=>'Counter-Strike 2','fivem'=>'FiveM','css'=>'Counter-Strike: Source'];
+    public const STARTUP = ['minecraft'=>'java -Xms1G -Xmx4G -jar server.jar nogui','cs2'=>'./game/bin/linuxsteamrt64/cs2 -dedicated -console -usercon +map de_dust2','fivem'=>'./run.sh +exec server.cfg','css'=>'./srcds_run -game cstrike -console +map de_dust2 -port 27015'];
     public static function text(array $data, string $name, int $max=120): string
     {
         $value=trim(is_string($data[$name] ?? null) ? $data[$name] : '');
@@ -26,6 +27,12 @@ final class Validation
     {
         if (strlen($password)<12 || strlen($password)>72 || str_contains($password,"\0")) throw new RuntimeException('A jelszó 12–72 bájt hosszú legyen.');
         return password_hash($password,PASSWORD_DEFAULT);
+    }
+    public static function startup(string $command): string
+    {
+        $command=trim($command);
+        if (strlen($command)>4096 || preg_match('/[\x00-\x1f\x7f]/',$command)) throw new RuntimeException('Az indítóparancs egy sorból állhat, legfeljebb 4096 bájttal.');
+        return $command;
     }
     public static function node(array $data): array
     {

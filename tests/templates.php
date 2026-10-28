@@ -55,12 +55,12 @@ function renderCaseForInstaller(GameDock\SmartyView $view,array $data): string {
 }
 
 $adminBase=['user'=>['id'=>1,'email'=>'admin@example.com','is_admin'=>1],'csrf'=>'admin-csrf','section'=>'servers','error'=>'','notice'=>'','rows'=>[],
-    'record'=>null,'users'=>[],'nodes'=>[],'public_key'=>'ssh-rsa example','games'=>GameDock\Validation::GAMES];
+    'record'=>null,'users'=>[],'nodes'=>[],'public_key'=>'ssh-rsa example','startup_supported'=>true,'provision_supported'=>true,'games'=>GameDock\Validation::GAMES];
 function renderTemplate(GameDock\SmartyView $view,string $template,array $data): string {
     ob_start();
     try { $view->render($template,$data); return ob_get_contents(); } finally { ob_end_clean(); }
 }
-$record=['id'=>'','email'=>'','is_admin'=>0,'name'=>'','ssh_host'=>'','ssh_port'=>22,'ssh_user'=>'gamedock','ssh_fingerprint'=>'', 'user_id'=>'','node_id'=>'','game'=>'minecraft','unit_name'=>''];
+$record=['id'=>'','email'=>'','is_admin'=>0,'name'=>'','ssh_host'=>'','ssh_port'=>22,'ssh_user'=>'gamedock','ssh_fingerprint'=>'', 'user_id'=>'','node_id'=>'','game'=>'minecraft','unit_name'=>'','startup_command'=>'','install_source'=>'','install_folder'=>'','provision_job'=>'','provision_state'=>'ready','provision_message'=>''];
 foreach (['users','nodes','servers'] as $section) {
     $html=renderTemplate($view,'admin.tpl',array_replace($adminBase,['section'=>$section,'record'=>$record]));
     check(str_contains($html,'value="save"') && str_contains($html,'admin-csrf'),'Admin form missing');
@@ -72,3 +72,14 @@ check(str_contains($html,'Műveleti napló'),'Admin audit missing');
 $html=renderTemplate($view,'panel.tpl',array_replace($base,['user'=>['id'=>2,'email'=>'client@example.com','is_admin'=>0],'page'=>'account']));
 check(str_contains($html,'name="current_password"') && !str_contains($html,'href="/admin.php"'),'Client profile/admin separation failed');
 echo "6 admin/client template checks passed.\n";
+
+$encoded=base64_encode('java -Xmx4G -jar server.jar nogui');
+check(str_contains($commands->build('minecraft-panel.service','start','','java -Xmx4G -jar server.jar nogui'),'gamedock-launch') && str_contains($commands->build('minecraft-panel.service','start','','java -Xmx4G -jar server.jar nogui'),$encoded),'Custom launch not routed');
+check(str_contains($commands->build('minecraft-panel.service','command','list','java -jar server.jar'),'gamedock-launch'),'Custom console not routed');
+check(str_contains($commands->build('minecraft-panel.service','status','','java -jar server.jar'),'systemctl show'),'Custom status changed unexpectedly');
+foreach (GameDock\Validation::GAMES as $game=>$label) {
+    $custom=array_replace($record,['game'=>$game,'startup_command'=>'./start --name="<unsafe>"']);
+    $html=renderTemplate($view,'admin.tpl',array_replace($adminBase,['record'=>$custom]));
+    check(str_contains($html,'name="startup_command"') && !str_contains($html,'<unsafe>'),'Custom command escaping failed');
+}
+echo "7 startup routing/template checks passed.\n";

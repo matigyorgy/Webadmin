@@ -1,0 +1,98 @@
+#!/usr/bin/python3
+"""Root-owned allowlisted launcher. Game commands are executed only after systemd drops UID/GID."""
+import base64
+import json
+import os
+import pwd
+import re
+import socket
+import stat
+import subprocess
+import sys
+import time
+
+CONFIG='/etc/gamedock/servers.json'
+RUNTIME='/run/gamedock'
+RUNNER='/usr/local/libexec/gamedock-runner'
+
+def run(args, **kwargs):
+    kwargs.setdefault('timeout',40)
+    return subprocess.run(args, check=True, **kwargs)
+
+def state(unit):
+    result=subprocess.run(['/usr/bin/systemctl','show',unit,'--property=LoadState','--property=Transient','--property=ActiveState'],capture_output=True,text=True,timeout=5)
+    values=dict(line.split('=',1) for line in result.stdout.splitlines() if '=' in line)
+    if not values or 'LoadState' not in values:
+        raise ValueError('Cannot query unit')
+    # Never override, stop or replace a persistent unit using this launcher.
+    if values['LoadState'] != 'not-found' and values.get('Transient') != 'yes':
+        raise ValueError('This name belongs to a persistent unit; choose another unit name')
+    return values
+
+def decode(value, limit):
+    if len(value)>8192: raise ValueError('Payload too large')
+    result=base64.b64decode(value,validate=True).decode('utf-8')
+    if not result.strip() or len(result.encode())>limit or any(ord(c)<32 or ord(c)==127 for c in result):
+        raise ValueError('Invalid command')
+    return result
+
+def execute(argv):
+    if len(argv) not in (3,4): raise ValueError('Invalid arguments')
+    unit,action=argv[1:3]
+    if not re.fullmatch(r'[A-Za-z0-9_-]+\.service',unit): raise ValueError('Invalid unit')
+    info=os.stat(CONFIG)
+    if info.st_uid!=0 or info.st_mode & (stat.S_IWGRP|stat.S_IWOTH): raise ValueError('Unsafe root configuration')
+    with open(CONFIG,encoding='utf-8') as stream: server=json.load(stream)[unit]
+    if server.get('launch') is not True: raise ValueError('Custom launch not enabled for this unit')
+    user=server['user']; directory=server['directory']
+    if not re.fullmatch(r'[a-z_][a-z0-9_-]*',user): raise ValueError('Invalid user')
+    account=pwd.getpwnam(user)
+    if account.pw_uid==0 or not os.path.isabs(directory) or not os.path.isdir(directory): raise ValueError('Non-root user and existing absolute working directory required')
+    if action not in ('start','restart','stop','logs','command'): raise ValueError('Invalid action')
+    if (action in ('start','restart','command')) != (len(argv)==4): raise ValueError('Invalid argument count')
+    payload=decode(argv[3],500 if action=='command' else 4096) if len(argv)==4 else None
+    if action=='logs':
+        result=run(['/usr/bin/journalctl','--unit='+unit,'--lines=150','--no-pager','--output=cat'],capture_output=True,timeout=8)
+        sys.stdout.write(result.stdout[-131072:].decode('utf-8',errors='replace')); return
+    current=state(unit)
+    if action=='command':
+        if current.get('ActiveState')!='active': raise ValueError('Game is not active')
+        with socket.socket(socket.AF_UNIX,socket.SOCK_STREAM) as client:
+            client.settimeout(3)
+            client.connect(RUNTIME+'/'+unit+'/console.sock')
+            client.sendall(payload.encode()+b'\n')
+            client.shutdown(socket.SHUT_WR)
+            if client.recv(16)!=b'OK': raise ValueError('Console input not acknowledged')
+        print('Console input delivered'); return
+    if action=='start' and current.get('ActiveState') in ('active','activating'):
+        print('Already active; restart to apply changed command'); return
+    if current['LoadState']!='not-found':
+        run(['/usr/bin/systemctl','stop',unit],stdout=subprocess.DEVNULL)
+    if action=='stop': print('Stopped'); return
+    # --collect frees inactive/failed transient units, allowing updated commands on restart.
+    for _ in range(20):
+        if state(unit)['LoadState']=='not-found': break
+        time.sleep(0.1)
+    else: raise ValueError('Previous unit has not been collected yet')
+    os.makedirs(RUNTIME,mode=0o711,exist_ok=True)
+    parent=os.stat(RUNTIME)
+    if parent.st_uid!=0 or parent.st_mode & (stat.S_IWGRP|stat.S_IWOTH): raise ValueError('Unsafe runtime directory')
+    os.chmod(RUNTIME,0o711)
+    path=RUNTIME+'/'+unit
+    os.makedirs(path,mode=0o700,exist_ok=True)
+    if os.path.islink(path): raise ValueError('Unsafe runtime symlink')
+    os.chown(path,account.pw_uid,account.pw_gid); os.chmod(path,0o700)
+    console=path+'/console.sock'
+    if os.path.lexists(console): os.unlink(console)
+    run(['/usr/bin/systemd-run','--unit='+unit,'--collect','--service-type=exec',
+         '--uid='+user,'--gid='+str(account.pw_gid),'--working-directory='+directory,
+         '--property=KillMode=control-group','--property=TimeoutStopSec=30s','--property=NoNewPrivileges=yes',
+         '--property=StandardOutput=journal','--property=StandardError=journal',
+         '/usr/bin/python3','-I',RUNNER,'--socket',console,'--command',argv[3]],capture_output=True)
+    print('Game launch accepted')
+
+if __name__=='__main__':
+    try: execute(sys.argv)
+    except (ValueError,KeyError,OSError,subprocess.SubprocessError):
+        print('Game launch failed: check root allowlist, working directory, unit name and systemd',file=sys.stderr)
+        sys.exit(1)

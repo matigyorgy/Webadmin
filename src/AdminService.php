@@ -56,8 +56,15 @@ final class AdminService
                 if ($id) $this->db->query('UPDATE nodes SET name=?,ssh_host=?,ssh_port=?,ssh_user=?,ssh_fingerprint=? WHERE id=?',[...$values,$id]);
                 else $this->db->query('INSERT INTO nodes(name,ssh_host,ssh_port,ssh_user,ssh_fingerprint) VALUES(?,?,?,?,?)',$values);
             } elseif ($section==='servers') {
+                $startup=Validation::startup((string)($data['startup_command'] ?? ''));
+                $startupEnabled=(new SchemaUpdater($this->db))->startupEnabled();
+                if ($startup!=='' && !$startupEnabled) throw new RuntimeException('Először kattints az Indítóparancsok engedélyezése adatbázisfrissítő gombra.');
                 $name=Validation::text($data,'name'); $game=Validation::text($data,'game'); $unit=Validation::text($data,'unit_name');
                 if (!isset(Validation::GAMES[$game]) || !preg_match('/\A[a-zA-Z0-9_-]+\.service\z/',$unit)) throw new RuntimeException('Érvénytelen játéktípus vagy systemd-unitnév.');
+                if (!$id && !(new SchemaUpdater($this->db))->provisionEnabled()) throw new RuntimeException('Először engedélyezd az új szerverfunkciókat az adatbázisfrissítő gombbal.');
+                $existing=$id ? $this->find($actor,'servers',$id) : null;
+                if ((!$id || !empty($existing['provision_job'])) && $startup==='') $startup=Validation::STARTUP[$game];
+                if ($existing && !empty($existing['install_folder']) && ($existing['unit_name']!==$unit || (int)$existing['node_id']!==(int)($data['node_id'] ?? 0))) throw new RuntimeException('Másolt szervernél a Linux-gép és az unitnév nem módosítható. Költöztetéshez hozz létre új példányt.');
                 $user=Validation::id($data['user_id'] ?? 0); $node=Validation::id($data['node_id'] ?? 0);
                 $this->find($actor,'users',$user);
                 if (!$this->db->query('SELECT id FROM nodes WHERE id=? FOR UPDATE',[$node])->fetch()) throw new RuntimeException('A Linux-gép nem található.');
@@ -65,6 +72,16 @@ final class AdminService
                 if ($duplicate) throw new RuntimeException('Ez a szolgáltatás ezen a gépen már hozzá van adva.');
                 if ($id) $this->db->query('UPDATE servers SET name=?,game=?,unit_name=?,user_id=?,node_id=? WHERE id=?',[$name,$game,$unit,$user,$node,$id]);
                 else $this->db->query('INSERT INTO servers(name,game,unit_name,user_id,node_id) VALUES(?,?,?,?,?)',[$name,$game,$unit,$user,$node]);
+                $serverId=$id ?? (int)$this->db->lastInsertId();
+                if ($startupEnabled) $this->db->query('UPDATE servers SET startup_command=? WHERE id=?',[$startup==='' ? null : $startup,$serverId]);
+                if (!$id || (($existing['provision_state'] ?? '')==='failed' && !empty($existing['provision_job']))) {
+                    $source=trim((string)($data['install_source'] ?? '')) ?: '/srv/gamedock/templates/'.$game;
+                    $folder=trim((string)($data['install_folder'] ?? '')) ?: substr($unit,0,-8);
+                    if (!str_starts_with($source,'/') || strlen($source)>255 || preg_match('/[\x00-\x1f\x7f]/',$source) || !preg_match('/\A[a-zA-Z0-9_-]{1,120}\z/',$folder)) throw new RuntimeException('Abszolút forrásmappa és egyszerű célmappanév szükséges.');
+                    if ($this->db->query('SELECT id FROM servers WHERE node_id=? AND install_folder=? AND id<>?',[$node,$folder,$id ?? 0])->fetch()) throw new RuntimeException('Ez a célmappanév ezen a gépen már foglalt.');
+                    $this->db->query('UPDATE servers SET startup_command=?,install_source=?,install_folder=?,provision_job=?,provision_state=? WHERE id=?',[$startup!=='' ? $startup : Validation::STARTUP[$game],$source,$folder,bin2hex(random_bytes(16)),'queued',$serverId]);
+                }
+                $id=$serverId;
             } else throw new RuntimeException('Ismeretlen bejegyzéstípus.');
             $id ??= (int)$this->db->lastInsertId();
             $this->audit($actor,$section.'_save:'.$id,$section==='servers' ? $id : 0);
@@ -85,6 +102,7 @@ final class AdminService
                 $this->db->query('SELECT id FROM nodes WHERE id=? FOR UPDATE',[$id]);
                 if ($this->db->query('SELECT id FROM servers WHERE node_id=? LIMIT 1',[$id])->fetch()) throw new RuntimeException('Előbb rendeld másik géphez vagy vedd ki a panelből a gép szervereit.');
             }
+            if ($section==='servers' && in_array($record['provision_state'] ?? 'ready',['queued','running'],true)) throw new RuntimeException('Folyamatban lévő másolásnál a bejegyzés nem törölhető. Előbb ellenőrizd a másolás állapotát.');
             $table=match($section){'users'=>'users','nodes'=>'nodes','servers'=>'servers',default=>throw new RuntimeException('Ismeretlen bejegyzéstípus.')};
             $this->db->query("DELETE FROM $table WHERE id=?",[$id]);
             $this->audit($actor,$section.'_delete:'.$id,$section==='servers' ? $id : 0);

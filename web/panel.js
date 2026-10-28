@@ -53,3 +53,40 @@ if (consolePanel) {
     setInterval(() => { if (automatic.checked && !document.hidden) update(); }, 5000);
     update();
 }
+const provisionPanel = document.querySelector('[data-provision-admin], [data-provision-client]');
+if (provisionPanel) {
+    const admin = provisionPanel.hasAttribute('data-provision-admin');
+    const id = admin ? provisionPanel.dataset.provisionAdmin : provisionPanel.dataset.provisionClient;
+    const state = provisionPanel.querySelector('[data-provision-state]');
+    const message = provisionPanel.querySelector('[data-provision-message]');
+    let busy = false;
+    let complete = state && ['ready', 'failed'].includes(state.textContent.trim());
+    async function updateProvision() {
+        if (busy || complete || document.hidden) return;
+        busy = true;
+        try {
+            const response = await fetch(admin ? `/admin_api.php?server_id=${encodeURIComponent(id)}` : `/api.php?action=provision&server_id=${encodeURIComponent(id)}`, {credentials: 'same-origin', cache: 'no-store'});
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.error || 'Az állapot nem érhető el.');
+            state.textContent = data.state;
+            message.textContent = data.message;
+            complete = ['ready', 'failed'].includes(data.state);
+            if (!admin && data.state === 'ready') location.reload();
+        } catch (error) { message.textContent = error.message; complete = true; }
+        finally { busy = false; }
+    }
+    updateProvision();
+    setInterval(updateProvision, 5000);
+}
+const gameSelect = document.getElementById('server-game');
+if (gameSelect) {
+    const examples = {minecraft:'java -Xms1G -Xmx4G -jar server.jar nogui',cs2:'./game/bin/linuxsteamrt64/cs2 -dedicated -console -usercon +map de_dust2',fivem:'./run.sh +exec server.cfg',css:'./srcds_run -game cstrike -console +map de_dust2 -port 27015'};
+    const updateExamples = () => {
+        const startup = document.getElementById('startup-command');
+        const source = document.getElementById('install-source');
+        if (startup) startup.placeholder = examples[gameSelect.value] || '';
+        if (source) source.placeholder = `/srv/gamedock/templates/${gameSelect.value}`;
+    };
+    gameSelect.addEventListener('change', updateExamples);
+    updateExamples();
+}

@@ -19,10 +19,22 @@ try {
     $clientId=$admin->save($owner,'users',['email'=>'alice-'.$prefix.'@example.com','password'=>$password]);
     $otherId=$admin->save($owner,'users',['email'=>'bob-'.$prefix.'@example.com','password'=>$password]);
     $client=['id'=>$clientId,'is_admin'=>0];$other=['id'=>$otherId,'is_admin'=>0];
+    denies(fn()=>(new GameDock\SchemaUpdater($db))->enableStartup($client),'Client schema change allowed');
     $nodeData=['name'=>'Linux <test>','ssh_host'=>'127.0.0.1','ssh_port'=>'22','ssh_user'=>'gamedock','ssh_fingerprint'=>'SHA256:'.str_repeat('A',43)];
     $nodeId=$admin->save($owner,'nodes',$nodeData);
     $serverData=['name'=>'Survival <test>','game'=>'minecraft','unit_name'=>'minecraft.service','user_id'=>(string)$clientId,'node_id'=>(string)$nodeId];
     $serverId=$admin->save($owner,'servers',$serverData);
+    verify($servers->find($client,$serverId)['provision_state']==='queued','New server did not require template copy');
+    denies(fn()=>$servers->perform($client,$serverId,'start'),'Unprovisioned game started');
+    $db->query('UPDATE servers SET provision_state=? WHERE id=?',['ready',$serverId]);
+    foreach(GameDock\Validation::GAMES as $game=>$label) {
+        $custom=$serverData; $custom['id']=$serverId; $custom['game']=$game; $custom['startup_command']='./start --name="<example>"';
+        $admin->save($owner,'servers',$custom);
+        verify($servers->find($client,$serverId)['startup_command']===$custom['startup_command'],'Startup command not saved for '.$game);
+        verify(!array_key_exists('startup_command',$servers->listing($client)[0]),'Startup command leaked into client list');
+    }
+    $serverData['id']=$serverId; $admin->save($owner,'servers',$serverData); unset($serverData['id']);
+
     verify(count($servers->listing($client))===1 && count($servers->listing($other))===0,'Owner list isolation failed');
     denies(fn()=>$servers->find($other,$serverId),'Other owner read allowed');
     $before=$db->query('SELECT COUNT(*) FROM audit_log')->fetchColumn();
@@ -50,6 +62,10 @@ try {
     verify(!array_key_exists('password_hash',$admin->listing($owner,'users')[0]),'Password hash in admin listing');
     $admin->delete($owner,'servers',$serverId,true);$admin->delete($owner,'users',$clientId,true);$admin->delete($owner,'nodes',$nodeId,true);
     verify(count($servers->listing($other))===0,'Server unregister failed');
+    $db->query('ALTER TABLE servers DROP COLUMN startup_command');
+    $updater=new GameDock\SchemaUpdater($db); verify(!$updater->startupEnabled(),'Legacy schema fixture failed');
+    $updater->enableStartup($owner); $updater->enableStartup($owner);
+    verify($updater->startupEnabled(),'Startup migration/repeat failed');
     $limiter=new GameDock\LoginRateLimiter();$rateEmail='rate-'.$prefix.'@example.com';
     for($i=0;$i<10;$i++) $limiter->consume($rateEmail,'rate-test-'.$prefix);
     denies(fn()=>$limiter->consume($rateEmail,'rate-test-'.$prefix),'Account rate limit missing');

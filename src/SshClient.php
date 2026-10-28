@@ -8,8 +8,9 @@ final class SshClient
 {
     public function execute(array $server, string $action, string $input = ''): array
     {
-        $command = (new ServerCommand())->build($server['unit_name'], $action, $input);
+        $command = (new ServerCommand())->build($server['unit_name'], $action, $input, (string)($server['startup_command'] ?? ''));
         $ssh = $this->connect($server);
+        if (!empty($server['startup_command']) && in_array($action,['stop','restart'],true)) $ssh->setTimeout(45);
         $output = $ssh->exec($command);
         $exitCode = $ssh->getExitStatus();
         if ($output === false || $ssh->isTimeout() || $exitCode !== 0) {
@@ -17,6 +18,19 @@ final class SshClient
         }
         if ($action === 'logs') return ['logs'=>$output];
         return $action === 'status' ? ['state'=>trim($output)] : ['accepted'=>true];
+    }
+    public function provision(array $node,string $action,array $payload): array
+    {
+        if (!in_array($action,['create','status'],true)) throw new RuntimeException('Ismeretlen másolási művelet.');
+        $job=(string)($payload['job'] ?? '');
+        if (!preg_match('/\A[a-f0-9]{32}\z/',$job)) throw new RuntimeException('Érvénytelen másolási azonosító.');
+        $argument=$action==='status' ? $job : base64_encode(json_encode($payload,JSON_THROW_ON_ERROR));
+        $ssh=$this->connect($node);
+        $output=$ssh->exec('/usr/bin/sudo -n /usr/local/sbin/gamedock-provision '.$action.' '.escapeshellarg($argument));
+        $exit=$ssh->getExitStatus();
+        if ($output!==false && is_int($exit) && $exit!==0) throw new RuntimeException('A Linux-gép elutasította a másolást. Ellenőrizd a forrásmappát, a célmappát, az engedélylistát és a segédprogram telepítését.',422);
+        if ($output===false || $exit!==0) throw new RuntimeException('A másolási segédprogram válasza nem igazolt. Ellenőrizd az SSH-kapcsolatot.');
+        return json_decode($output,true,512,JSON_THROW_ON_ERROR);
     }
     public function test(array $node): void
     {
