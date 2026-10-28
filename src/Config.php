@@ -12,8 +12,11 @@ final class Config
         $environment = getenv($name);
         if ($environment !== false) return $environment;
         if (!is_file(self::path())) return $default;
-        $settings = json_decode(file_get_contents(self::path()), true);
-        if (!is_array($settings)) throw new RuntimeException('Nem olvasható a helyi konfiguráció.');
+        if (!is_readable(self::path())) throw new SetupException('A config/local.json nem olvasható a PHP-folyamat számára. Ellenőrizd a fájl tulajdonosát és olvasási jogosultságát.');
+        $contents = file_get_contents(self::path());
+        if ($contents === false) throw new SetupException('A config/local.json nem olvasható a PHP-folyamat számára. Ellenőrizd a fájl tulajdonosát és olvasási jogosultságát.');
+        $settings = json_decode($contents, true);
+        if (!is_array($settings)) throw new SetupException('A config/local.json hibás JSON-t tartalmaz. Állítsd vissza a saját konfigurációd mentését; a telepítőt ne futtasd újra a meglévő adatbázison.');
         return (string)($settings[$name] ?? $default);
     }
 }

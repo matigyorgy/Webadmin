@@ -1,6 +1,6 @@
 <?php
 declare(strict_types=1);
-require dirname(__DIR__) . '/autoload.php';
+require dirname(__DIR__) . '/bootstrap.php';
 GameDock\WebSession::start();
 $root=dirname(__DIR__);
 $installed=GameDock\Config::installed();
@@ -37,7 +37,5 @@ try {
         'https'=>isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off',
     ]);
 } catch (Throwable $e) {
-    http_response_code(503);
-    header('Content-Type: text/plain; charset=UTF-8');
-    echo 'A telepítő megjelenítéséhez a PHP-folyamatnak írnia kell a var/smarty/compile könyvtárat. Állítsd be a könyvtár jogosultságait, majd frissítsd az oldalt.';
+    GameDock\BootstrapErrorHandler::exception($e);
 }

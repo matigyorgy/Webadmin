@@ -125,3 +125,37 @@ A mellékelt könyvtárak és az SSH-kulcsok betöltésének önálló tesztje: 
 `php tests/installer.php` a mezők ellenőrzését teszteli. A MySQL-integrációhoz add meg a `TEST_MYSQL_HOST` és `TEST_MYSQL_PASSWORD` környezeti változókat egy **kizárólag tesztelésre használt**, root felhasználóval elérhető MySQL-példányhoz. A teszt saját véletlen nevű adatbázist készít és eltakarít. A `php tests/templates.php` a telepítő űrlapját, zárolt állapotát és sikeroldalát is ellenőrzi.
 
 A webes telepítési folyamat PHP 8.2 + MySQL 8.4 alatt ellenőrizve: űrlap, CSRF, hibás SQL-adatok, táblák létrehozása és hiba utáni visszavonása, admin/node/server felvétel, konfigurációs és kulcsjogosultságok, telepítőzár, első bejelentkezés. Valódi játékszerverhez SSH-kapcsolatot ezek a tesztek nem létesítenek.
+
+## 500-as hiba diagnosztikája
+
+A teljes legfrissebb ZIP-et töltsd fel, a `lib/` könyvtárral és a gyökérben lévő `bootstrap.php` fájllal együtt. Meglévő telepítés frissítésekor őrizd meg a saját `config/local.json`, `config/ssh-private.pem` és `config/ssh-public.pub` fájljaidat. A telepítőt ne futtasd újra a meglévő adatbázison.
+
+A webes PHP-verziót a domainhez tartozó tárhelybeállításban ellenőrizd: PHP 8.2+ szükséges. A parancssori PHP verziója ettől eltérhet. A dokumentumgyökér a projekt `public/` könyvtára legyen, a teljes projekt többi könyvtára pedig egy szinttel feljebb maradjon.
+
+Az indulás már olvasható üzenettel jelzi az alacsony PHP-verziót, hiányzó fő fájlokat, nem írható Smarty-könyvtárat, nem olvasható/hibás konfigurációt és nem működő PHP sessiont. Váratlan hibánál a válaszban hibaazonosító jelenik meg; ugyanaz az azonosító megtalálható a szerver PHP error_log naplójában a részletes okkal. A hibaoldal nem ír ki jelszót, privát kulcsot vagy stack trace-t. A webszerver által még a PHP indulása előtt visszaadott hibákat továbbra is a webszerver error_log naplójában kell keresni.
+
+A minimális `/check.php` oldal autoload és adatbázis nélkül megmutatja a webes PHP-verziót, a pdo_mysql meglétét, a fő fájlok olvashatóságát és a könyvtárak írhatóságát. Jelszót és privát kulcsot nem olvas. Ha ez az oldal is 500-at ad, a hibát a PHP/webszerver tárhelybeállításaiban és error_log naplójában kell keresni.
+
+### Ha a tárhely webgyökere `web/`
+
+A `public/` könyvtár tartalmát a tárhely `web/` könyvtárába másold. A projekt többi elemét a `web/` mellé, egy szinttel feljebb töltsd fel. Például:
+
+```text
+/home/www/dev.vgh.hu/
+  autoload.php
+  bootstrap.php
+  src/
+  lib/
+  templates/
+  database/
+  config/
+  var/
+  web/                 ← a domain dokumentumgyökere
+    index.php          ← a projekt public/index.php fájlja
+    install.php
+    check.php
+    style.css
+    vendor/bootstrap/
+```
+
+Ha a naplóban `Failed opening required '/home/www/dev.vgh.hu/autoload.php'` szerepel, a gyökérben lévő fájlokat is fel kell tölteni, nem elég csak a `public/` tartalma. A betöltési útvonalat ne irányítsd át egy véletlen másik autoload.php fájlra. A `lib/`, `config/` és más belső könyvtárakat ne tedd a nyilvános `web/` alá.
