@@ -1,7 +1,7 @@
 # Egyszerű webes telepítés
 
 1. Töltsd le a GitHub ZIP-et, és csomagold ki a tárhelyre. PHP 8.2+ és a **pdo_mysql** bővítmény szükséges; Composer nem kell.
-2. A domain dokumentumgyökere a projekt **public/** könyvtára legyen. A **config/** és **var/** könyvtár a PHP-folyamat számára írható legyen; ne használj 777 jogosultságot. Nyilvános szerveren HTTPS-t használj, és a frissen feltöltött telepítőt csak te érhesd el a telepítés befejezéséig.
+2. A domain dokumentumgyökere a projekt **web/** könyvtára legyen. A **config/** és **var/** könyvtár a PHP-folyamat számára írható legyen; ne használj 777 jogosultságot. Nyilvános szerveren HTTPS-t használj, és a frissen feltöltött telepítőt csak te érhesd el a telepítés befejezéséig.
 3. Nyisd meg a domaint: automatikusan a webes telepítőre irányít. Add meg az előzetesen létrehozott, **üres** MySQL-adatbázis címét, portját, nevét, felhasználóját, jelszavát, valamint az első admin e-mail-címét és jelszavát. Opcionálisan megadhatod az első Linux-gépet és a már telepített játékszerverét is.
 4. Kattints a **Telepítés indítása** gombra. A táblák, adminfiók, SSH-kulcspár és a helyi konfiguráció automatikusan elkészülnek. Nem kell SQL-t importálni, környezeti változókat megadni vagy parancssorban adminfiókot készíteni. Siker után a telepítő lezárul.
 5. Másold a sikeroldalon megjelenő nyilvános SSH-kulcsot a Linux-gép kijelölt SSH-felhasználójának `~/.ssh/authorized_keys` fájljába. A nyilvános kulcs később a `config/ssh-public.pub` fájlból is kiolvasható. A privát kulcsot ne másold és ne tedd a webgyökérbe.
@@ -29,8 +29,8 @@ Kezdeti, objektumorientált PHP 8.2+ / MySQL 8 játékszerver-kezelő. Játékok
 3. Hozz létre MySQL adatbázist és külön felhasználót. Üres adatbázisba egyszer importáld a `database/schema.sql` fájlt. Korábbi HTTP-ügynökös telepítésnél mentés után a `database/migrate-ssh.sql` fájlt használd helyette, majd töltsd ki az új SSH mezőket minden csomóponthoz.
 4. A PHP folyamat környezetében add meg: `DB_DSN=mysql:host=localhost;dbname=webadmin;charset=utf8mb4`, `DB_USER`, `DB_PASSWORD`, `SSH_PRIVATE_KEY_PATH` (abszolút útvonal a webgyökéren kívül), opcionálisan `SSH_KEY_PASSPHRASE`. Nincs automatikus .env-betöltés. Titkokat ne tegyél Gitbe.
 5. Első admin: biztonságos terminálban `read -rs NEW_USER_PASSWORD`, majd `export NEW_USER_PASSWORD`, aztán `php bin/create-user.php admin@example.com --admin`. Végül `unset NEW_USER_PASSWORD`. Legalább 12 karakteres jelszó kell. Normál felhasználóhoz hagyd el a `--admin` kapcsolót.
-6. A `var/smarty/compile` könyvtár legyen a PHP-FPM felhasználójának írható, de ne legyen 777. A dokumentumgyökér kizárólag `public/`. Élesben HTTPS és PHP-FPM szükséges.
-7. Helyi fejlesztés a projekt gyökeréből: `COOKIE_SECURE=0 php -S 127.0.0.1:8080 -t public`. A COOKIE_SECURE=0 csak helyi HTTP-hez való.
+6. A `var/smarty/compile` könyvtár legyen a PHP-FPM felhasználójának írható, de ne legyen 777. A dokumentumgyökér kizárólag `web/`. Élesben HTTPS és PHP-FPM szükséges.
+7. Helyi fejlesztés a projekt gyökeréből: `COOKIE_SECURE=0 php -S 127.0.0.1:8080 -t web`. A COOKIE_SECURE=0 csak helyi HTTP-hez való.
 
 ## SSH2 Linux-kapcsolat
 
@@ -70,13 +70,13 @@ A game értékei: minecraft, cs2, fivem, css. Az SSH host és user megbízható 
 
 ## Felépítés
 
-- `public/index.php`: alkalmazásindítás, session és HTTP-fejlécek.
+- `web/index.php`: alkalmazásindítás, session és HTTP-fejlécek.
 - `src/PanelController.php`: kérések, hitelesítés, tulajdonosi ellenőrzés, auditálás.
 - `src/Database.php`: PDO-adatelérés.
 - `src/SshClient.php`: kulcsos SSH2, hostkulcs-ellenőrzés, korlátozott systemctl parancsok.
 - `src/SmartyView.php`: Smarty, automatikus HTML-escape, oldalak gyorsítótárazása kikapcsolva.
 - `templates/panel.tpl`, `templates/partials/csrf.tpl`: HTML / Smarty, PHP és hálózati hívások nélkül.
-- `public/vendor/bootstrap`: Bootstrap CSS és licenc; `lib/`: mellékelt PHP-könyvtárak; `autoload.php`: saját osztálybetöltő.
+- `web/vendor/bootstrap`: Bootstrap CSS és licenc; `lib/`: mellékelt PHP-könyvtárak; `autoload.php`: saját osztálybetöltő.
 
 ## Ellenőrzés és korlátok
 
@@ -130,7 +130,7 @@ A webes telepítési folyamat PHP 8.2 + MySQL 8.4 alatt ellenőrizve: űrlap, CS
 
 A teljes legfrissebb ZIP-et töltsd fel, a `lib/` könyvtárral és a gyökérben lévő `bootstrap.php` fájllal együtt. Meglévő telepítés frissítésekor őrizd meg a saját `config/local.json`, `config/ssh-private.pem` és `config/ssh-public.pub` fájljaidat. A telepítőt ne futtasd újra a meglévő adatbázison.
 
-A webes PHP-verziót a domainhez tartozó tárhelybeállításban ellenőrizd: PHP 8.2+ szükséges. A parancssori PHP verziója ettől eltérhet. A dokumentumgyökér a projekt `public/` könyvtára legyen, a teljes projekt többi könyvtára pedig egy szinttel feljebb maradjon.
+A webes PHP-verziót a domainhez tartozó tárhelybeállításban ellenőrizd: PHP 8.2+ szükséges. A parancssori PHP verziója ettől eltérhet. A dokumentumgyökér a projekt `web/` könyvtára legyen, a teljes projekt többi könyvtára pedig egy szinttel feljebb maradjon.
 
 Az indulás már olvasható üzenettel jelzi az alacsony PHP-verziót, hiányzó fő fájlokat, nem írható Smarty-könyvtárat, nem olvasható/hibás konfigurációt és nem működő PHP sessiont. Váratlan hibánál a válaszban hibaazonosító jelenik meg; ugyanaz az azonosító megtalálható a szerver PHP error_log naplójában a részletes okkal. A hibaoldal nem ír ki jelszót, privát kulcsot vagy stack trace-t. A webszerver által még a PHP indulása előtt visszaadott hibákat továbbra is a webszerver error_log naplójában kell keresni.
 
@@ -138,7 +138,7 @@ A minimális `/check.php` oldal autoload és adatbázis nélkül megmutatja a we
 
 ### Ha a tárhely webgyökere `web/`
 
-A `public/` könyvtár tartalmát a tárhely `web/` könyvtárába másold. A projekt többi elemét a `web/` mellé, egy szinttel feljebb töltsd fel. Például:
+A projekt már `web/` könyvtárat tartalmaz. Ezt másold a tárhely azonos nevű `web/` könyvtárába. A projekt többi elemét a `web/` mellé, egy szinttel feljebb töltsd fel. Például:
 
 ```text
 /home/www/dev.vgh.hu/
@@ -151,11 +151,11 @@ A `public/` könyvtár tartalmát a tárhely `web/` könyvtárába másold. A pr
   config/
   var/
   web/                 ← a domain dokumentumgyökere
-    index.php          ← a projekt public/index.php fájlja
+    index.php
     install.php
     check.php
     style.css
     vendor/bootstrap/
 ```
 
-Ha a naplóban `Failed opening required '/home/www/dev.vgh.hu/autoload.php'` szerepel, a gyökérben lévő fájlokat is fel kell tölteni, nem elég csak a `public/` tartalma. A betöltési útvonalat ne irányítsd át egy véletlen másik autoload.php fájlra. A `lib/`, `config/` és más belső könyvtárakat ne tedd a nyilvános `web/` alá.
+Ha a naplóban `Failed opening required '/home/www/dev.vgh.hu/autoload.php'` szerepel, a gyökérben lévő fájlokat is fel kell tölteni, nem elég csak a `web/` tartalma. A betöltési útvonalat ne irányítsd át egy véletlen másik autoload.php fájlra. A `lib/`, `config/` és más belső könyvtárakat ne tedd a nyilvános `web/` alá.
