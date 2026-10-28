@@ -4,8 +4,8 @@ Kezdeti, objektumorientált PHP 8.2+ / MySQL 8 játékszerver-kezelő. Játékok
 
 ## Telepítés
 
-1. PHP 8.2+, Composer 2, pdo_mysql és mbstring szükséges.
-2. A projekt gyökerében: `composer install --no-dev --prefer-dist --no-interaction`.
+1. PHP 8.2+, pdo_mysql és mbstring szükséges. Composer nem kell.
+2. Töltsd le és csomagold ki a teljes projektet. A `lib/` könyvtár már tartalmazza a szükséges Smarty és SSH2 könyvtárakat; nincs függőségtelepítési lépés.
 3. Hozz létre MySQL adatbázist és külön felhasználót. Üres adatbázisba egyszer importáld a `database/schema.sql` fájlt. Korábbi HTTP-ügynökös telepítésnél mentés után a `database/migrate-ssh.sql` fájlt használd helyette, majd töltsd ki az új SSH mezőket minden csomóponthoz.
 4. A PHP folyamat környezetében add meg: `DB_DSN=mysql:host=localhost;dbname=webadmin;charset=utf8mb4`, `DB_USER`, `DB_PASSWORD`, `SSH_PRIVATE_KEY_PATH` (abszolút útvonal a webgyökéren kívül), opcionálisan `SSH_KEY_PASSPHRASE`. Nincs automatikus .env-betöltés. Titkokat ne tegyél Gitbe.
 5. Első admin: biztonságos terminálban `read -rs NEW_USER_PASSWORD`, majd `export NEW_USER_PASSWORD`, aztán `php bin/create-user.php admin@example.com --admin`. Végül `unset NEW_USER_PASSWORD`. Legalább 12 karakteres jelszó kell. Normál felhasználóhoz hagyd el a `--admin` kapcsolót.
@@ -56,11 +56,11 @@ A game értékei: minecraft, cs2, fivem, css. Az SSH host és user megbízható 
 - `src/SshClient.php`: kulcsos SSH2, hostkulcs-ellenőrzés, korlátozott systemctl parancsok.
 - `src/SmartyView.php`: Smarty, automatikus HTML-escape, oldalak gyorsítótárazása kikapcsolva.
 - `templates/panel.tpl`, `templates/partials/csrf.tpl`: HTML / Smarty, PHP és hálózati hívások nélkül.
-- `public/vendor/bootstrap`: Bootstrap CSS és licenc; `vendor/`: Composer-függőségek.
+- `public/vendor/bootstrap`: Bootstrap CSS és licenc; `lib/`: mellékelt PHP-könyvtárak; `autoload.php`: saját osztálybetöltő.
 
 ## Ellenőrzés és korlátok
 
-`composer test` hat renderelési ellenőrzést futtat: login, CSRF, üres lista, admin fejléc, HTML-escape, szerverműveletek. A PHP-fájlokat `php -l` paranccsal ellenőrizd. A teljes integrációhoz MySQL és valódi SSH/systemd gép kell: két normál felhasználóval ellenőrizd az elszigetelést, majd a vezérlést, állapotot és audit_log rekordokat.
+`php tests/templates.php` hat renderelési ellenőrzést futtat: login, CSRF, üres lista, admin fejléc, HTML-escape, szerverműveletek. A PHP-fájlokat `php -l` paranccsal ellenőrizd. A teljes integrációhoz MySQL és valódi SSH/systemd gép kell: két normál felhasználóval ellenőrizd az elszigetelést, majd a vezérlést, állapotot és audit_log rekordokat.
 
 Nem éles használatra kész termék. Nincs még webes fiók-/csomópont-/szerveradminisztráció, játéktelepítés, fájlkezelés, mérőszám, jelszó-visszaállítás vagy login rate limit. Az állapot szinkron lekérdezése sok nem elérhető csomóponttal lassú lehet. Az elfogadott systemctl parancs nem bizonyítja a játék hálózati elérhetőségét. A környezetből végzett teljes integrációs teszt külön szükséges.
 
@@ -90,4 +90,12 @@ A parancsparamétert a segédprogram szigorúan dekódolja és validálja; nem f
 
 A tmux-/journald-integráció és a játékok telepítése nem automatikus. A segédprogram nem biztosít terminál-/shell-hozzáférést a webfelületen. Ha a játék nem tmux alatt fut, az indítás/leállítás és journald-napló továbbra is használható, a parancsküldés hibával leáll.
 
-További ellenőrzések: a `composer test` SSH-parancs-engedélyezési teszteket is futtat. A Linux-segédprogram tesztjei: `python3 -m unittest discover -s tests -p "test_*.py"` (mockolt rendszerparancsok).
+További ellenőrzések: a `php tests/templates.php` SSH-parancs-engedélyezési teszteket is futtat. A Linux-segédprogram tesztjei: `python3 -m unittest discover -s tests -p "test_*.py"` (mockolt rendszerparancsok).
+
+## Composer nélküli kiadás
+
+A telepítés és futtatás teljesen Composer nélkül történik. A mellékelt verziókat és upstream commitokat a `lib/dependencies.json` rögzíti, a licencek a csomagkönyvtárakban találhatók. A saját osztálybetöltő a projekt és a függőségek névtereit kezeli. A `lib/checksums.sha256` a beépített könyvtárfájlok ellenőrzőösszegeit tartalmazza: ellenőrzés a projekt gyökerében `sha256sum -c lib/checksums.sha256`. A függőségek biztonsági frissítéseit ezután a projekt új kiadásával kell telepíteni.
+
+Frissítéskor a korábbi `vendor/` könyvtár már nem használt. Az adatbázis- és SSH-környezeti változók, a dokumentumgyökér és a Smarty írható fordítási könyvtára változatlan marad.
+
+A mellékelt könyvtárak és az SSH-kulcsok betöltésének önálló tesztje: `php tests/dependencies.php` (hálózati kapcsolat nélkül).
