@@ -61,4 +61,25 @@ class ProvisionTests(unittest.TestCase):
         with patch.object(provision.os,'geteuid',return_value=1001):
             with self.assertRaises(ValueError):provision.copy_files(str(source),str(self.target/'copy'))
 
+    def test_port_reconfiguration_preserves_other_settings(self):
+        root=self.root/'instance';root.mkdir();(root/'custom.cfg').write_text('listen={{PORT}}\nname=original\n')
+        settings={'game':'custom','port':25012}
+        with patch.object(provision.os,'geteuid',return_value=1001):
+            provision.configure(root,settings)
+            (root/'custom.cfg').write_text((root/'custom.cfg').read_text().replace('original','edited'))
+            provision.configure(root,dict(settings,port=25987,reconfigure=True))
+        self.assertEqual((root/'custom.cfg').read_text(),'listen=25987\nname=edited\n')
+    def test_minecraft_and_fivem_port_change(self):
+        root=self.root/'instance';root.mkdir();(root/'server.properties').write_text('motd=keep\nserver-port=25000\nquery.port=25000\n')
+        with patch.object(provision.os,'geteuid',return_value=1001):
+            provision.configure(root,{'game':'minecraft','minecraft':True,'eula':True,'port':25599,'reconfigure':True})
+            self.assertIn('server-port=25599',(root/'server.properties').read_text());self.assertIn('motd=keep',(root/'server.properties').read_text())
+            (root/'server.cfg').write_text('sv_hostname "keep"\nendpoint_add_tcp "0.0.0.0:25000"\n')
+            provision.configure(root,{'game':'fivem','port':25777,'reconfigure':True})
+            self.assertIn('endpoint_add_udp "0.0.0.0:25777"',(root/'server.cfg').read_text());self.assertIn('sv_hostname "keep"',(root/'server.cfg').read_text())
+    def test_port_manifest_escape_rejected(self):
+        root=self.root/'instance';root.mkdir();(root/'.gamedock-ports.json').write_text('{"port":25000,"files":["../outside/secret.cfg"]}')
+        with patch.object(provision.os,'geteuid',return_value=1001):
+            with self.assertRaises(ValueError):provision.configure(root,{'game':'custom','port':25555,'reconfigure':True})
+
 if __name__=='__main__':unittest.main()

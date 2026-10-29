@@ -116,3 +116,9 @@ $selected=['id'=>1,'name'=>'Survival','game_name'=>'Minecraft','node_name'=>'Lin
 $html=renderTemplate($view,'panel.tpl',array_replace($base,['user'=>['id'=>2,'email'=>'client@example.com','is_admin'=>0],'selected'=>$selected]));
 check(str_contains($html,'[2001:db8::1]:25523') && str_contains($html,'2048 MiB') && !str_contains($html,'150%') && str_contains($html,'data-memory'),'Connection/resource view missing');
 echo "Connection address and resource view passed.\n";
+
+$prepared=GameDock\StartupCommand::prepare('java -Xms1G -Xmx4G -jar server.jar nogui',['memory_limit_mb'=>2048,'cpu_limit_percent'=>150]);
+check(str_contains($prepared,'GAMEDOCK_MEMORY_MB=2048 GAMEDOCK_CPU_PERCENT=150') && str_contains($prepared,'-Xmx1638M') && str_contains($prepared,'-XX:ActiveProcessorCount=2'),'Startup limits not applied');
+$prepared=GameDock\StartupCommand::prepare($prepared,['memory_limit_mb'=>1024,'cpu_limit_percent'=>100]);
+check(substr_count($prepared,'export GAMEDOCK_MEMORY_MB=')===1 && str_contains($prepared,'-Xmx819M') && !str_contains($prepared,'ActiveProcessorCount=2'),'Updated startup limits are stale');
+echo "Startup command limit checks passed.\n";

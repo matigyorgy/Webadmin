@@ -52,11 +52,21 @@ PYTHON;
         if(!$raw)throw new RuntimeException('A hostkulcs nem kérdezhető le.');
         return 'SHA256:'.rtrim(base64_encode(hash('sha256',$raw,true)),'=');
     }
-    public function templates(array $node,string $action): array
+    public function templates(array $node,string $action,string $key=''): array
     {
-        if(!in_array($action,['catalog','sync'],true))throw new RuntimeException('Ismeretlen katalógusművelet.');
-        $ssh=$this->connect($node);$ssh->enableQuietMode();$output=$ssh->exec('/usr/bin/sudo -n /usr/local/sbin/gamedock-templates '.$action);
+        if(!in_array($action,['catalog','sync','delete'],true))throw new RuntimeException('Ismeretlen katalógusművelet.');
+        $ssh=$this->connect($node);$ssh->enableQuietMode();$output=$ssh->exec('/usr/bin/sudo -n /usr/local/sbin/gamedock-templates '.$action.($action==='delete' ? ' '.escapeshellarg($key) : ''));
         return TemplateCommandResult::parse($output,$ssh->getExitStatus(),(string)$ssh->getStdError(),$ssh->isTimeout());
+    }
+    public function versions(array $server,string $action,array $payload): array
+    {
+        if(!in_array($action,['create','status'],true) || !preg_match('/\A[a-f0-9]{32}\z/',(string)($payload['job'] ?? ''))) throw new RuntimeException('Érvénytelen verzióváltási művelet.');
+        $argument=$action==='status' ? $payload['job'] : base64_encode(json_encode($payload,JSON_THROW_ON_ERROR));
+        $ssh=$this->connect($server);$ssh->enableQuietMode();
+        $output=$ssh->exec('/usr/bin/sudo -n /usr/local/sbin/gamedock-versions '.$action.' '.escapeshellarg($argument));
+        if($output===false || $ssh->isTimeout() || $ssh->getExitStatus()===null) throw new RuntimeException('A verzióváltás Linux-válasza nem igazolt. Ellenőrizd az SSH-kapcsolatot.');
+        if($ssh->getExitStatus()!==0) throw new RuntimeException('A Linux-gép elutasította a verzióváltási műveletet. A szerver legyen leállítva, a sablon kész állapotú, és a friss Linux-segédprogramok legyenek telepítve.',422);
+        return json_decode($output,true,512,JSON_THROW_ON_ERROR);
     }
     public function provision(array $node,string $action,array $payload): array
     {

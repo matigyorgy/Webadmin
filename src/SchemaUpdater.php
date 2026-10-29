@@ -16,7 +16,11 @@ final class SchemaUpdater
         foreach (['startup_command','install_source','install_folder','provision_job','provision_state','provision_message','port','minecraft_type','minecraft_version','memory_limit_mb','cpu_limit_percent'] as $name) {
             if (!in_array($name,$available,true)) return false;
         }
-        return $this->publicHostEnabled() && (new GameRegistry($this->db))->available();
+        return $this->versionsEnabled() && $this->publicHostEnabled() && (new GameRegistry($this->db))->available();
+    }
+    public function versionsEnabled(): bool
+    {
+        return (bool)$this->db->query("SHOW TABLES LIKE 'server_version_jobs'")->fetch();
     }
     public function publicHostEnabled(): bool
     {
@@ -33,6 +37,7 @@ final class SchemaUpdater
         $type=$this->db->query("SHOW COLUMNS FROM servers LIKE 'game'")->fetch();
         if(str_starts_with($type['Type'],'enum('))$missing[]='MODIFY COLUMN game VARCHAR(32) NOT NULL';
         try {
+            if(!$this->versionsEnabled()) $this->db->query('CREATE TABLE server_version_jobs (server_id BIGINT UNSIGNED PRIMARY KEY,job VARCHAR(32) NOT NULL,state VARCHAR(16) NOT NULL,startup_command TEXT NOT NULL,install_source VARCHAR(255) NOT NULL,minecraft_type VARCHAR(24) NOT NULL,minecraft_version VARCHAR(32) NOT NULL,message VARCHAR(500) NULL,FOREIGN KEY (server_id) REFERENCES servers(id) ON DELETE CASCADE)');
             if(!$this->publicHostEnabled()) $this->db->query('ALTER TABLE nodes ADD COLUMN public_host VARCHAR(255) NULL');
             if($missing)$this->db->query('ALTER TABLE servers '.implode(',',$missing));
             if(!(new GameRegistry($this->db))->available()) {
@@ -43,5 +48,6 @@ final class SchemaUpdater
         catch (Throwable $e) {
             if (!$this->provisionEnabled()) throw new RuntimeException('Az új szerverfunkciókhoz ALTER TABLE jogosultság szükséges. Engedélyezd a panel adatbázis-felhasználójának, majd próbáld újra.');
         }
+        foreach (['game_types'=>['template_path','startup_command'],'servers'=>['install_source','startup_command']] as $table=>$fields) foreach($fields as $field) $this->db->query("UPDATE $table SET $field=REPLACE($field,?,?) WHERE $field LIKE ?",['/srv/gamedock/templates','/home/gamedock/templates','%/srv/gamedock/templates%']);
     }
 }

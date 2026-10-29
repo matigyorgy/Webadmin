@@ -21,8 +21,10 @@ final class AdminController
         try {
             if ($_SERVER['REQUEST_METHOD']==='POST') {
                 $auth->csrf();
-                if($section==='templates' && ($_POST['action'] ?? '')==='sync') {
-                    $node=Validation::id($_POST['node_id'] ?? 0);(new TemplateService($this->db,$this->ssh))->sync($user,$node);
+                if($section==='templates' && in_array($_POST['action'] ?? '',['sync','delete_template'],true)) {
+                    $node=Validation::id($_POST['node_id'] ?? 0);$templates=new TemplateService($this->db,$this->ssh);
+                    if ($_POST['action']==='delete_template') {$templates->delete($user,$node,(string)($_POST['template_key'] ?? ''));$_SESSION['admin_notice']='A Minecraft-template törölve.';}
+                    else $templates->sync($user,$node);
                     header('Location: /admin.php?section=templates&node='.$node,true,303);return;
                 }
                 if($section==='games' && ($_POST['action'] ?? '')==='delete') {
@@ -67,7 +69,7 @@ final class AdminController
             $error=$e instanceof RuntimeException && !$e instanceof PDOException ? $e->getMessage() : 'A mentés nem sikerült. Az e-mail már foglalt lehet, vagy a bejegyzésre más adat hivatkozik.';
             if (($_POST['action'] ?? '')==='save') {
                 $record=[];
-                foreach (['id','email','is_admin','name','ssh_host','public_host','ssh_port','ssh_user','ssh_fingerprint','user_id','node_id','game','unit_name','startup_command','install_source','install_folder','slug','existing_slug','template_path','provider','minecraft_template','memory_limit_mb','cpu_limit_percent'] as $field) $record[$field]=is_scalar($_POST[$field] ?? null) ? (string)$_POST[$field] : '';
+                foreach (['id','email','is_admin','name','ssh_host','public_host','ssh_port','ssh_user','ssh_fingerprint','user_id','node_id','game','unit_name','startup_command','install_source','install_folder','slug','existing_slug','template_path','provider','minecraft_template','memory_limit_mb','cpu_limit_percent','port'] as $field) $record[$field]=is_scalar($_POST[$field] ?? null) ? (string)$_POST[$field] : '';
             }
         }
         try {

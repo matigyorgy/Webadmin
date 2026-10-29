@@ -49,3 +49,14 @@ CREATE TABLE audit_log (
  outcome VARCHAR(32) NOT NULL,
  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+CREATE TABLE server_version_jobs (
+ server_id BIGINT UNSIGNED PRIMARY KEY,
+ job VARCHAR(32) NOT NULL,
+ state VARCHAR(16) NOT NULL,
+ startup_command TEXT NOT NULL,
+ install_source VARCHAR(255) NOT NULL,
+ minecraft_type VARCHAR(24) NOT NULL,
+ minecraft_version VARCHAR(32) NOT NULL,
+ message VARCHAR(500) NULL,
+ FOREIGN KEY (server_id) REFERENCES servers(id) ON DELETE CASCADE
+);

@@ -146,6 +146,23 @@ def configure(folder,settings):
     port=settings['port']
     if not isinstance(port,int) or not 25000<=port<=25999:raise ValueError('Invalid port')
     root=Path(folder)
+    # Remember only files which originally contained a port placeholder.
+    # Reconfigure as the instance user, preserving every other edited setting.
+    manifest=root/'.gamedock-ports.json'
+    previous={}
+    if manifest.exists():
+        previous=json.loads(manifest.read_text())
+        if not isinstance(previous,dict) or not isinstance(previous.get('files',[]),list):raise ValueError('Invalid port manifest')
+    old=previous.get('port',settings.get('previous_port'))
+    tracked=set()
+    for relative in previous.get('files',[]):
+        if not isinstance(relative,str):raise ValueError('Invalid config path')
+        target=root/relative
+        if not target.resolve().is_relative_to(root.resolve()):raise ValueError('Config path escapes game directory')
+        if target.is_file() and target.stat().st_size<1024*1024:
+            text=target.read_text()
+            if type(old) is int and 25000<=old<=25999:text=re.sub(r'(?<![0-9])'+str(old)+r'(?![0-9])',str(port),text)
+            target.write_text(text);tracked.add(relative)
     if settings.get('minecraft'):
         if not settings.get('eula'):raise ValueError('Minecraft EULA acceptance required')
         props=root/'server.properties';lines=props.read_text().splitlines() if props.exists() else []
@@ -156,11 +173,13 @@ def configure(folder,settings):
         file=root/'server.cfg';lines=file.read_text().splitlines() if file.exists() else []
         lines=[line for line in lines if not line.lstrip().startswith(('endpoint_add_tcp','endpoint_add_udp'))]
         file.write_text('\n'.join(lines+['endpoint_add_tcp "0.0.0.0:'+str(port)+'"','endpoint_add_udp "0.0.0.0:'+str(port)+'"'])+'\n')
-    for file in root.rglob('*'):
+    for file in ([] if settings.get('reconfigure') else root.rglob('*')):
         if file.is_file() and file.suffix.lower() in ('.cfg','.properties','.json','.yml','.yaml','.txt') and file.stat().st_size<1024*1024:
             try:content=file.read_text()
             except UnicodeError:continue
-            if '{{PORT}}' in content:file.write_text(content.replace('{{PORT}}',str(port)))
+            if '{{PORT}}' in content:
+                file.write_text(content.replace('{{PORT}}',str(port)));tracked.add(str(file.relative_to(root)))
+    manifest.write_text(json.dumps({'port':port,'files':sorted(tracked)}))
 
 def worker(job_id):
     with locked() as initial_lock:
@@ -196,6 +215,8 @@ if __name__=='__main__':
         if action=='copy' and len(sys.argv) in (4,5):
             copy_files(sys.argv[2],sys.argv[3])
             if len(sys.argv)==5:configure(sys.argv[3],json.loads(base64.b64decode(sys.argv[4],validate=True)))
+        elif action=='reconfigure' and len(sys.argv)==4:
+            configure(sys.argv[2],json.loads(base64.b64decode(sys.argv[3],validate=True)))
         elif os.geteuid()!=0:raise ValueError('Root helper required')
         elif action=='worker' and len(sys.argv)==3:worker(sys.argv[2])
         elif action=='status' and len(sys.argv)==3:

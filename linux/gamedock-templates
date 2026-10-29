@@ -199,6 +199,29 @@ def catalog():
         if value.get('state')=='running' and value.get('worker') and not rt.alive(value['worker'],0):value.update(state='failed',message='A katalógusfrissítés megszakadt. Újraindítható.');atomic(CACHE+'/catalog.json',value)
         return value
     except FileNotFoundError:return {'state':'idle','templates':[],'message':'Még nincs szinkronizált katalógus.'}
+def delete_template(key):
+    if not isinstance(key,str) or len(key)>200:raise ValueError('Invalid template key')
+    os.makedirs(CACHE,mode=0o700,exist_ok=True)
+    with open(CACHE+'/lock','a') as lock,open(CONFIG+'.lock','a') as config_lock:
+        fcntl.flock(lock,fcntl.LOCK_EX);fcntl.flock(config_lock,fcntl.LOCK_EX)
+        value=catalog()
+        if value.get('state')=='running':raise ValueError('Template synchronization is running')
+        row=next((row for row in value['templates'] if row['key']==key),None)
+        if not row:raise ValueError('Unknown template')
+        settings=cfg();root=Path(settings['_provision']['source_root'])/'minecraft'
+        parts=[row.get('type',''),row.get('version',''),row.get('build','')]
+        if any(not re.fullmatch(r'[A-Za-z0-9._-]{1,100}',part) or part in ('.','..') for part in parts):raise ValueError('Invalid template path')
+        target=root.joinpath(*parts)
+        if row.get('path') and Path(row['path'])!=target:raise ValueError('Catalog path mismatch')
+        if not target.resolve().is_relative_to(root.resolve()) or target.is_symlink():raise ValueError('Template path escapes root')
+        for job_id in list(settings.get('_copy_jobs',{}).values())+list(settings.get('_version_jobs',{}).values()):
+            with open('/var/lib/gamedock/provision/jobs/'+job_id+'.json') as stream:job=json.load(stream)
+            source=job.get('data',{}).get('source') or job.get('source')
+            if job.get('state') in ('queued','running') and source==str(target):raise ValueError('Template is in use by an active copy job')
+        if target.exists():shutil.rmtree(target)
+        value['templates']=[entry for entry in value['templates'] if entry['key']!=key]
+        value['message']='A kiválasztott Minecraft-template törölve. A következő szinkronizálás újra letöltheti.'
+        atomic(CACHE+'/catalog.json',value);return value
 def sync():
     os.makedirs(CACHE,mode=0o700,exist_ok=True)
     with open(CACHE+'/lock','a') as lock:
@@ -249,6 +272,7 @@ if __name__=='__main__':
         elif action=='build' and len(sys.argv)==5:build(json.loads(base64.b64decode(sys.argv[2],validate=True)),sys.argv[3],sys.argv[4])
         elif os.geteuid()!=0:raise ValueError('Root helper required')
         elif action=='catalog':print(json.dumps(catalog(),ensure_ascii=False))
+        elif action=='delete' and len(sys.argv)==3:print(json.dumps(delete_template(sys.argv[2]),ensure_ascii=False))
         elif action=='sync':print(json.dumps(sync(),ensure_ascii=False))
         elif action=='worker':worker()
         else:raise ValueError('Unknown operation')

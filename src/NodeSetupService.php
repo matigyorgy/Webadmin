@@ -40,7 +40,7 @@ final class NodeSetupService
         }
         $folder=rtrim((string)$ssh->pwd(),'/').'/.gamedock-install-'.bin2hex(random_bytes(12));
         if(!$ssh->mkdir($folder,0700))throw new RuntimeException('A telepítési munkakönyvtár nem hozható létre.');
-        $files=['install.py','bootstrap.sh','gamedock_runtime.py','gamedock-launch','gamedock-runner','gamedock-provision','gamedock-templates'];
+        $files=['install.py','bootstrap.sh','gamedock_runtime.py','gamedock-launch','gamedock-runner','gamedock-provision','gamedock-versions','gamedock-templates'];
         foreach($files as $file) {
             $contents=file_get_contents(Config::root().'/linux/'.$file);
             if(!$ssh->put($folder.'/'.$file,$contents) || !hash_equals(hash('sha256',$contents),hash('sha256',(string)$ssh->get($folder.'/'.$file))))throw new RuntimeException('A telepítőfájl feltöltésének ellenőrzése sikertelen.');
@@ -48,7 +48,7 @@ final class NodeSetupService
         }
         $public=(new AdminService($this->db))->publicKey($actor);
         if(!$ssh->put($folder.'/panel.pub',$public))throw new RuntimeException('A nyilvános kulcs nem tölthető fel.');
-        $source=trim((string)($data['setup_source'] ?? '/srv/gamedock/templates'));
+        $source='/home/gamedock/templates';
         if(!str_starts_with($source,'/') || strlen($source)>255 || preg_match('/[\x00-\x1f\x7f]/',$source))throw new RuntimeException('Abszolút template gyökérmappa szükséges.');
         $_SESSION['node_setup'][$id]=$folder;
         $command=$prefix.'/usr/bin/nohup /bin/sh '.escapeshellarg($folder.'/bootstrap.sh').' '.escapeshellarg($source).' '.escapeshellarg($node['ssh_user']).' '.(($data['setup_packages'] ?? '')==='1' ? '1':'0').' '.(($data['setup_firewall'] ?? '')==='1' ? '1':'0').' > '.escapeshellarg($folder.'/setup.log').' 2>&1 < /dev/null &';

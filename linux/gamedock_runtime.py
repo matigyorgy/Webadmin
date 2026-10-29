@@ -51,6 +51,9 @@ def limits_payload(payload):
         value=data.get(key,0)
         if type(value) is not int or not 0<=value<=maximum:raise ValueError('Invalid limits')
         result[key]=value
+    if 'port' in data:
+        if type(data['port']) is not int or not 25000<=data['port']<=25999:raise ValueError('Invalid port')
+        result['port']=data['port']
     return result
 
 def prepare_cgroup(name,limits):

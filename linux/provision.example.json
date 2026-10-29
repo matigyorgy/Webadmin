@@ -1,6 +1,6 @@
 {
   "_provision": {
-    "source_root": "/srv/gamedock/templates",
+    "source_root": "/home/gamedock/templates",
     "target_root": "/home/gamedock",
     "allow_custom_games": true,
     "users": {

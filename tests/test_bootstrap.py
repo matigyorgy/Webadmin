@@ -8,7 +8,7 @@ class BootstrapTests(unittest.TestCase):
             binary=root/'bin';binary.mkdir();fake=binary/'python3'
             fake.write_text('#!/bin/sh\necho "fixture installer result" >&2\nexit '+str(exitcode)+'\n');fake.chmod(0o755)
             env=dict(os.environ,PATH=str(binary)+':'+os.environ['PATH'])
-            result=subprocess.run(['/bin/sh',str(root/'bootstrap.sh'),'/srv/gamedock/templates','gamedock','0','0'],env=env,capture_output=True,text=True)
+            result=subprocess.run(['/bin/sh',str(root/'bootstrap.sh'),'/home/gamedock/templates','gamedock','0','0'],env=env,capture_output=True,text=True)
             return result,json.loads((root/'setup-state.json').read_text())
     def test_failed_installer_identifies_phase(self):
         result,state=self.run_bootstrap(17)

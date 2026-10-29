@@ -49,6 +49,7 @@ if (consolePanel) {
         }
     }
     refresh.addEventListener('click', update);
+    document.addEventListener('server-operation-complete', update);
     setInterval(update, 5000);
     update();
 }
@@ -84,6 +85,8 @@ if (gameSelect) {
     const templates = document.getElementById('minecraft-template');
     async function updateGame() {
         const selected = gameSelect.selectedOptions[0];
+        const automaticName = document.querySelector('[data-game-name]');
+        if (automaticName) automaticName.value = selected?.textContent || '';
         const startup = document.getElementById('startup-command');
         const source = document.getElementById('install-source');
         if (startup) startup.placeholder = selected?.dataset.startup || '';
@@ -119,7 +122,12 @@ if(templatePanel) {
             const data=await response.json();if(!response.ok)throw Error(data.error);
             templatePanel.querySelector('[data-template-message]').textContent=data.message;
             const body=templatePanel.querySelector('tbody');body.replaceChildren();
-            for(const entry of data.templates || []) { const row=document.createElement('tr');for(const field of ['type','version','build','state','message']) {const cell=document.createElement('td');cell.textContent=entry[field] || '';row.append(cell);}body.append(row); }
+            for(const entry of data.templates || []) { const row=document.createElement('tr');for(const field of ['type','version','build','state','message']) {const cell=document.createElement('td');cell.textContent=entry[field] || '';row.append(cell);}const actions=document.createElement('td');
+            if(data.state!=='running') {
+                const form=document.createElement('form');form.method='post';form.action='/admin.php?section=templates&node='+encodeURIComponent(templatePanel.dataset.templateNode);
+                for(const [name,value] of Object.entries({csrf:templatePanel.dataset.csrf,node_id:templatePanel.dataset.templateNode,template_key:entry.key})) {const input=document.createElement('input');input.type='hidden';input.name=name;input.value=value;form.append(input);}
+                const button=document.createElement('button');button.className='btn btn-sm btn-outline-danger';button.name='action';button.value='delete_template';button.textContent='Törlés';form.append(button);actions.append(form);
+            }row.append(actions);body.append(row); }
             if(data.state!=='running')clearInterval(timer);
         } catch(error){templatePanel.querySelector('[data-template-message]').textContent=error.message;clearInterval(timer);}finally{busy=false;}
     },5000);
@@ -167,6 +175,99 @@ if (resources) {
             resources.querySelector('[data-resource-message]').textContent = 'A használati adatok nem érhetők el. Ellenőrizd a Linux-telepítést és az SSH-kapcsolatot.';
         } finally { readingResources = false; }
     };
+    document.addEventListener('server-operation-complete', updateResources);
     updateResources();
     setInterval(updateResources, 5000);
+}
+
+
+const serverControls = document.getElementById('server-controls');
+if (serverControls) {
+    let controlling = false;
+    serverControls.addEventListener('submit', async event => {
+        const action = event.submitter?.value;
+        if (!['start', 'stop', 'restart', 'status'].includes(action)) return;
+        event.preventDefault();
+        if (controlling) return;
+        controlling = true;
+        const feedback = document.getElementById('control-feedback');
+        const buttons = [...serverControls.querySelectorAll('button')];
+        const disabled = buttons.map(button => button.disabled);
+        const data = new FormData(serverControls);
+        data.set('action', action);
+        buttons.forEach(button => { button.disabled = true; });
+        feedback.textContent = 'Művelet folyamatban…';
+        feedback.className = 'small text-body-secondary';
+        try {
+            if (action !== 'status') {
+                const response = await fetch('/api.php', {method: 'POST', body: data, credentials: 'same-origin'});
+                const result = await response.json();
+                if (!response.ok) throw new Error(result.error || 'A vezérlési művelet sikertelen.');
+            }
+            feedback.textContent = action === 'status' ? 'Állapot frissítve.' : 'A vezérlési parancs lefutott.';
+            feedback.className = 'small text-success';
+            try {
+                showState(document.getElementById('server-state'), (await queryServer(data.get('server_id'), 'status')).state);
+            } catch (error) {
+                showState(document.getElementById('server-state'), 'nem elérhető');
+                feedback.textContent += ' Az új állapot nem kérdezhető le.';
+            }
+            document.dispatchEvent(new Event('server-operation-complete'));
+        } catch (error) {
+            feedback.textContent = error.message;
+            feedback.className = 'small text-danger';
+        } finally {
+            buttons.forEach((button, index) => { button.disabled = disabled[index]; });
+            controlling = false;
+        }
+    });
+}
+
+const versionPanel = document.getElementById('version-switch');
+if (versionPanel) {
+    const form = document.getElementById('version-form');
+    const choice = document.getElementById('version-choice');
+    const button = form.querySelector('button');
+    const message = versionPanel.querySelector('[data-version-message]');
+    let pendingVersion = false;
+    let checkingVersion = false;
+    function displayVersionJob(job) {
+        pendingVersion = ['queued', 'running'].includes(job.state);
+        button.disabled = pendingVersion || choice.options.length < 2;
+        choice.disabled = pendingVersion;
+        message.textContent = job.message || (choice.options.length < 2 ? 'Nincs másik letöltött verzió ehhez a típushoz.' : 'Válassz verziót, majd állítsd le a szervert a váltáshoz.');
+        for (const control of document.querySelectorAll('#server-controls button[value="start"], #server-controls button[value="restart"]')) control.disabled = pendingVersion;
+    }
+    async function loadVersions() {
+        const result = await queryServer(versionPanel.dataset.serverId, 'versions');
+        choice.replaceChildren(new Option('Válassz verziót', ''));
+        for (const entry of result.versions || []) choice.append(new Option(`${entry.type} · ${entry.version} · ${entry.build}`, entry.key));
+        versionPanel.querySelector('[data-current-version]').textContent = `${result.current_type} · ${result.current_version}`;
+        displayVersionJob(result.job);
+    }
+    form.addEventListener('submit', async event => {
+        event.preventDefault();
+        if (pendingVersion || !choice.value) return;
+        pendingVersion = true;button.disabled = true;choice.disabled = true;
+        message.textContent = 'Verzióváltás indítása…';
+        const data = new FormData(form);data.set('template_key', choice.value);
+        data.set('action', 'change_version');data.set('server_id', versionPanel.dataset.serverId);
+        try {
+            const response = await fetch('/api.php', {method:'POST', body:data, credentials:'same-origin'});
+            const result = await response.json();
+            if (!response.ok) throw new Error(result.error || 'A verzióváltás nem indítható.');
+            displayVersionJob(result);
+        } catch (error) { pendingVersion = false;button.disabled = false;choice.disabled = false;message.textContent = error.message; }
+    });
+    loadVersions().catch(error => { message.textContent = error.message; });
+    setInterval(async () => {
+        if (!pendingVersion || checkingVersion) return;
+        checkingVersion = true;
+        try {
+            const result = await queryServer(versionPanel.dataset.serverId, 'version_status');
+            displayVersionJob(result);
+            if (result.state === 'ready') { await loadVersions();document.dispatchEvent(new Event('server-operation-complete')); }
+        } catch (error) { message.textContent = error.message; }
+        finally { checkingVersion = false; }
+    }, 5000);
 }

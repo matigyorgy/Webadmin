@@ -35,7 +35,7 @@ Az admin Linux-gépek menüjében add meg a címet, SSH-portot és a panel haszn
 Nem kell kézzel SSH-val belépni vagy sudoers-/indítószkripteket szerkeszteni a normál webes munkafolyamathoz. A háttérben futó installert a panel végzi. Opcionális CLI-alternatíva:
 
 ```sh
-sudo python3 linux/install.py --source-root /srv/gamedock/templates --target-root /home/gamedock --ssh-user gamedock
+sudo python3 linux/install.py --source-root /home/gamedock/templates --target-root /home/gamedock --ssh-user gamedock
 ```
 
 A Linux-oldali feltétel Python 3.9+ és pidfd-t támogató Linux-kernel. Az installer nem igényel systemd-t, tmuxot vagy screen-t. Az SSH-fiók meglévő kulcsai és a meglévő szerverbejegyzések megmaradnak. A `/home/gamedock` felső könyvtár root tulajdonú lesz; a benne lévő SSH-kulcsok tulajdonosát nem változtatja meg, a példányok saját alkönyvtárat kapnak.
@@ -68,7 +68,7 @@ Támogatott szolgáltatók: **Vanilla, Paper, Forge, Bukkit, Spigot, Purpur, Fab
 
 HTTPS-ellenőrzés végig bekapcsolva marad; ahol az upstream közöl ellenőrzőösszeget, letöltés után ellenőrizzük. BuildTools esetén a hivatalos Jenkins buildhez kötött HTTPS-artifactot használjuk. A hiányzó megfelelő JDK a hivatalos Adoptium API-ból, SHA256-ellenőrzéssel készíthető elő. Az archívum kibontása, Forge/Fabric installer és BuildTools **nem rootként** fut. A buildből csak a használható template kerül a katalógusba, a munkakönyvtár eltakarítható.
 
-A szinkronizálás meglévő kész buildet nem ír felül. A régebbi letöltött sablonokat nem törli automatikusan. Hibás vagy folyamatban lévő template nem választható szerverhez. Új szervernél a típus/verzió kiválasztása és a Minecraft EULA kifejezett elfogadása szükséges. A panel ezek alapján beállítja az indítóparancsot, `server.properties` portját és az `eula.txt` fájlt.
+A szinkronizálás meglévő kész buildet nem ír felül. A régebbi letöltött sablonokat nem törli automatikusan. Hibás vagy folyamatban lévő template nem választható szerverhez. Új szervernél a típus/verzió kiválasztása szükséges. Nincs külön EULA-jelölőnégyzet; az `eula.txt` automatikusan `eula=true` értékkel készül el. A panel ezek alapján beállítja az indítóparancsot, `server.properties` portját és az `eula.txt` fájlt.
 
 A Linuxnak el kell érnie a Mojang, PaperMC, Forge, SpigotMC, Purpur, Fabric, Adoptium/GitHub és a buildeszközök függőségi tárainak HTTPS-végpontjait. Proxy esetén a Java/Git tanúsítvány- és proxybeállítások is legyenek helyesek; TLS-ellenőrzést ne tilts le.
 
@@ -82,15 +82,29 @@ Létrehozáskor és szerkesztéskor az admin megadhatja:
 - **CPU-limit (%):** 100 egy mag, 150 másfél, 200 két mag CPU-idejének felel meg. A kernel időkvótával korlátozza, nem a magok számát állítja.
 - Mindkettőnél **0 = korlátlan**. Módosítás a következő indítás/újraindítás alkalmával érvényesül; az adatlapon a mentett limit látszik.
 
+Mentéskor az indítóparancsba az `export GAMEDOCK_MEMORY_MB=… GAMEDOCK_CPU_PERCENT=…;` előtag kerül. Közvetlen Java-parancsnál a heapet a memórialimit 80%-ára állítjuk, és a CPU-kvótához igazítjuk az `ActiveProcessorCount` értékét; tetszőleges játékhoz nem adunk ismeretlen kapcsolókat. A Forge saját JVM-argumentumfájlját szükség esetén a sablonban lehet testre szabni. A teljes folyamat memóriáját és CPU-idejét minden esetben a kernel korlátozza.
+
 A segédprogram indításkor automatikusan beállítja a saját root-tulajdonú **cgroup v2** csoportját és a CPU/memory vezérlőket. A runner és minden gyermekfolyamata ebbe kerül még a játékfelhasználóra váltás előtt; systemd-szolgáltatás nem kell. A játék nem írhatja felül a limitjeit. A memória-limit mellett a swap limitje 0. Korlátozás kérésekor írhatatlan/hiányzó cgroup v2 vezérlő esetén az indítás hibával leáll: korlátozás nélkül nem indul el. Konténeres/VPS tárhelyen ezt a gazdagépnek is támogatnia kell. Korlátlan futtatás cgroup nélkül is működik; ilyenkor a folyamatfa CPU-idejéből és RSS memóriájából számítjuk a használatot, ami becslés (megosztott lapok többször számíthatnak).
 
-A **Szerverazonosító** belső Linux-azonosító, nem szolgáltatásnév. Új szervernél üresen hagyható, automatikusan generáljuk. A célmappa továbbra is az adatbázisbeli számazonosítót használja.
+Új szervernél a **szerver neve automatikusan a kiválasztott játék neve**, a **Szerverazonosító** pedig automatikusan generált, egyedi, nyolc számjegyű belső Linux-azonosító. A korábban létrehozott azonosítókat megőrizzük. A célmappa továbbra is az adatbázisbeli számazonosítót használja.
+
+## Minecraft-template törlése és verzióváltás
+
+Az admin **Minecraft-templatek** táblájában minden nyugalmi sablon mellett **Törlés** gomb van. A katalógusbejegyzést és a hozzá tartozó build könyvtárát törli; a már létrehozott példányok és mentéseik érintetlenek. Folyamatban lévő szinkronizálás vagy az adott sablonról futó másolás/verzióváltás alatt a törlés elutasított. A következő szinkronizálás a legutóbbi tíz kiadás közé tartozó törölt sablont újra letöltheti.
+
+A kliens **Szervereim → Kezelés és konzol** oldalán megjelenik a **Minecraft-verzió váltása** választó, ha a jelenlegi Minecraft-típushoz van másik letöltött verzió. Más típusra (például Paper helyett Forge) nem váltunk automatikusan. A szervert előbb le kell állítani. A háttérfolyamat a jelenlegi szerverfájlokat egy ideiglenes példányba másolja, ráteszi az új programfájlokat, megőrzi a világot, konfigurációt, modokat és pluginokat, majd a kész példányt helyére teszi. Az eredeti teljes könyvtár mentésként a `/home/gamedock/.gamedock-backups/<belső-azonosító>/<feladatazonosító>/` alá kerül; a mentési útvonal az állapotüzenetben látszik. A mentéseket nem töröljük automatikusan. Az előkészítéshez további, legalább egy teljes példánynyi szabad lemezterület kell. Fájlcsere előtt megszakadt másolásnál az eredeti példány marad használható; a rövid átnevezési szakaszban megszakadt műveletet az állapotlekérés helyreállítja. Visszaváltásnál a világ formátumának kompatibilitását a játék határozza meg.
+
+Az indítás, leállítás, újraindítás és állapot gomb **AJAX-os**, oldalfrissítés nélkül működik, a módosító kérések POST + CSRF-védettek. A konzol mindig automatikusan frissül öt másodpercenként, átmeneti hiba után is újrapróbálkozik. Az állapot felirata **online / offline**. A CPU-kártyán csak a használat látszik, a beállított limit nem.
 
 ## Szerverkönyvtárak, portok és konfiguráció
 
+A template-ek gyökere mindig **`/home/gamedock/templates/`**. A webes Linux-telepítő ezt rögzítetten állítja be, játékprofilonként ez alatti almappát lehet választani. Frissítéskor a korábbi template-gyökeret automatikusan átköltözteti, és a régi Java-elérési utak működéséhez kompatibilitási hivatkozást hagy. Aktív másolás/verzióváltás alatt nem költöztet; két külön, már tartalmas régi és új mappát nem egyesít felülírással.
+
 Új példány létrehozásakor a cél **`/home/gamedock/<adatbázisbeli-szerver-ID>/`**, például `/home/gamedock/42/`. A célmappát nem kell és nem lehet kézzel megválasztani. Meglévő célmappát a másoló nem ír felül. Minden példány külön nologin Linux-felhasználót és privát, 0700 jogosultságú könyvtárat kap.
 
-Portkiosztás: **25000–25999**, véletlenszerűen választott szabad porttal: az első két számjegy mindig 25, az utolsó három véletlen. A node-adatbázissor zárolása alatt kizárjuk a panelen már kiosztott portokat és SSH-n a Linux `/proc/net/tcp`, `tcp6`, `udp`, `udp6` tábláiban foglalt portokat. Sikertelen portellenőrzésnél nem hozunk létre szervert. Egy később, a panelen kívül elindított program természetesen lefoglalhat még egy jelenleg szabad portot; ezért a játéktartományt célszerű a panelnek fenntartani. A mentett indítóparancs `{port}` helyőrzőjét a kiosztott ötjegyű érték helyettesíti. A Minecraft `server.properties` és a FiveM `server.cfg` TCP/UDP endpoint beállításai automatikusan elkészülnek. Más játékok template-jeinek szöveges cfg/properties/json/yaml/txt fájljaiban `{{PORT}}` is használható, amelyet másoláskor a panel kiír.
+Létrehozáskor a portmező **üresen hagyható a véletlen kiosztáshoz**, vagy kézzel kitölthető. Az admin később is módosíthatja; az új érték a következő indításkor/újraindításkor kerül a konfigurációba. Minecraftnál a `server-port` és `query.port`, FiveM-nél mindkét endpoint frissül. Egyedi játékoknál a korábban `{{PORT}}` helyőrzővel létrehozott konfigurációkat egy fájllista alapján frissítjük, a többi kézi módosítás megőrzésével.
+
+Portkiosztás: **25000–25999**, üres mezőnél véletlenszerűen választott szabad porttal: az első két számjegy mindig 25, az utolsó három véletlen. A node-adatbázissor zárolása alatt kizárjuk a panelen már kiosztott portokat és SSH-n a Linux `/proc/net/tcp`, `tcp6`, `udp`, `udp6` tábláiban foglalt portokat. Sikertelen portellenőrzésnél nem hozunk létre szervert. Egy később, a panelen kívül elindított program természetesen lefoglalhat még egy jelenleg szabad portot; ezért a játéktartományt célszerű a panelnek fenntartani. A mentett indítóparancs `{port}` helyőrzőjét a kiosztott ötjegyű érték helyettesíti. A Minecraft `server.properties` és a FiveM `server.cfg` TCP/UDP endpoint beállításai automatikusan elkészülnek. Más játékok template-jeinek szöveges cfg/properties/json/yaml/txt fájljaiban `{{PORT}}` is használható, amelyet másoláskor a panel kiír.
 
 A teljes fájlmásolás a saját játékfelhasználóval fut, nem rootként. Nincs symlink/hardlink-alapú közös játékadat. A forrás/célgyökér engedélylistáját a root tulajdonú `/etc/gamedock/servers.json` rögzíti. Nem kerülhet másolat az engedélyezett célgyökéren kívülre, és symlinkes/speciális/üres template elutasításra kerül.
 
@@ -108,7 +122,7 @@ A gép újraindítása után a példányok a panelről újraindítandók; bootin
 
 Admin: felhasználók, típusok, Linux-gépek, sablonok és szerverek kezelése, tulajdonosváltás, jelszó-reset, műveleti napló. Kliens: kizárólag saját szerverek és fiókadatok. Módosítások CSRF-védettek; jelszócsere/reset érvényteleníti a többi munkamenetet, a bejelentkezések fiók/IP szerint korlátozottak.
 
-Frissítés előtt készíts fájl- és adatbázismentést. Őrizd meg a saját `config/` fájlokat és SSH-kulcsokat, a többi kiadásfájlt azonos elrendezésben töltsd fel. Az admin **Új szerverfunkciók engedélyezése** gombja a hiányzó oszlopokat és a játéktípus-táblát hozzáadja, és a korábbi enumot bővíthető azonosítóra alakítja. ALTER/CREATE/INSERT jogosultság szükséges; a meglévő adatokat nem törli. A panel telepítőjét ne futtasd újra. Az új CPU/memóriafunkciókhoz minden Linux-gépnél futtasd újra az **Automatikus Linux-telepítés** műveletet a segédprogramok frissítéséhez; majd indítsd újra az érintett játékot.
+Frissítés előtt készíts fájl- és adatbázismentést. Őrizd meg a saját `config/` fájlokat és SSH-kulcsokat, a többi kiadásfájlt azonos elrendezésben töltsd fel. Az admin **Új szerverfunkciók engedélyezése** gombja a hiányzó oszlopokat és a játéktípus-táblát hozzáadja, és a korábbi enumot bővíthető azonosítóra alakítja. ALTER/CREATE/INSERT jogosultság szükséges; a meglévő adatokat nem törli. A panel telepítőjét ne futtasd újra. Az új vezérlési, port-, CPU/memória-, törlési és verzióváltási funkciókhoz minden Linux-gépnél futtasd újra az **Automatikus Linux-telepítés** műveletet a segédprogramok frissítéséhez; majd indítsd újra az érintett játékot.
 
 A régi szerverkönyvtárakat a frissítő nem költözteti át és nem írja felül automatikusan. Az ID-alapú hely az új példányokra vonatkozik. A régi Linux-telepítést a webes Linux-beállítás gombbal frissítsd. A generált Smarty-fordítások a `var/smarty/compile/` alatt törölhetők, a konfiguráció nem.
 

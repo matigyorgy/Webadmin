@@ -8,7 +8,7 @@ final class GameRegistry
     public static function defaults(): array
     {
         $rows=[];
-        foreach(Validation::GAMES as $slug=>$name) $rows[$slug]=['slug'=>$slug,'name'=>$name,'template_path'=>'/srv/gamedock/templates/'.$slug,'startup_command'=>Validation::STARTUP[$slug],'provider'=>$slug==='minecraft' ? 'minecraft' : 'folder'];
+        foreach(Validation::GAMES as $slug=>$name) $rows[$slug]=['slug'=>$slug,'name'=>$name,'template_path'=>'/home/gamedock/templates/'.$slug,'startup_command'=>Validation::STARTUP[$slug],'provider'=>$slug==='minecraft' ? 'minecraft' : 'folder'];
         return $rows;
     }
     public function available(): bool { return (bool)$this->db->query("SHOW TABLES LIKE 'game_types'")->fetch(); }

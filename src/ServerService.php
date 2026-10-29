@@ -22,6 +22,8 @@ final class ServerService
     }
     public function read(array $user, int $id, string $action): array
     {
+        if ($action==='versions') return (new VersionService($this->db,$this->ssh))->choices($user,$id);
+        if ($action==='version_status') return (new VersionService($this->db,$this->ssh))->poll($user,$id);
         if ($action==='provision') return (new ProvisionService($this->db,$this->ssh))->pollForUser($user,$id);
         if (!in_array($action,['status','logs','metrics'],true)) throw new RuntimeException('Nem engedélyezett lekérdezés.');
         $server=$this->find($user,$id);
@@ -30,6 +32,10 @@ final class ServerService
     }
     public function perform(array $user, int $id, string $action, string $command=''): array
     {
+        if (in_array($action,['start','restart'],true)) {
+            $version=(new VersionService($this->db,$this->ssh))->poll($user,$id);
+            if(in_array($version['state'],['queued','running'],true)) throw new RuntimeException('A verzióváltás még folyamatban van.');
+        }
         $server=$this->find($user,$id);
         if (($server['provision_state'] ?? 'ready')!=='ready') throw new RuntimeException('A szerver csak sikeres fájlmásolás után vezérelhető.');
         (new ServerCommand())->build($server['unit_name'],$action,$command,(string)($server['startup_command'] ?? ''));

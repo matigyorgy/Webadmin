@@ -42,7 +42,7 @@ final class AdminService
                 $slug=trim((string)($data['slug'] ?? ''));
                 if(!preg_match('/\A[a-z][a-z0-9_-]{0,31}\z/',$slug))throw new RuntimeException('A típusazonosító kisbetűből, számból, kötőjelből és aláhúzásból állhat.');
                 $name=Validation::text($data,'name');$source=Validation::text($data,'template_path',255);
-                if(!str_starts_with($source,'/'))throw new RuntimeException('Abszolút template mappa szükséges.');
+                if(!str_starts_with($source,'/home/gamedock/templates/') || str_contains($source,'/../') || str_ends_with($source,'/..'))throw new RuntimeException('A template mappa a /home/gamedock/templates/ alatt legyen.');
                 $startup=Validation::startup((string)($data['startup_command'] ?? ''));
                 if($startup==='')throw new RuntimeException('Indítóparancs szükséges.');
                 $provider=($data['provider'] ?? '')==='minecraft' ? 'minecraft' : 'folder';
@@ -81,22 +81,29 @@ final class AdminService
                 $startup=Validation::startup((string)($data['startup_command'] ?? ''));$explicitStartup=$startup!=='';
                 $startupEnabled=(new SchemaUpdater($this->db))->startupEnabled();
                 if ($startup!=='' && !$startupEnabled) throw new RuntimeException('Először kattints az Indítóparancsok engedélyezése adatbázisfrissítő gombra.');
-                $name=Validation::text($data,'name'); $game=Validation::text($data,'game'); $unit=trim((string)($data['unit_name'] ?? ''));
-                if ($unit==='') $unit='server-'.bin2hex(random_bytes(8));
+                $game=Validation::text($data,'game'); $unit=$id ? Validation::text($data,'unit_name') : (string)random_int(10000000,99999999);
                 $limits=ResourceLimits::validate($data);
+                $requestedPort=trim((string)($data['port'] ?? ''));
+                if ($requestedPort!=='' && !preg_match('/\A25[0-9]{3}\z/',$requestedPort)) throw new RuntimeException('A játékport 25000–25999 közötti egész szám legyen.');
                 $profile=(new GameRegistry($this->db))->get($game);
+                $name=$id ? Validation::text($data,'name') : $profile['name'];
                 if($explicitStartup && $profile['provider']==='folder' && $game!=='fivem' && !str_contains($startup,'{port}'))throw new RuntimeException('Az indítóparancsban használd a {port} helyőrzőt az automatikusan kiosztott porthoz.');
                 if((new GameRegistry($this->db))->available())$this->db->query('SELECT slug FROM game_types WHERE slug=? FOR UPDATE',[$game]);
                 if (!preg_match('/\A[a-zA-Z0-9_][a-zA-Z0-9_-]*(?:\.service)?\z/',$unit)) throw new RuntimeException('Érvénytelen játéktípus vagy szerverazonosító.');
                 if (!$id && !(new SchemaUpdater($this->db))->provisionEnabled()) throw new RuntimeException('Először engedélyezd az új szerverfunkciókat az adatbázisfrissítő gombbal.');
                 $existing=$id ? $this->find($actor,'servers',$id) : null;
+                if ($id && (new SchemaUpdater($this->db))->versionsEnabled() && in_array($this->db->query('SELECT state FROM server_version_jobs WHERE server_id=?',[$id])->fetchColumn(),['queued','running'],true)) throw new RuntimeException('A verzióváltás befejezéséig a szerver nem módosítható.');
                 if ((!$id || !empty($existing['provision_job'])) && $startup==='') $startup=$profile['startup_command'];
                 if ($existing && !empty($existing['install_folder']) && ($existing['unit_name']!==$unit || (int)$existing['node_id']!==(int)($data['node_id'] ?? 0))) throw new RuntimeException('Másolt szervernél a Linux-gép és az unitnév nem módosítható. Költöztetéshez hozz létre új példányt.');
                 $user=Validation::id($data['user_id'] ?? 0); $node=Validation::id($data['node_id'] ?? 0);
                 $this->find($actor,'users',$user);
                 if (!$this->db->query('SELECT id FROM nodes WHERE id=? FOR UPDATE',[$node])->fetch()) throw new RuntimeException('A Linux-gép nem található.');
                 $duplicate=$this->db->query('SELECT id FROM servers WHERE node_id=? AND unit_name=? AND id<>?',[$node,$unit,$id ?? 0])->fetch();
-                if ($duplicate) throw new RuntimeException('Ez a szolgáltatás ezen a gépen már hozzá van adva.');
+                if (!$id) while ($duplicate) {
+                    $unit=(string)random_int(10000000,99999999);
+                    $duplicate=$this->db->query('SELECT id FROM servers WHERE node_id=? AND unit_name=?',[$node,$unit])->fetch();
+                }
+                if ($duplicate) throw new RuntimeException('Ez az azonosító ezen a gépen már hozzá van adva.');
                 if ($id) $this->db->query('UPDATE servers SET name=?,game=?,unit_name=?,user_id=?,node_id=? WHERE id=?',[$name,$game,$unit,$user,$node,$id]);
                 else $this->db->query('INSERT INTO servers(name,game,unit_name,user_id,node_id) VALUES(?,?,?,?,?)',[$name,$game,$unit,$user,$node]);
                 $serverId=$id ?? (int)$this->db->lastInsertId();
@@ -110,7 +117,6 @@ final class AdminService
                         $key=(string)($data['minecraft_template'] ?? '');
                         $catalog=(new TemplateService($this->db,new SshClient()))->catalog($actor,$node);
                         $entry=null;foreach($catalog['templates'] ?? [] as $candidate)if(($candidate['key'] ?? '')===$key && ($candidate['state'] ?? '')==='ready')$entry=$candidate;
-                        if(($data['eula_accepted'] ?? '')!=='1')throw new RuntimeException('A Minecraft EULA elfogadása szükséges.');
                         if(!$entry)throw new RuntimeException('Válassz letöltött Minecraft típust és verziót. Először szinkronizáld a node Minecraft-template katalógusát.');
                         $source=$entry['path'];$startup=$explicitStartup ? $startup : $entry['startup'];$mcType=$entry['type'];$mcVersion=$entry['version'];
                     }
@@ -119,13 +125,18 @@ final class AdminService
                     if ($this->db->query('SELECT id FROM servers WHERE node_id=? AND install_folder=? AND id<>?',[$node,$folder,$id ?? 0])->fetch()) throw new RuntimeException('Ez a célmappanév ezen a gépen már foglalt.');
                     $this->db->query('UPDATE servers SET startup_command=?,install_source=?,install_folder=?,provision_job=?,provision_state=? WHERE id=?',[$startup!=='' ? $startup : $profile['startup_command'],$source,$folder,bin2hex(random_bytes(16)),'queued',$serverId]);
                 }
-                if(!$id || empty($existing['port'])) {
+                if(!$id || empty($existing['port']) || ($requestedPort!=='' && (int)$requestedPort!==(int)$existing['port'])) {
+                    if ($id && in_array($existing['provision_state'] ?? '',['queued','running'],true)) throw new RuntimeException('Folyamatban lévő másolás közben a port nem módosítható.');
                     $used=$this->db->query('SELECT port FROM servers WHERE node_id=? AND id<>? AND port IS NOT NULL',[$node,$serverId])->fetchAll();
                     $nodeRecord=$this->find($actor,'nodes',$node);
                     $listening=$this->portScanner ? ($this->portScanner)($nodeRecord) : (new SshClient())->occupiedPorts($nodeRecord);
-                    $port=PortAllocator::choose([...array_column($used,'port'),...$listening]);
+                    $occupied=[...array_column($used,'port'),...$listening];
+                    if ($requestedPort!=='' && in_array((int)$requestedPort,array_map('intval',$occupied),true)) throw new RuntimeException('Ez a port ezen a Linux-gépen már foglalt. Válassz másikat.');
+                    $port=$requestedPort!=='' ? (int)$requestedPort : PortAllocator::choose($occupied);
                     $this->db->query('UPDATE servers SET port=?,minecraft_type=?,minecraft_version=? WHERE id=?',[$port,$mcType ?? $existing['minecraft_type'] ?? null,$mcVersion ?? $existing['minecraft_version'] ?? null,$serverId]);
                 }
+                $savedStartup=(string)$this->db->query('SELECT startup_command FROM servers WHERE id=?',[$serverId])->fetchColumn();
+                if ($savedStartup!=='') $this->db->query('UPDATE servers SET startup_command=? WHERE id=?',[StartupCommand::prepare($savedStartup,$limits),$serverId]);
                 $id=$serverId;
             } else throw new RuntimeException('Ismeretlen bejegyzéstípus.');
             $id ??= (int)$this->db->lastInsertId();
@@ -147,6 +158,7 @@ final class AdminService
         if (!$confirmed) throw new RuntimeException('A törlést a jelölőnégyzettel erősítsd meg.');
         $this->db->transaction(function () use($actor,$section,$id) {
             $this->admin($actor); $record=$this->find($actor,$section,$id);
+            if ($section==='servers' && (new SchemaUpdater($this->db))->versionsEnabled() && in_array($this->db->query('SELECT state FROM server_version_jobs WHERE server_id=?',[$id])->fetchColumn(),['queued','running'],true)) throw new RuntimeException('Folyamatban lévő verzióváltás alatt nem törölhető a szerver.');
             if ($section==='users') {
                 $admins=$this->db->query('SELECT id FROM users WHERE is_admin=1 ORDER BY id FOR UPDATE')->fetchAll();
                 if ($id===(int)$actor['id']) throw new RuntimeException('A saját fiókodat itt nem törölheted.');

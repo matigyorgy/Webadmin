@@ -52,17 +52,36 @@ def install(args):
         if CONFIG.exists():
             safe(CONFIG);cfg=json.loads(CONFIG.read_text())
         old=cfg.get('_provision',{})
-        source=Path(args.source_root or old.get('source_root','/srv/gamedock/templates'))
+        source=Path('/home/gamedock/templates')
+        if args.source_root and Path(args.source_root)!=source:raise ValueError('Template root is fixed at /home/gamedock/templates')
         target=Path(args.target_root or old.get('target_root','/home/gamedock'))
         if not source.is_absolute() or not target.is_absolute() or source==target:raise ValueError('Distinct absolute source/target roots required')
         dangerous={'/','/etc','/root','/usr','/bin','/sbin','/var','/var/lib','/home','/run','/tmp','/dev','/proc','/sys'}
         if str(source) in dangerous or str(target) in dangerous:raise ValueError('Choose dedicated game directories, not a system directory')
-        for folder in (source,target):
+        previous_source=Path(old.get('source_root',str(source)))
+        if previous_source!=source and previous_source.is_dir() and not previous_source.is_symlink():
+            catalog_file=Path('/var/lib/gamedock/minecraft/catalog.json')
+            if catalog_file.exists() and json.loads(catalog_file.read_text()).get('state')=='running':raise ValueError('Wait for Minecraft synchronization before moving templates')
+            for job_id in list(cfg.get('_copy_jobs',{}).values())+list(cfg.get('_version_jobs',{}).values()):
+                job_file=Path('/var/lib/gamedock/provision/jobs')/(job_id+'.json')
+                if job_file.exists() and json.loads(job_file.read_text()).get('state') in ('queued','running'):raise ValueError('Wait for active server copies/version changes before moving templates')
+            safe(previous_source)
+            if source.exists():
+                if any(source.iterdir()):raise ValueError('Both old and new template roots contain files; automatic merge would overwrite templates')
+                source.rmdir()
+            if target.exists() and str(target)=='/home/gamedock' and target.stat().st_uid==account.pw_uid:os.chown(target,0,0);os.chmod(target,0o755)
+            source.parent.mkdir(parents=True,exist_ok=True)
+            shutil.move(str(previous_source),str(source))
+            # Existing Java launch paths keep working after the relocation.
+            previous_source.symlink_to(source,target_is_directory=True)
+            catalog=Path('/var/lib/gamedock/minecraft/catalog.json')
+            if catalog.exists():save(catalog,catalog.read_text().replace(str(previous_source),str(source)).encode(),0o600)
+        for folder in (target,source):
             if not folder.exists():folder.mkdir(parents=True,mode=0o755);os.chmod(folder,0o755)
             if folder==target and str(folder)=='/home/gamedock' and folder.stat().st_uid==account.pw_uid:
                 os.chown(folder,0,0);os.chmod(folder,0o755)
             safe(folder)
-        if source.resolve()==target.resolve() or source.resolve() in target.resolve().parents or target.resolve() in source.resolve().parents:raise ValueError('Source/target roots must not overlap')
+        if source.resolve()!=source or target.resolve()!=target or source.parent!=target:raise ValueError('Templates must use the protected /home/gamedock/templates directory')
         users={}
         for game in ('minecraft','cs2','fivem','css'):
             users[game]=old.get('users',{}).get(game,game);ensure_user(users[game],True)
@@ -71,12 +90,12 @@ def install(args):
         cfg['_provision']={'source_root':str(source),'target_root':str(target),'users':users,'allow_custom_games':True}
         save(CONFIG,(json.dumps(cfg,indent=2)+'\n').encode(),0o600)
     root=Path(__file__).resolve().parent
-    for name,destination in [('gamedock-provision','/usr/local/sbin/gamedock-provision'),('gamedock-launch','/usr/local/sbin/gamedock-launch'),('gamedock_runtime.py','/usr/local/libexec/gamedock_runtime.py'),('gamedock-templates','/usr/local/sbin/gamedock-templates'),('gamedock-runner','/usr/local/libexec/gamedock-runner')]:
+    for name,destination in [('gamedock-versions','/usr/local/sbin/gamedock-versions'),('gamedock-provision','/usr/local/sbin/gamedock-provision'),('gamedock-launch','/usr/local/sbin/gamedock-launch'),('gamedock_runtime.py','/usr/local/libexec/gamedock_runtime.py'),('gamedock-templates','/usr/local/sbin/gamedock-templates'),('gamedock-runner','/usr/local/libexec/gamedock-runner')]:
         save(Path(destination),(root/name).read_bytes(),0o755)
     # Broad helper access is confined by immutable root policy; no shell/systemctl sudo is granted.
-    sudoers=(args.ssh_user+' ALL=(root) NOPASSWD: /usr/local/sbin/gamedock-provision create *\n'+
+    sudoers=(args.ssh_user+' ALL=(root) NOPASSWD: /usr/local/sbin/gamedock-versions create *\n'+args.ssh_user+' ALL=(root) NOPASSWD: /usr/local/sbin/gamedock-versions status *\n'+args.ssh_user+' ALL=(root) NOPASSWD: /usr/local/sbin/gamedock-provision create *\n'+
              args.ssh_user+' ALL=(root) NOPASSWD: /usr/local/sbin/gamedock-provision status *\n'+
-             args.ssh_user+' ALL=(root) NOPASSWD: /usr/local/sbin/gamedock-launch *\n'+args.ssh_user+' ALL=(root) NOPASSWD: /usr/local/sbin/gamedock-templates catalog\n'+args.ssh_user+' ALL=(root) NOPASSWD: /usr/local/sbin/gamedock-templates sync\n')
+             args.ssh_user+' ALL=(root) NOPASSWD: /usr/local/sbin/gamedock-launch *\n'+args.ssh_user+' ALL=(root) NOPASSWD: /usr/local/sbin/gamedock-templates catalog\n'+args.ssh_user+' ALL=(root) NOPASSWD: /usr/local/sbin/gamedock-templates sync\n'+args.ssh_user+' ALL=(root) NOPASSWD: /usr/local/sbin/gamedock-templates delete *\n')
     folder=Path('/etc/sudoers.d');folder.mkdir(exist_ok=True);safe(folder)
     descriptor,temporary=tempfile.mkstemp(dir=folder,prefix='gamedock-check-')
     try:

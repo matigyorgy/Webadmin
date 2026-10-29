@@ -57,3 +57,18 @@ class MinecraftTests(unittest.TestCase):
    with patch.object(mc,'response',return_value=io.BytesIO(b'corrupt')):
     with self.assertRaises(ValueError):mc.download(row,str(Path(folder)/'bad.jar'))
 if __name__=='__main__':unittest.main()
+
+class TemplateDeletionTests(unittest.TestCase):
+ def test_delete_confined_to_selected_template(self):
+  with tempfile.TemporaryDirectory() as directory:
+   root=Path(directory);cache=root/'cache';cache.mkdir();templates=root/'templates'/'minecraft';target=templates/'paper'/'1.21.1'/'1';target.mkdir(parents=True);(target/'server.jar').write_text('jar');keep=templates/'keep';keep.mkdir()
+   value={'state':'ready','templates':[{'key':'paper:1.21.1:1','type':'paper','version':'1.21.1','build':'1','path':str(target),'state':'ready'}]}
+   with patch.object(mc,'CACHE',str(cache)),patch.object(mc,'CONFIG',str(root/'servers.json')),patch.object(mc,'catalog',return_value=value),patch.object(mc,'cfg',return_value={'_provision':{'source_root':str(root/'templates')}}):result=mc.delete_template('paper:1.21.1:1')
+   self.assertFalse(target.exists());self.assertTrue(keep.exists());self.assertEqual(result['templates'],[])
+ def test_delete_rejects_catalog_escape(self):
+  with tempfile.TemporaryDirectory() as directory:
+   root=Path(directory);cache=root/'cache';cache.mkdir();outside=root/'keep';outside.mkdir()
+   value={'state':'ready','templates':[{'key':'bad','type':'..','version':'keep','build':'1','state':'ready'}]}
+   with patch.object(mc,'CACHE',str(cache)),patch.object(mc,'CONFIG',str(root/'servers.json')),patch.object(mc,'catalog',return_value=value),patch.object(mc,'cfg',return_value={'_provision':{'source_root':str(root/'templates')}}):
+    with self.assertRaises(ValueError):mc.delete_template('bad')
+   self.assertTrue(outside.is_dir())

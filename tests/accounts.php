@@ -9,7 +9,7 @@ $host=getenv('TEST_MYSQL_HOST'); $dbPassword=getenv('TEST_MYSQL_PASSWORD');
 $root=new PDO('mysql:host='.$host.';charset=utf8mb4','root',$dbPassword,[PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION]);
 $name='gamedock_accounts_'.bin2hex(random_bytes(5)); $root->exec('CREATE DATABASE `'.$name.'`');
 putenv('DB_DSN=mysql:host='.$host.';dbname='.$name.';charset=utf8mb4');putenv('DB_USER=root');putenv('DB_PASSWORD='.$dbPassword);
-$db=new GameDock\Database();$auth=new GameDock\AuthService($db);$admin=new GameDock\AdminService($db,static fn(array $node): array=>[]);$servers=new GameDock\ServerService($db,new GameDock\SshClient());
+$db=new GameDock\Database();$auth=new GameDock\AuthService($db);$admin=new GameDock\AdminService($db,static fn(array $node): array=>[25888]);$servers=new GameDock\ServerService($db,new GameDock\SshClient());
 $prefix=bin2hex(random_bytes(5));$password='A-strong-test-password-123';
 try {
     foreach (explode(';',file_get_contents(dirname(__DIR__).'/database/schema.sql')) as $sql) if (trim($sql)!=='') $db->query($sql);
@@ -25,34 +25,47 @@ try {
     $nodeData=['name'=>'Linux <test>','public_host'=>'games.example.test','ssh_host'=>'127.0.0.1','ssh_port'=>'22','ssh_user'=>'gamedock','ssh_fingerprint'=>'SHA256:'.str_repeat('A',43)];
     $nodeId=$admin->save($owner,'nodes',$nodeData);
     verify($admin->find($owner,'nodes',$nodeId)['public_host']==='games.example.test','Public game address not persisted');
-    $admin->save($owner,'games',['slug'=>'custom','name'=>'My Custom Game','template_path'=>'/srv/gamedock/templates/custom','startup_command'=>'python3 server.py --port {port}','provider'=>'folder']);
+    $admin->save($owner,'games',['slug'=>'custom','name'=>'My Custom Game','template_path'=>'/home/gamedock/templates/custom','startup_command'=>'python3 server.py --port {port}','provider'=>'folder']);
     verify(isset((new GameDock\GameRegistry($db))->names()['custom']),'Custom game profile missing');
     $serverData=['name'=>'Survival <test>','game'=>'minecraft','unit_name'=>'minecraft.service','user_id'=>(string)$clientId,'node_id'=>(string)$nodeId];
+    $serverData['port']='25500';
     $serverData['memory_limit_mb']='2048';$serverData['cpu_limit_percent']='150';
     $serverId=$admin->save($owner,'servers',$serverData);
     verify((int)$servers->find($client,$serverId)['memory_limit_mb']===2048 && (int)$servers->find($client,$serverId)['cpu_limit_percent']===150,'Resource limits not persisted');
     $invalid=$serverData;$invalid['cpu_limit_percent']='-1';denies(fn()=>$admin->save($owner,'servers',$invalid),'Negative limit accepted');
+    $serverData['unit_name']=$servers->find($client,$serverId)['unit_name'];
+    verify((bool)preg_match('/\A[0-9]{8}\z/',$serverData['unit_name']),'Identifier not numeric');
+    verify($servers->find($client,$serverId)['name']==='Minecraft','Name not taken from game');
     verify($servers->find($client,$serverId)['provision_state']==='queued','New server did not require template copy');
     denies(fn()=>$servers->perform($client,$serverId,'start'),'Unprovisioned game started');
     $db->query('UPDATE servers SET provision_state=? WHERE id=?',['ready',$serverId]);
     foreach(GameDock\Validation::GAMES as $game=>$label) {
         $custom=$serverData; $custom['id']=$serverId; $custom['game']=$game; $custom['startup_command']='./start --name="<example>" --port {port}';
         $admin->save($owner,'servers',$custom);
-        verify($servers->find($client,$serverId)['startup_command']===$custom['startup_command'],'Startup command not saved for '.$game);
+        verify($servers->find($client,$serverId)['startup_command']===GameDock\StartupCommand::prepare($custom['startup_command'],$custom),'Startup command not saved for '.$game);
         verify(!array_key_exists('startup_command',$servers->listing($client)[0]),'Startup command leaked into client list');
     }
     $serverData['id']=$serverId; $admin->save($owner,'servers',$serverData); unset($serverData['id']);
 
+    verify((int)$servers->find($client,$serverId)['port']===25500,'Manual creation port ignored');
+    $portEdit=$serverData;$portEdit['id']=$serverId;$portEdit['port']='25501';$admin->save($owner,'servers',$portEdit);
+    verify((int)$servers->find($client,$serverId)['port']===25501,'Port edit ignored');
+    $serverData['port']='25501';
+    $occupied=$serverData;$occupied['port']='25888';denies(fn()=>$admin->save($owner,'servers',$occupied),'Linux-occupied port accepted');
+    $occupied['port']='25501';denies(fn()=>$admin->save($owner,'servers',$occupied),'Assigned port collision accepted');
+    $occupied['port']='24999';denies(fn()=>$admin->save($owner,'servers',$occupied),'Invalid port accepted');
     verify((int)$servers->find($client,$serverId)['port']>=25000 && (int)$servers->find($client,$serverId)['port']<=25999,'Invalid port range');
     verify($servers->find($client,$serverId)['install_folder']===(string)$serverId,'Target folder is not the server ID');
     verify(count($servers->listing($client))===1 && count($servers->listing($other))===0,'Owner list isolation failed');
     denies(fn()=>$servers->find($other,$serverId),'Other owner read allowed');
+    denies(fn()=>$servers->read($other,$serverId,'versions'),'Other owner read version catalog');
+    denies(fn()=>(new GameDock\VersionService($db,new GameDock\SshClient()))->request($other,$serverId,'forge:test'),'Other owner version change allowed');
     $before=$db->query('SELECT COUNT(*) FROM audit_log')->fetchColumn();
     denies(fn()=>$servers->perform($other,$serverId,'start'),'Other owner power allowed');
     verify($before===$db->query('SELECT COUNT(*) FROM audit_log')->fetchColumn(),'Unauthorized action reached audit/SSH');
     denies(fn()=>$admin->save($client,'nodes',$nodeData),'Client admin write allowed');
     denies(fn()=>$admin->listing($client,'users'),'Client user list allowed');
-    denies(fn()=>$admin->save($owner,'servers',$serverData),'Duplicate unit allowed');
+    $invalid=$serverData;$invalid['id']=$serverId;$invalid['unit_name']='bad;id';denies(fn()=>$admin->save($owner,'servers',$invalid),'Invalid unit allowed');
     denies(fn()=>$admin->delete($owner,'nodes',$nodeId,true),'Node with server deleted');
     denies(fn()=>$admin->delete($owner,'users',$clientId,true),'Owner with server deleted');
     denies(fn()=>$admin->delete($owner,'servers',$serverId,false),'Unconfirmed delete allowed');
@@ -74,6 +87,7 @@ try {
     verify(count($servers->listing($other))===0,'Server unregister failed');
     $db->query('ALTER TABLE servers DROP COLUMN startup_command, DROP COLUMN memory_limit_mb, DROP COLUMN cpu_limit_percent');
     $db->query('ALTER TABLE nodes DROP COLUMN public_host');
+    $db->query('DROP TABLE server_version_jobs');
     $updater=new GameDock\SchemaUpdater($db); verify(!$updater->startupEnabled(),'Legacy schema fixture failed');
     $updater->enableStartup($owner); $updater->enableStartup($owner);
     verify($updater->startupEnabled() && $updater->provisionEnabled(),'Resource/startup migration/repeat failed');

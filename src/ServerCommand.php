@@ -15,8 +15,14 @@ final class ServerCommand
         }
         $startup=Validation::startup($startup);
         if (in_array($action,['start','restart'],true) && $startup==='') throw new RuntimeException('Az adminban add meg a szerver indítóparancsát.');
+        $settings=ResourceLimits::validate($limits);
+        if (!empty($limits['port'])) {
+            $port=(string)$limits['port'];
+            if (!preg_match('/\A25[0-9]{3}\z/',$port)) throw new RuntimeException('Érvénytelen játékport.');
+            $settings['port']=(int)$port;
+        }
         $command='/usr/bin/sudo -n /usr/local/sbin/gamedock-launch '.escapeshellarg($unitName).' '.$action;
-        if (in_array($action,['start','restart'],true)) $command.=' '.escapeshellarg(base64_encode($startup)).' '.escapeshellarg(base64_encode(json_encode(ResourceLimits::validate($limits),JSON_THROW_ON_ERROR)));
+        if (in_array($action,['start','restart'],true)) $command.=' '.escapeshellarg(base64_encode($startup)).' '.escapeshellarg(base64_encode(json_encode($settings,JSON_THROW_ON_ERROR)));
         if ($action==='command') $command.=' '.escapeshellarg(base64_encode($input));
         return $command;
     }
