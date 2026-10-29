@@ -122,3 +122,22 @@ check(str_contains($prepared,'GAMEDOCK_MEMORY_MB=2048 GAMEDOCK_CPU_PERCENT=150')
 $prepared=GameDock\StartupCommand::prepare($prepared,['memory_limit_mb'=>1024,'cpu_limit_percent'=>100]);
 check(substr_count($prepared,'export GAMEDOCK_MEMORY_MB=')===1 && str_contains($prepared,'-Xmx819M') && !str_contains($prepared,'ActiveProcessorCount=2'),'Updated startup limits are stale');
 echo "Startup command limit checks passed.\n";
+
+foreach ([
+ 'ValueError: Unknown operation'=>'régebbi Minecraft-helper',
+ 'ValueError: Template synchronization is running'=>'szinkronizálása még fut',
+ 'ValueError: Template is in use by an active copy job'=>'verzióváltás fut',
+ 'OSError: [Errno 28] No space left on device'=>'szabad hely',
+ 'OSError: [Errno 30] Read-only file system'=>'csak olvasható',
+ 'ValueError: Unsafe template publication directory'=>'könyvtár tulajdonosa',
+ "AttributeError: module os has no attribute pidfd_open"=>'Python-verziója túl régi',
+ "KeyError: 'templates'"=>'szerkezete nem kompatibilis',
+] as $stderr=>$expected) {
+ $caught=false;try{GameDock\TemplateCommandResult::parse('',1,$stderr);}catch(RuntimeException $error){$caught=str_contains($error->getMessage(),$expected);}check($caught,'Specific helper diagnosis missing');
+}
+$log=tempnam(sys_get_temp_dir(),'gamedock-errors-');$oldLog=ini_get('error_log');ini_set('error_log',$log);
+try {
+ try {GameDock\TemplateCommandResult::parse('',1,'RuntimeError: unusual failure password=fixture-secret https://user:fixture-password@example.com');}catch(RuntimeException $error){check(str_contains($error->getMessage(),'Hibaazonosító:') && !str_contains($error->getMessage(),'fixture-secret'),'Unknown helper error leaked to UI');}
+ $diagnostic=file_get_contents($log);check(str_contains($diagnostic,'unusual failure') && !str_contains($diagnostic,'fixture-secret') && !str_contains($diagnostic,'fixture-password'),'Diagnostic redaction failed');
+} finally {ini_set('error_log',$oldLog);unlink($log);}
+echo "Specific Linux helper errors and redacted diagnostic logging passed.\n";
