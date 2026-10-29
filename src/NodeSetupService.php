@@ -12,7 +12,7 @@ final class NodeSetupService
         $node=(new TemplateService($this->db,new SshClient()))->node($actor,$id);
         $user=Validation::text($data,'setup_user',64);
         if(!preg_match('/\A[a-z_][a-z0-9_-]*\z/',$user))throw new RuntimeException('Érvénytelen telepítési SSH-felhasználó.');
-        $ssh=new SFTP($node['ssh_host'],(int)$node['ssh_port'],10);$ssh->setTimeout(20);
+        $ssh=new SFTP($node['ssh_host'],(int)$node['ssh_port'],10);$ssh->setTimeout(20);$ssh->enableQuietMode();
         $parts=explode(' ',trim((string)$ssh->getServerPublicHostKey()));$raw=base64_decode($parts[1] ?? '',true);
         $fingerprint='SHA256:'.rtrim(base64_encode(hash('sha256',$raw ?: '',true)),'=');
         if(!hash_equals($node['ssh_fingerprint'],$fingerprint))throw new RuntimeException('A Linux-gép hostkulcsa nem egyezik a rögzített értékkel.');

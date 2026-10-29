@@ -110,4 +110,8 @@ def install(args):
 if __name__=='__main__':
     parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--source-root');parser.add_argument('--target-root');parser.add_argument('--ssh-user',default='gamedock');parser.add_argument('--panel-public-key-file')
     try:install(parser.parse_args())
-    except (ValueError,OSError,subprocess.SubprocessError) as error:parser.exit(1,str(error)+'\n')
+    except (ValueError,OSError,subprocess.SubprocessError) as error:
+        detail=getattr(error,'stderr',None)
+        if isinstance(detail,bytes):detail=detail.decode('utf-8',errors='replace')
+        if detail:print(str(detail)[-12000:],file=sys.stderr)
+        parser.exit(1,str(error)+'\n')

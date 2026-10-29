@@ -80,3 +80,21 @@ foreach (GameDock\Validation::GAMES as $game=>$label) {
     check(str_contains($html,'name="startup_command"') && !str_contains($html,'<unsafe>'),'Custom command escaping failed');
 }
 echo "7 startup routing/template checks passed.\n";
+
+$helperFailures=[
+ [false,null,'',true,'időben'],
+ ['',1,'sudo: a password is required',false,'sudo-joga'],
+ ['',1,'sudo: user is not allowed to execute',false,'sudo-joga'],
+ ['',1,'FileNotFoundError: gamedock_runtime.py No such file',false,'gamedock_runtime.py'],
+ ['',127,'sudo: /usr/local/sbin/gamedock-templates: command not found',false,'hiányzik'],
+ ['',1,'SyntaxError: invalid syntax',false,'Python'],
+ ['',1,'PermissionError: permission denied',false,'jogosultsági'],
+ ['not json',0,'',false,'JSON'],
+ ['{}',0,'',false,'kompatibilis'],
+];
+foreach($helperFailures as [$stdout,$exit,$stderr,$timeout,$expected]) {
+ $caught=false;try{GameDock\TemplateCommandResult::parse($stdout,$exit,$stderr,$timeout);}catch(RuntimeException $e){$caught=str_contains($e->getMessage(),$expected);}
+ check($caught,'Template helper failure misdiagnosed: '.$expected);
+}
+check(GameDock\TemplateCommandResult::parse('{"state":"idle","templates":[]}',0,'')['state']==='idle','Empty valid catalog rejected');
+echo "10 template helper diagnostic checks passed.\n";

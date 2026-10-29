@@ -29,9 +29,8 @@ final class SshClient
     public function templates(array $node,string $action): array
     {
         if(!in_array($action,['catalog','sync'],true))throw new RuntimeException('Ismeretlen katalógusművelet.');
-        $ssh=$this->connect($node);$output=$ssh->exec('/usr/bin/sudo -n /usr/local/sbin/gamedock-templates '.$action);
-        if($output===false || $ssh->getExitStatus()!==0)throw new RuntimeException('A Minecraft-katalógus nem érhető el. Futtasd a webes Linux-telepítést.');
-        return json_decode($output,true,512,JSON_THROW_ON_ERROR);
+        $ssh=$this->connect($node);$ssh->enableQuietMode();$output=$ssh->exec('/usr/bin/sudo -n /usr/local/sbin/gamedock-templates '.$action);
+        return TemplateCommandResult::parse($output,$ssh->getExitStatus(),(string)$ssh->getStdError(),$ssh->isTimeout());
     }
     public function provision(array $node,string $action,array $payload): array
     {

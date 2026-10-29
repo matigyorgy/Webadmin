@@ -107,3 +107,13 @@ A közvetlen SSH-indítás, webes Linux-beállítás, egyéni játéktípus, ID-
 Nincs általános webes fájlkezelő, biztonsági mentés/visszaállítás, számlázás vagy e-mailes jelszó-visszaállítás. Az automatikus konfiguráció a fent ismert fájlokat és porthelyőrzőket kezeli; tetszőleges egyedi játék minden saját beállítását a template-ben/indítóparancsban kell megadni.
 
 500-as hibánál a `/check.php` oldal megmutatja a PHP-verziót, szükséges fő fájlok olvashatóságát és könyvtárjogokat. Jelszót/privát kulcsot nem ír ki. Váratlan hiba esetén a válasz hibaazonosítója alapján keresd a részletet a tárhely PHP error_log naplójában.
+
+## „A Minecraft-katalógus nem érhető el” hiba
+
+Ez a korábbi, általános hibaüzenet az SSH-hitelesítés után keletkezett: a Linux-oldali helper nem futott le sikeresen. Nem jelenti automatikusan azt, hogy a Minecraft letöltési oldal hibás.
+
+A friss panel külön jelzi a hiányzó gamedock-templates programot, a jelszó nélküli sudo-jog hiányát, a hiányzó gamedock_runtime.py fájlt, a Python-futási hibát, az időtúllépést és a hibás JSON-választ. A Minecraft-templatek oldalon a kiválasztott géphez közvetlen Linux telepítés/javítás gomb is található.
+
+A teljes kiadás feltöltése után a gép szerkesztésénél add meg a telepítési root/admin SSH-hozzáférést, és indítsd a Linux beállítása automatikusan műveletet. A befejező üzenet legyen sikeres, majd térj vissza a katalógushoz. A hiányzó katalógus még nem hiba: első használatkor az állapot üres, és a szinkronizálás indítható. A segédprogram stderr üzeneteit külön kezeljük, hogy ne keveredjenek a JSON-katalógusba.
+
+A Linux-telepítés hibaüzenete most a sikertelen lépést és a kilépési kódot is jelzi (APT csomaglista, alapcsomag/JDK, Linux-helper/SSH-jogosultság vagy UFW). A telepítési napló a részletes hibát is tartalmazza, és a sudoers-ellenőrzés stderr üzenete nem vész el. Hibakereséshez a telepítő alatti naplódoboz utolsó 20–30 sora szükséges; hitelesítési jelszót/privát kulcsot nem kell elküldeni.
