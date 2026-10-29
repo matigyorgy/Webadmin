@@ -35,11 +35,12 @@ final class PanelController
                 $error=$e instanceof RuntimeException && !$e instanceof PDOException ? $e->getMessage() : 'A mentés nem sikerült. Az e-mail-cím már használatban lehet, vagy adatbázishiba történt.';
             }
         }
-        $servers=[]; $history=[];
+        $servers=[]; $history=[];$navigation=[];
         if ($user) {
             $user=$auth->current();
             if ($user) {
                 try {
+                    $navigation=$service->navigation($user);
                     $servers=$service->listing($user,mb_substr(trim((string)($_GET['q'] ?? '')),0,100));
                     $gameNames=(new GameRegistry($this->database))->names();
                     foreach ($servers as &$server) { $server['game_name']=$gameNames[$server['game']] ?? $server['game']; $server['state']='nincs lekérdezve'; } unset($server);
@@ -53,7 +54,7 @@ final class PanelController
                 } catch (Throwable $e) { $error=$e instanceof RuntimeException && !$e instanceof PDOException ? $e->getMessage() : 'A lista nem tölthető be.'; }
             }
         }
-        $this->view->render('panel.tpl',['user'=>$user,'servers'=>$servers,'server_count'=>count($servers),'selected'=>$selected,
+        $this->view->render('panel.tpl',['user'=>$user,'navigation_groups'=>$navigation,'servers'=>$servers,'server_count'=>count($servers),'selected'=>$selected,
             'console'=>$console,'history'=>$history,'page'=>$page,'search'=>(string)($_GET['q'] ?? ''),'csrf'=>$_SESSION['csrf'],'error'=>$error,'notice'=>$notice]);
     }
     private function redirect(string $url): never { header('Location: '.$url,true,303); exit; }

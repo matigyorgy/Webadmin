@@ -1,6 +1,6 @@
 # GameDock
 
-PHP 8.2+, MySQL, Smarty és SSH2 alapú, Composer nélkül telepíthető játékszerver-panel. Flat, sötét Bootstrap 5.3.8 felület, külön admin- és kliensmenüvel.
+PHP 8.2+, MySQL, Smarty és SSH2 alapú, Composer nélkül telepíthető játékszerver-panel. Világos, kék fejlécű Bootstrap 5.3.8 felület, játék szerint csoportosított bal oldali szervermenüvel, szögletes áttekintő kártyákkal és jobb oldali eszközmenüvel. Az admin- és kliensfelület közös megjelenést használ, az adminmenü csak jogosult felhasználóknak látszik.
 
 ## Webes telepítés
 

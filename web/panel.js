@@ -166,12 +166,23 @@ if (resources) {
         try {
             const result = await queryServer(resources.dataset.serverId, 'metrics');
             resources.querySelector('[data-cpu]').textContent = `${Number(result.cpu_percent).toFixed(1)}%`;
-            resources.querySelector('[data-memory]').textContent = `${(Number(result.memory_bytes) / 1048576).toFixed(1)} MiB`;
-            resources.querySelector('[data-resource-message]').textContent = `Frissítve: ${new Date().toLocaleTimeString()} · ${result.limits_enforced ? 'Linux-korlátozás aktív' : 'Folyamatadatok'}`;
+            const memoryMiB = Number(result.memory_bytes) / 1048576;
+            const memoryLimit = Number(resources.dataset.memoryLimit || 0);
+            resources.querySelector('[data-memory]').textContent = `${memoryMiB.toFixed(1)} MiB`;
+            for (const [selector, value] of [['[data-cpu-progress]', Number(result.cpu_percent)], ['[data-memory-progress]', memoryLimit > 0 ? memoryMiB / memoryLimit * 100 : 0]]) {
+                const progress = resources.querySelector(selector);
+                if (progress) {
+                    const percent = Math.max(0, Math.min(100, value));
+                    progress.setAttribute('aria-valuenow', percent.toFixed(1));
+                    progress.querySelector('.progress-bar').style.width = `${percent}%`;
+                }
+            }
+            resources.querySelector('[data-resource-message]').textContent = `Frissítve: ${new Date().toLocaleTimeString('hu-HU')} · ${result.limits_enforced ? 'Linux-korlátozás aktív' : 'Folyamatadatok'}`;
             showState(document.getElementById('server-state'), result.state);
         } catch (error) {
             resources.querySelector('[data-cpu]').textContent = '—';
             resources.querySelector('[data-memory]').textContent = '—';
+            for (const progress of resources.querySelectorAll('[role=progressbar]')) {progress.setAttribute('aria-valuenow', '0');progress.querySelector('.progress-bar').style.width='0%';}
             resources.querySelector('[data-resource-message]').textContent = 'A használati adatok nem érhetők el. Ellenőrizd a Linux-telepítést és az SSH-kapcsolatot.';
         } finally { readingResources = false; }
     };

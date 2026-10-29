@@ -9,9 +9,22 @@ final class ServerService
     public function listing(array $user, string $search=''): array
     {
         $current=(new SchemaUpdater($this->db))->provisionEnabled();$provision=$current ? 's.provision_state' : "'ready'";$port=$current ? 's.port' : 'NULL';
-        $rows=$this->db->query('SELECT '.$provision.' AS provision_state,'.$port.' AS port,s.id,s.name,s.game,s.unit_name,n.name AS node_name,u.email AS owner_email FROM servers s JOIN nodes n ON n.id=s.node_id JOIN users u ON u.id=s.user_id WHERE (s.user_id=? OR ?=1) ORDER BY s.name',[$user['id'],(int)$user['is_admin']])->fetchAll();
+        $public=(new SchemaUpdater($this->db))->publicHostEnabled() ? 'n.public_host' : 'NULL';
+        $minecraft=$current ? 's.minecraft_type,s.minecraft_version' : "NULL AS minecraft_type,NULL AS minecraft_version";
+        $rows=$this->db->query('SELECT '.$public.' AS public_host,n.ssh_host,'.$minecraft.','.$provision.' AS provision_state,'.$port.' AS port,s.id,s.name,s.game,s.unit_name,n.name AS node_name,u.email AS owner_email FROM servers s JOIN nodes n ON n.id=s.node_id JOIN users u ON u.id=s.user_id WHERE (s.user_id=? OR ?=1) ORDER BY s.name',[$user['id'],(int)$user['is_admin']])->fetchAll();
         $names=(new GameRegistry($this->db))->names();
         return array_values(array_filter($rows,static fn($s)=>$search==='' || mb_stripos($s['name'].' '.$s['node_name'].' '.($names[$s['game']] ?? $s['game']),$search)!==false));
+    }
+    public function navigation(array $user): array
+    {
+        $groups=[];$names=(new GameRegistry($this->db))->names();
+        foreach($this->listing($user) as $s) {
+            $game=$s['game'];$host=$s['public_host'] ?: $s['ssh_host'];
+            $address=(str_contains($host,':') ? '['.$host.']' : $host).(!empty($s['port']) ? ':'.$s['port'] : '');
+            $groups[$game] ??= ['name'=>$names[$game] ?? $game,'servers'=>[]];
+            $groups[$game]['servers'][]=['id'=>$s['id'],'name'=>!empty($s['minecraft_version']) ? ucfirst($s['minecraft_type']).' '.$s['minecraft_version'] : $s['name'],'address'=>$address];
+        }
+        return $groups;
     }
     public function find(array $user, int $id): array
     {

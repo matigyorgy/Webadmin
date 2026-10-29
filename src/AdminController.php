@@ -84,7 +84,7 @@ final class AdminController
             if ($record===null && isset($_GET['new'])) $record=[];
         } catch (Throwable $e) { $error=$e instanceof RuntimeException && !$e instanceof PDOException ? $e->getMessage() : 'Az adminlista nem tölthető be.'; }
         $defaults=['public_host'=>'','memory_limit_mb'=>0,'cpu_limit_percent'=>0,'id'=>'','email'=>'','is_admin'=>'0','name'=>'','ssh_host'=>'','ssh_port'=>'22','ssh_user'=>'gamedock','ssh_fingerprint'=>'','user_id'=>'','node_id'=>'','game'=>'minecraft','unit_name'=>'','startup_command'=>'','install_source'=>'','install_folder'=>'','provision_job'=>'','provision_state'=>'ready','provision_message'=>'','slug'=>'','existing_slug'=>'','template_path'=>'','provider'=>'folder','minecraft_template'=>'','port'=>null];
-        $this->view->render('admin.tpl',['user'=>$user,'csrf'=>$_SESSION['csrf'],'section'=>$section,'error'=>$error,'notice'=>$notice,'rows'=>$rows,
+        $this->view->render('admin.tpl',['user'=>$user,'navigation_groups'=>(new ServerService($this->db,$this->ssh))->navigation($user),'csrf'=>$_SESSION['csrf'],'section'=>$section,'error'=>$error,'notice'=>$notice,'rows'=>$rows,
             'record'=>$record===null ? null : array_replace($defaults,$record),'users'=>$users,'nodes'=>$nodes,'public_key'=>$key,'catalog'=>$catalog,'selected_node'=>$selectedNode,'profiles'=>(new GameRegistry($this->db))->all(),'startup_supported'=>(new SchemaUpdater($this->db))->startupEnabled(),'provision_supported'=>(new SchemaUpdater($this->db))->provisionEnabled(),'games'=>(new GameRegistry($this->db))->names()]);
     }
 }

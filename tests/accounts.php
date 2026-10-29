@@ -57,6 +57,8 @@ try {
     verify((int)$servers->find($client,$serverId)['port']>=25000 && (int)$servers->find($client,$serverId)['port']<=25999,'Invalid port range');
     verify($servers->find($client,$serverId)['install_folder']===(string)$serverId,'Target folder is not the server ID');
     verify(count($servers->listing($client))===1 && count($servers->listing($other))===0,'Owner list isolation failed');
+    $navigation=$servers->navigation($client);verify(count($navigation['minecraft']['servers'])===1 && $navigation['minecraft']['servers'][0]['id']==$serverId,'Sidebar server grouping failed');
+    verify($servers->navigation($other)===[],'Other owner server leaked through sidebar');
     denies(fn()=>$servers->find($other,$serverId),'Other owner read allowed');
     denies(fn()=>$servers->read($other,$serverId,'versions'),'Other owner read version catalog');
     denies(fn()=>(new GameDock\VersionService($db,new GameDock\SshClient()))->request($other,$serverId,'forge:test'),'Other owner version change allowed');

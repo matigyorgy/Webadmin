@@ -18,6 +18,9 @@ final class SmartyView
         $this->smarty->setCompileDir($compile);
         $this->smarty->escape_html = true;
         $this->smarty->setCaching(Smarty::CACHING_OFF);
+        $assetVersion=0;
+        foreach (['style.css','panel.js'] as $asset) if (is_file($root.'/web/'.$asset)) $assetVersion=max($assetVersion,(int)filemtime($root.'/web/'.$asset));
+        $this->smarty->assign('asset_version',(string)$assetVersion);
     }
     public function render(string $template, array $data): void
     {
