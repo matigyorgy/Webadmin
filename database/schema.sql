@@ -29,6 +29,8 @@ CREATE TABLE servers (
  port SMALLINT UNSIGNED NULL,
  minecraft_type VARCHAR(24) NULL,
  minecraft_version VARCHAR(32) NULL,
+ template_key VARCHAR(200) NULL,
+ template_version VARCHAR(64) NULL,
  memory_limit_mb INT UNSIGNED NOT NULL DEFAULT 0,
  cpu_limit_percent INT UNSIGNED NOT NULL DEFAULT 0,
  unit_name VARCHAR(120) NOT NULL,
@@ -57,6 +59,17 @@ CREATE TABLE server_version_jobs (
  install_source VARCHAR(255) NOT NULL,
  minecraft_type VARCHAR(24) NOT NULL,
  minecraft_version VARCHAR(32) NOT NULL,
+ template_key VARCHAR(200) NULL,
+ template_version VARCHAR(64) NULL,
  message VARCHAR(500) NULL,
  FOREIGN KEY (server_id) REFERENCES servers(id) ON DELETE CASCADE
+);
+
+CREATE TABLE template_policies (
+ node_id BIGINT UNSIGNED NOT NULL,
+ template_key VARCHAR(200) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+ minimum_memory_mb INT UNSIGNED NOT NULL DEFAULT 0,
+ requires_reinstall TINYINT(1) NOT NULL DEFAULT 0,
+ PRIMARY KEY(node_id,template_key),
+ FOREIGN KEY(node_id) REFERENCES nodes(id) ON DELETE CASCADE
 );

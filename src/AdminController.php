@@ -21,9 +21,12 @@ final class AdminController
         try {
             if ($_SERVER['REQUEST_METHOD']==='POST') {
                 $auth->csrf();
-                if($section==='templates' && in_array($_POST['action'] ?? '',['sync','delete_template'],true)) {
+                if($section==='templates' && in_array($_POST['action'] ?? '',['sync','delete_template','install_template','save_custom_template','save_policy'],true)) {
                     $node=Validation::id($_POST['node_id'] ?? 0);$templates=new TemplateService($this->db,$this->ssh);
                     if ($_POST['action']==='delete_template') {$templates->delete($user,$node,(string)($_POST['template_key'] ?? ''));$_SESSION['admin_notice']='A Minecraft-template törölve.';}
+                    elseif($_POST['action']==='install_template'){$this->ssh->templates($templates->node($user,$node),'install',Validation::text($_POST,'template_key',200));}
+                    elseif($_POST['action']==='save_custom_template'){$templates->saveCustom($user,$node,$_POST);}
+                    elseif($_POST['action']==='save_policy'){$templates->node($user,$node);(new TemplatePolicy($this->db))->save($user,$node,Validation::text($_POST,'template_key',200),$_POST);$_SESSION['admin_notice']='A template memóriaigényét és újratelepítési szabályát elmentettük.';}
                     else $templates->sync($user,$node);
                     header('Location: /admin.php?section=templates&node='.$node,true,303);return;
                 }
@@ -69,7 +72,7 @@ final class AdminController
             $error=$e instanceof RuntimeException && !$e instanceof PDOException ? $e->getMessage() : 'A mentés nem sikerült. Az e-mail már foglalt lehet, vagy a bejegyzésre más adat hivatkozik.';
             if (($_POST['action'] ?? '')==='save') {
                 $record=[];
-                foreach (['id','email','is_admin','name','ssh_host','public_host','ssh_port','ssh_user','ssh_fingerprint','user_id','node_id','game','unit_name','startup_command','install_source','install_folder','slug','existing_slug','template_path','provider','minecraft_template','memory_limit_mb','cpu_limit_percent','port'] as $field) $record[$field]=is_scalar($_POST[$field] ?? null) ? (string)$_POST[$field] : '';
+                foreach (['id','email','is_admin','name','ssh_host','public_host','ssh_port','ssh_user','ssh_fingerprint','user_id','node_id','game','unit_name','startup_command','install_source','install_folder','slug','existing_slug','template_path','provider','minecraft_template','memory_limit_mb','cpu_limit_percent','port','custom_template'] as $field) $record[$field]=is_scalar($_POST[$field] ?? null) ? (string)$_POST[$field] : '';
             }
         }
         try {
@@ -83,7 +86,7 @@ final class AdminController
             if ($record===null && isset($_GET['edit'])) $record=$service->find($user,$section,Validation::id($_GET['edit']));
             if ($record===null && isset($_GET['new'])) $record=[];
         } catch (Throwable $e) { $error=$e instanceof RuntimeException && !$e instanceof PDOException ? $e->getMessage() : 'Az adminlista nem tölthető be.'; }
-        $defaults=['public_host'=>'','memory_limit_mb'=>0,'cpu_limit_percent'=>0,'id'=>'','email'=>'','is_admin'=>'0','name'=>'','ssh_host'=>'','ssh_port'=>'22','ssh_user'=>'gamedock','ssh_fingerprint'=>'','user_id'=>'','node_id'=>'','game'=>'minecraft','unit_name'=>'','startup_command'=>'','install_source'=>'','install_folder'=>'','provision_job'=>'','provision_state'=>'ready','provision_message'=>'','slug'=>'','existing_slug'=>'','template_path'=>'','provider'=>'folder','minecraft_template'=>'','port'=>null];
+        $defaults=['custom_template'=>'','public_host'=>'','memory_limit_mb'=>0,'cpu_limit_percent'=>0,'id'=>'','email'=>'','is_admin'=>'0','name'=>'','ssh_host'=>'','ssh_port'=>'22','ssh_user'=>'gamedock','ssh_fingerprint'=>'','user_id'=>'','node_id'=>'','game'=>'minecraft','unit_name'=>'','startup_command'=>'','install_source'=>'','install_folder'=>'','provision_job'=>'','provision_state'=>'ready','provision_message'=>'','slug'=>'','existing_slug'=>'','template_path'=>'','provider'=>'folder','minecraft_template'=>'','port'=>null];
         $this->view->render('admin.tpl',['user'=>$user,'navigation_groups'=>(new ServerService($this->db,$this->ssh))->navigation($user),'csrf'=>$_SESSION['csrf'],'section'=>$section,'error'=>$error,'notice'=>$notice,'rows'=>$rows,
             'record'=>$record===null ? null : array_replace($defaults,$record),'users'=>$users,'nodes'=>$nodes,'public_key'=>$key,'catalog'=>$catalog,'selected_node'=>$selectedNode,'profiles'=>(new GameRegistry($this->db))->all(),'startup_supported'=>(new SchemaUpdater($this->db))->startupEnabled(),'provision_supported'=>(new SchemaUpdater($this->db))->provisionEnabled(),'games'=>(new GameRegistry($this->db))->names()]);
     }

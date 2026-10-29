@@ -199,8 +199,42 @@ def catalog():
         if value.get('state')=='running' and value.get('worker') and not rt.alive(value['worker'],0):value.update(state='failed',message='A katalógusfrissítés megszakadt. Újraindítható.');atomic(CACHE+'/catalog.json',value)
         return value
     except FileNotFoundError:return {'state':'idle','templates':[],'message':'Még nincs szinkronizált katalógus.'}
+def custom_rows():
+    try:
+        with open(CACHE+'/custom.json') as stream:return json.load(stream)
+    except FileNotFoundError:return []
+def all_catalog():
+    value=catalog();value['templates']=value['templates']+custom_rows();return value
+def save_custom(data):
+    os.makedirs(CACHE,mode=0o700,exist_ok=True)
+    with open(CACHE+'/lock','a') as lock:
+        fcntl.flock(lock,fcntl.LOCK_EX)
+        key=data['key'];game=data['game'];folder=Path(data['path']);settings=cfg();root=Path(settings['_provision']['source_root'])
+        if not re.fullmatch(r'custom:[a-f0-9]{24}',key) or not re.fullmatch(r'[a-z][a-z0-9_-]{0,31}',game):raise ValueError('Invalid custom template identifier')
+        if not folder.is_absolute() or not folder.is_dir() or folder.is_symlink() or not folder.resolve().is_relative_to(root.resolve()) or folder.resolve()==root.resolve():raise ValueError('Custom template must be below the template root')
+        for field,maximum in [('name',120),('version',64),('startup',4096)]:
+            if not isinstance(data[field],str) or not data[field].strip() or (len(data[field].encode()) if field=='startup' else len(data[field]))>maximum or any(ord(c)<32 for c in data[field]):raise ValueError('Invalid custom template field')
+        found=False
+        for directory,dirs,files in os.walk(folder,followlinks=False):
+            for name in dirs+files:
+                mode=os.lstat(Path(directory)/name).st_mode
+                if not (stat.S_ISDIR(mode) or stat.S_ISREG(mode)):raise ValueError('Custom template contains a symlink or special file')
+            found=found or bool(files)
+        if not found:raise ValueError('Custom template folder is empty')
+        minimum=data.get('minimum_memory_mb',0)
+        if type(minimum) is not int or not 0<=minimum<=1048576:raise ValueError('Invalid minimum memory')
+        row={'key':key,'provider':'folder','game':game,'type':game,'name':data['name'],'version':data['version'],'build':'custom','startup':data['startup'],'path':str(folder.resolve()),'state':'ready','minimum_memory_mb':minimum,'message':'Egyedi, meglévő Linux-mappából felvett template.'}
+        rows=custom_rows();rows=[item for item in rows if item['key']!=key];rows.append(row);atomic(CACHE+'/custom.json',rows)
+    return all_catalog()
+def delete_custom(key):
+    with open(CACHE+'/lock','a') as lock:
+        fcntl.flock(lock,fcntl.LOCK_EX);rows=custom_rows()
+        if not any(row['key']==key for row in rows):raise ValueError('Unknown template')
+        atomic(CACHE+'/custom.json',[row for row in rows if row['key']!=key])
+    value=all_catalog();value['message']='Az egyedi template bejegyzése törölve; a forrásfájlok megmaradtak.';return value
 def delete_template(key):
     if not isinstance(key,str) or len(key)>200:raise ValueError('Invalid template key')
+    if key.startswith('custom:'):return delete_custom(key)
     os.makedirs(CACHE,mode=0o700,exist_ok=True)
     with open(CACHE+'/lock','a') as lock,open(CONFIG+'.lock','a') as config_lock:
         fcntl.flock(lock,fcntl.LOCK_EX);fcntl.flock(config_lock,fcntl.LOCK_EX)
@@ -222,24 +256,40 @@ def delete_template(key):
         value['templates']=[entry for entry in value['templates'] if entry['key']!=key]
         value['message']='A kiválasztott Minecraft-template törölve. A következő szinkronizálás újra letöltheti.'
         atomic(CACHE+'/catalog.json',value);return value
-def sync():
+def sync(selection=None):
     os.makedirs(CACHE,mode=0o700,exist_ok=True)
     with open(CACHE+'/lock','a') as lock:
         fcntl.flock(lock,fcntl.LOCK_EX);old=catalog()
-        if old.get('state')=='running' and rt.alive(old.get('worker'),0):return old
-        value={'state':'running','templates':old['templates'],'message':'A hivatalos kiadások lekérése és a sablonok előkészítése elindult.'};atomic(CACHE+'/catalog.json',value)
+        if old.get('state')=='running' and rt.alive(old.get('worker'),0):
+            if selection and old.get('selection')!=selection:raise ValueError('Another template installation is running')
+            return old
+        value={'state':'running','selection':selection,'templates':old['templates'],'message':'A hivatalos kiadások lekérése és a sablonok előkészítése elindult.'};atomic(CACHE+'/catalog.json',value)
         env=rt.environment();env.update({k:v for k,v in os.environ.items() if k.lower() in ('http_proxy','https_proxy','no_proxy','ssl_cert_file')})
         with open(CACHE+'/sync.log','ab') as log:child=subprocess.Popen(['/usr/bin/python3','-I',SELF,'worker'],stdin=subprocess.DEVNULL,stdout=log,stderr=subprocess.STDOUT,start_new_session=True,env=env)
         value['worker']=rt.identity(child.pid);atomic(CACHE+'/catalog.json',value);return value
+def releases(kind):
+    providers={'vanilla':vanilla,'paper':paper,'forge':forge,'bukkit':bukkit,'spigot':spigot,'purpur':purpur,'fabric':fabric}
+    if kind not in providers:raise ValueError('Unknown Minecraft type')
+    os.makedirs(CACHE,mode=0o700,exist_ok=True);path=Path(CACHE)/('releases-'+kind+'.json')
+    if path.exists() and time.time()-path.stat().st_mtime<600:value=json.loads(path.read_text())
+    else:
+        rows=providers[kind]();value={'state':'available','templates':[{field:row[field] for field in ('key','type','version','build')} for row in rows],'message':'A legutóbbi 10 stabil kiadás. Válassz egyet a telepítéshez.'};atomic(path,value)
+    return value
 def worker():
     with open(CACHE+'/lock','a') as lock:fcntl.flock(lock,fcntl.LOCK_EX);value=catalog()
     settings=cfg();root=Path(settings['_provision']['source_root'])/'minecraft';public_directory(root)
     account=pwd.getpwnam(settings['_provision']['users']['minecraft'])
     if account.pw_uid==0:raise ValueError('Non-root template builder required')
-    previous={row['key']:row for row in value['templates']};rows=[];errors=[]
+    previous={row['key']:row for row in value['templates']};selection=value.get('selection');rows=list(value['templates']) if selection else [];errors=[]
     for kind,provider in [('vanilla',vanilla),('paper',paper),('forge',forge),('bukkit',bukkit),('spigot',spigot),('purpur',purpur),('fabric',fabric)]:
-        try:planned=provider()
+        if selection and not selection.startswith(kind+':'):continue
+        try:
+            planned=provider()
+            if selection:
+                planned=[row for row in planned if row['key']==selection]
+                if not planned:raise ValueError('Selected stable release is no longer available')
         except Exception as error:errors.append(kind+': a hivatalos katalógus nem érhető el.');print(type(error).__name__,str(error),file=sys.stderr);continue
+        if selection:rows=[row for row in rows if row['key']!=selection]
         rows.extend(planned);value['templates']=rows;atomic(CACHE+'/catalog.json',value)
         for row in planned:
             public_directory(root/kind);public_directory(root/kind/row['version']);final=root/kind/row['version']/row['build']
@@ -271,9 +321,14 @@ if __name__=='__main__':
             row=json.loads(base64.b64decode(sys.argv[2],validate=True));folder=sys.argv[3];archive=os.path.join(folder,'jdk.tar.gz');download(row,archive);extract_jdk(archive,folder);os.unlink(archive)
         elif action=='build' and len(sys.argv)==5:build(json.loads(base64.b64decode(sys.argv[2],validate=True)),sys.argv[3],sys.argv[4])
         elif os.geteuid()!=0:raise ValueError('Root helper required')
-        elif action=='catalog':print(json.dumps(catalog(),ensure_ascii=False))
+        elif action=='catalog':print(json.dumps(all_catalog(),ensure_ascii=False))
         elif action=='delete' and len(sys.argv)==3:print(json.dumps(delete_template(sys.argv[2]),ensure_ascii=False))
-        elif action=='sync':print(json.dumps(sync(),ensure_ascii=False))
+        elif action=='sync':sync();print(json.dumps(all_catalog(),ensure_ascii=False))
+        elif action=='releases' and len(sys.argv)==3:print(json.dumps(releases(sys.argv[2]),ensure_ascii=False))
+        elif action=='install' and len(sys.argv)==3:
+            if len(sys.argv[2])>200 or not re.fullmatch(r'(vanilla|paper|forge|bukkit|spigot|purpur|fabric):[0-9A-Za-z._:-]+',sys.argv[2]):raise ValueError('Invalid release')
+            sync(sys.argv[2]);print(json.dumps(all_catalog(),ensure_ascii=False))
+        elif action=='custom-save' and len(sys.argv)==3 and len(sys.argv[2])<12288:print(json.dumps(save_custom(json.loads(base64.b64decode(sys.argv[2],validate=True))),ensure_ascii=False))
         elif action=='worker':worker()
         else:raise ValueError('Unknown operation')
     except Exception as error:

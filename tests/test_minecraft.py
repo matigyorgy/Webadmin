@@ -1,3 +1,5 @@
+import json
+from types import SimpleNamespace
 import hashlib,importlib.machinery,importlib.util,io,tempfile,unittest,tarfile,os
 from pathlib import Path
 from unittest.mock import patch
@@ -39,6 +41,21 @@ class MinecraftTests(unittest.TestCase):
    return [{'loader':{'stable':True,'version':'0.17.3'}}]
   with patch.object(mc,'metadata',side_effect=metadata),patch.object(mc,'text',return_value='a'*40):rows=mc.fabric()
   self.assertEqual(rows[0]['loader'],'0.17.3');self.assertEqual(rows[0]['type'],'fabric')
+ def test_release_preview_is_cached_and_contains_no_download_payload(self):
+  with tempfile.TemporaryDirectory() as folder:
+   row=mc.entry('vanilla','1.21.10','fixture','https://piston-data.mojang.com/server.jar')
+   with patch.object(mc,'CACHE',folder),patch.object(mc,'vanilla',return_value=[row]) as provider:
+    first=mc.releases('vanilla');second=mc.releases('vanilla')
+   self.assertEqual(first,second);self.assertEqual(provider.call_count,1);self.assertNotIn('url',first['templates'][0]);self.assertEqual(first['templates'][0]['key'],row['key'])
+ def test_selective_install_preserves_other_templates(self):
+  with tempfile.TemporaryDirectory() as folder:
+   root=Path(folder);target=root/'minecraft/paper/1.21.10/fixture';target.mkdir(parents=True)
+   selected={'key':'paper:1.21.10:fixture','type':'paper','version':'1.21.10','build':'fixture','state':'ready','path':str(target)}
+   other={'key':'vanilla:1.21.9:fixture','type':'vanilla','version':'1.21.9','build':'fixture','state':'ready'}
+   (root/'catalog.json').write_text(json.dumps({'state':'running','selection':selected['key'],'templates':[selected,other]}))
+   with patch.object(mc,'CACHE',folder),patch.object(mc,'cfg',return_value={'_provision':{'source_root':folder,'users':{'minecraft':'game'}}}),patch.object(mc.pwd,'getpwnam',return_value=SimpleNamespace(pw_uid=1001)),patch.object(mc,'public_directory'),patch.object(mc,'paper',return_value=[dict(selected)]) as provider,patch.object(mc,'vanilla',side_effect=AssertionError('Wrong provider')):
+    mc.worker()
+   saved=json.loads((root/'catalog.json').read_text());self.assertEqual({row['key'] for row in saved['templates']},{selected['key'],other['key']});self.assertEqual(provider.call_count,1)
  def test_jdk_archive_traversal(self):
   with tempfile.TemporaryDirectory() as folder:
    archive=Path(folder)/'jdk.tar';destination=Path(folder)/'extract';destination.mkdir()

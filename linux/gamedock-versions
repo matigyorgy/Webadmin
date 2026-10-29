@@ -20,6 +20,7 @@ def status(job_id):
         with p.locked(),unit_lock(job['unit']):
             target=Path(job['target']);backup=Path(job['backup']);stage=Path(job['stage'])
             if job.get('phase')=='switching' and backup.exists() and target.exists() and not stage.exists():
+                cfg=p.config();cfg[job['unit']].update(minecraft_type=None if job['template'].get('provider')=='folder' else job['template']['type'],template_key=job['template']['key'],template_version=job['template']['version']);p.atomic(p.CONFIG,cfg)
                 job.update(state='ready',message='A verzióváltás elkészült; az előző példány mentése: '+str(backup))
             else:
                 if not target.exists() and backup.exists():os.rename(backup,target)
@@ -32,34 +33,43 @@ def create_lock():
 
 def create(payload):
     job_id=payload['job'];p.job_path(job_id);unit=payload['unit'];key=payload['template_key']
+    reinstall=payload.get('reinstall',False)
+    if type(reinstall) is not bool or (reinstall and payload.get('confirmed') is not True):raise ValueError('Reinstallation requires explicit confirmation')
     if not isinstance(unit,str) or not re.fullmatch(r'[A-Za-z0-9_][A-Za-z0-9_-]*(?:\.service)?',unit):raise ValueError('Invalid unit')
     p.prepare()
     with create_lock(),unit_lock(unit,False):
         cfg=p.config();server=cfg[unit];account=pwd.getpwnam(server['user'])
         if Path(p.job_path(job_id)).exists():
             with open(p.job_path(job_id)) as stream:existing=json.load(stream)
-            if existing.get('operation')!='version' or existing.get('unit')!=unit or existing.get('template',{}).get('key')!=key:raise ValueError('Job token mismatch')
+            if existing.get('operation')!='version' or existing.get('unit')!=unit or existing.get('template',{}).get('key')!=key or existing.get('reinstall',False)!=reinstall:raise ValueError('Job token mismatch')
             return p.public(existing)
-        if account.pw_uid==0 or not server.get('minecraft_type'):raise ValueError('Minecraft instance required')
+        if account.pw_uid==0:raise ValueError('Non-root instance required')
         previous=cfg.get('_version_jobs',{}).get(unit)
         if previous:
             with open(p.job_path(previous)) as stream:old=json.load(stream)
             if old['state'] in ('queued','running'):raise ValueError('Version change is already active')
         control=Path(CONTROL)/(unit+'.json');data=json.loads(control.read_text()) if control.exists() else {}
         if any(p.runtime.alive(data.get(k),account.pw_uid) for k in ('runner','game')) or p.runtime.group_records(unit,account.pw_uid):raise ValueError('Stop the server before changing version')
-        with open(CATALOG) as stream:catalog=json.load(stream)
+        try:
+            with open(CATALOG) as stream:catalog=json.load(stream)
+        except FileNotFoundError:catalog={'templates':[]}
+        custom=Path(CATALOG).with_name('custom.json')
+        if custom.exists():catalog['templates']+=json.loads(custom.read_text())
         row=next((r for r in catalog['templates'] if r['key']==key and r['state']=='ready'),None)
-        if not row or row['type']!=server['minecraft_type']:raise ValueError('Ready template of the same Minecraft type required')
+        if not row:raise ValueError('Ready template required')
+        minecraft=bool(server.get('minecraft_type'))
+        if minecraft and (row.get('provider')=='folder' or row['type'] not in ('vanilla','paper','forge','bukkit','spigot','purpur','fabric')):raise ValueError('Minecraft template required')
+        if not minecraft and (row.get('provider')!='folder' or row.get('game')!=server['game']):raise ValueError('Template game mismatch')
         parts=[row['type'],row['version'],row['build']]
-        if any(not re.fullmatch(r'[A-Za-z0-9._-]{1,100}',v) or v in ('.','..') for v in parts):raise ValueError('Invalid template path')
-        root=Path(cfg['_provision']['source_root'])/'minecraft';source=root.joinpath(*parts)
+        if row.get('provider')!='folder' and any(not re.fullmatch(r'[A-Za-z0-9._-]{1,100}',v) or v in ('.','..') for v in parts):raise ValueError('Invalid template path')
+        root=Path(cfg['_provision']['source_root']);source=Path(row['path']) if row.get('provider')=='folder' else root.joinpath('minecraft',*parts)
         if source.is_symlink() or not source.is_dir() or source.resolve()!=source or not source.resolve().is_relative_to(root.resolve()) or str(source)!=row['path']:raise ValueError('Unsafe template path')
         target=Path(server['directory']);base=Path(cfg['_provision']['target_root'])
         if target.parent!=base or target.is_symlink() or not target.is_dir():raise ValueError('Unsafe instance path')
         backup_base=base/'.gamedock-backups';backup_base.mkdir(mode=0o711,exist_ok=True);p.secure(backup_base,True)
         owner_backup=backup_base/unit;owner_backup.mkdir(mode=0o711,exist_ok=True);p.secure(owner_backup,True)
         stage=base/('.gamedock-version-'+job_id);stage.mkdir(mode=0o700);os.chown(stage,account.pw_uid,account.pw_gid)
-        job={'operation':'version','unit':unit,'source':str(source),'target':str(target),'backup':str(owner_backup/job_id),'stage':str(stage),'user':server['user'],'template':row,'state':'queued','message':'A verzióváltás előkészítése elindult.'}
+        job={'reinstall':reinstall,'settings':{'game':server['game'],'port':server['port'],'minecraft':minecraft,'eula':minecraft},'operation':'version','unit':unit,'source':str(source),'target':str(target),'backup':str(owner_backup/job_id),'stage':str(stage),'user':server['user'],'template':row,'state':'queued','message':'A verzióváltás előkészítése elindult.'}
         p.atomic(p.job_path(job_id),job);cfg.setdefault('_version_jobs',{})[unit]=job_id;p.atomic(p.CONFIG,cfg)
         try:
             with open(p.JOBS+'/'+job_id+'.log','ab') as output:child=subprocess.Popen(['/usr/bin/python3','-I',SELF,'worker',job_id],stdin=subprocess.DEVNULL,stdout=output,stderr=subprocess.STDOUT,start_new_session=True,env=p.runtime.environment())
@@ -68,8 +78,12 @@ def create(payload):
             job.update(state='failed',message='A verzióváltási folyamat nem indítható.');p.atomic(p.job_path(job_id),job)
         return p.public(job)
 
-def copy(source,current,stage):
+def copy(source,current,stage,reinstall=False,settings=None):
     if os.geteuid()==0:raise ValueError('Version copy must not run as root')
+    if reinstall:
+        p.copy_files(source,stage)
+        if settings:p.configure(stage,settings)
+        return
     p.copy_files(current,stage)
     preserved={'server.properties','eula.txt','server.cfg','ops.json','whitelist.json','banned-players.json','banned-ips.json','.gamedock-ports.json'}
     for directory,dirs,files in os.walk(source,followlinks=False):
@@ -80,6 +94,7 @@ def copy(source,current,stage):
             origin=Path(directory)/name;relative=origin.relative_to(source)
             if relative.parts[0] in ('world','world_nether','world_the_end','plugins','mods','config') or str(relative) in preserved:continue
             destination=Path(stage)/relative;destination.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(origin,destination)
+    if settings:p.configure(stage,settings)
 
 def worker(job_id):
     with p.locked():
@@ -87,7 +102,7 @@ def worker(job_id):
         job.update(state='running',message='Szerveradatok másolása és az új verzió előkészítése.');p.atomic(p.job_path(job_id),job)
     try:
         account=pwd.getpwnam(job['user'])
-        subprocess.run(['/usr/bin/python3','-I',SELF,'copy',job['source'],job['target'],job['stage']],check=True,timeout=7200,capture_output=True,preexec_fn=p.runtime.drop(account),env=p.runtime.environment(account))
+        subprocess.run(['/usr/bin/python3','-I',SELF,'copy',job['source'],job['target'],job['stage'],base64.b64encode(json.dumps({'reinstall':job.get('reinstall',False),'settings':job.get('settings')}).encode()).decode()],check=True,timeout=7200,capture_output=True,preexec_fn=p.runtime.drop(account),env=p.runtime.environment(account))
         with p.locked(),unit_lock(job['unit']):
             cfg=p.config()
             if cfg.get('_version_jobs',{}).get(job['unit'])!=job_id:raise ValueError('Version reservation changed')
@@ -95,6 +110,7 @@ def worker(job_id):
             os.rename(job['target'],job['backup'])
             try:os.rename(job['stage'],job['target'])
             except OSError:os.rename(job['backup'],job['target']);raise
+            cfg[job['unit']].update(minecraft_type=None if job['template'].get('provider')=='folder' else job['template']['type'],template_key=job['template']['key'],template_version=job['template']['version']);p.atomic(p.CONFIG,cfg)
             job.update(state='ready',message='A verzióváltás elkészült; az előző példány mentése: '+job['backup']);p.atomic(p.job_path(job_id),job)
     except (ValueError,OSError,subprocess.SubprocessError) as error:
         print(type(error).__name__+': '+str(error),file=sys.stderr)
@@ -104,7 +120,9 @@ if __name__=='__main__':
     os.umask(0o077)
     try:
         action=sys.argv[1]
-        if action=='copy' and len(sys.argv)==5:copy(*sys.argv[2:])
+        if action=='copy' and len(sys.argv) in (5,6):
+            options=json.loads(base64.b64decode(sys.argv[5],validate=True)) if len(sys.argv)==6 else {}
+            copy(*sys.argv[2:5],**options)
         elif os.geteuid()!=0:raise ValueError('Root helper required')
         elif action=='create' and len(sys.argv)==3 and len(sys.argv[2])<2048:print(json.dumps(create(json.loads(base64.b64decode(sys.argv[2],validate=True))),ensure_ascii=False))
         elif action=='status' and len(sys.argv)==3:print(json.dumps(status(sys.argv[2]),ensure_ascii=False))

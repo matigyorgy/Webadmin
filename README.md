@@ -55,7 +55,7 @@ Counter-Strike vagy más saját mappás játéknál a típus alap template útvo
 
 ## Minecraft-típusok és az utolsó 10 verzió
 
-A **Minecraft-templatek** adminmenüben válassz Linux-gépet, majd indíts szinkronizálást. A letöltés/fordítás aszinkron, a gépen fut, a lap állapotot mutat.
+A **Játékszerver-templatek** adminmenüben válassz Linux-gépet, nyisd meg a kívánt Minecraft-kategóriát, majd válaszd ki a telepítendő stabil verziót. A letöltés/fordítás aszinkron, a gépen fut, a lap állapotot mutat.
 
 Támogatott szolgáltatók: **Vanilla, Paper, Forge, Bukkit, Spigot, Purpur, Fabric**. Típusonként a legutóbbi tíz stabil **Minecraft-verzió** kerül a katalógusba, és azon belül a legfrissebb stabil build/loader. Nem tíz külön buildet mutatunk ugyanahhoz az egy Minecraft-verzióhoz.
 
@@ -90,9 +90,9 @@ A segédprogram indításkor automatikusan beállítja a saját root-tulajdonú 
 
 ## Minecraft-template törlése és verzióváltás
 
-Az admin **Minecraft-templatek** táblájában minden nyugalmi sablon mellett **Törlés** gomb van. A katalógusbejegyzést és a hozzá tartozó build könyvtárát törli; a már létrehozott példányok és mentéseik érintetlenek. Folyamatban lévő szinkronizálás vagy az adott sablonról futó másolás/verzióváltás alatt a törlés elutasított. A következő szinkronizálás a legutóbbi tíz kiadás közé tartozó törölt sablont újra letöltheti.
+Az admin **Játékszerver-templatek** táblájában minden nyugalmi sablon mellett **Törlés** gomb van. A katalógusbejegyzést és a hozzá tartozó build könyvtárát törli; a már létrehozott példányok és mentéseik érintetlenek. Folyamatban lévő szinkronizálás vagy az adott sablonról futó másolás/verzióváltás alatt a törlés elutasított. A következő szinkronizálás a legutóbbi tíz kiadás közé tartozó törölt sablont újra letöltheti.
 
-A kliens **Szervereim → Kezelés és konzol** oldalán megjelenik a **Minecraft-verzió váltása** választó, ha a jelenlegi Minecraft-típushoz van másik letöltött verzió. Más típusra (például Paper helyett Forge) nem váltunk automatikusan. A szervert előbb le kell állítani. A háttérfolyamat a jelenlegi szerverfájlokat egy ideiglenes példányba másolja, ráteszi az új programfájlokat, megőrzi a világot, konfigurációt, modokat és pluginokat, majd a kész példányt helyére teszi. Az eredeti teljes könyvtár mentésként a `/home/gamedock/.gamedock-backups/<belső-azonosító>/<feladatazonosító>/` alá kerül; a mentési útvonal az állapotüzenetben látszik. A mentéseket nem töröljük automatikusan. Az előkészítéshez további, legalább egy teljes példánynyi szabad lemezterület kell. Fájlcsere előtt megszakadt másolásnál az eredeti példány marad használható; a rövid átnevezési szakaszban megszakadt műveletet az állapotlekérés helyreállítja. Visszaváltásnál a világ formátumának kompatibilitását a játék határozza meg.
+Az ügyfél **Verzióváltás** eszközében típusonként csoportosítva választhat a telepített verziókból, másik Minecraft-típusra is. A szerver legyen offline, a template minimum memóriaigényét teljesítenie kell. Az admin újratelepítési szabályától függően megőrző váltás vagy megerősített tiszta telepítés fut; mindkét esetben teljes mentés készül. A részletes működést és a frissítés lépéseit a Játékszerver-templatek és verzióváltás fejezet tartalmazza. A mentéseket nem töröljük automatikusan; legalább egy további teljes példánynyi szabad tárhely szükséges. A fájlcsere előtti hiba az eredeti példányt érintetlenül hagyja, az átnevezési szakasz megszakadását az állapotlekérés helyreállítja.
 
 Az indítás, leállítás, újraindítás és állapot gomb **AJAX-os**, oldalfrissítés nélkül működik, a módosító kérések POST + CSRF-védettek. A konzol mindig automatikusan frissül öt másodpercenként, átmeneti hiba után is újrapróbálkozik. Az állapot felirata **online / offline**. A CPU-kártyán csak a használat látszik, a beállított limit nem.
 
@@ -140,9 +140,9 @@ Nincs általános webes fájlkezelő, biztonsági mentés/visszaállítás, szá
 
 Ez a korábbi, általános hibaüzenet az SSH-hitelesítés után keletkezett: a Linux-oldali helper nem futott le sikeresen. Nem jelenti automatikusan azt, hogy a Minecraft letöltési oldal hibás.
 
-A friss panel külön jelzi a hiányzó gamedock-templates programot, a jelszó nélküli sudo-jog hiányát, a hiányzó gamedock_runtime.py fájlt, a Python-futási hibát, az időtúllépést és a hibás JSON-választ. A Minecraft-templatek oldalon a kiválasztott géphez közvetlen Linux telepítés/javítás gomb is található.
+A friss panel külön jelzi a hiányzó gamedock-templates programot, a jelszó nélküli sudo-jog hiányát, a hiányzó gamedock_runtime.py fájlt, a Python-futási hibát, az időtúllépést és a hibás JSON-választ. A Játékszerver-templatek oldalon a kiválasztott géphez közvetlen Linux telepítés/javítás gomb is található.
 
-A teljes kiadás feltöltése után a gép szerkesztésénél add meg a telepítési root/admin SSH-hozzáférést, és indítsd a Linux beállítása automatikusan műveletet. A befejező üzenet legyen sikeres, majd térj vissza a katalógushoz. A hiányzó katalógus még nem hiba: első használatkor az állapot üres, és a szinkronizálás indítható. A segédprogram stderr üzeneteit külön kezeljük, hogy ne keveredjenek a JSON-katalógusba.
+A teljes kiadás feltöltése után a gép szerkesztésénél add meg a telepítési root/admin SSH-hozzáférést, és indítsd a Linux beállítása automatikusan műveletet. A befejező üzenet legyen sikeres, majd térj vissza a katalógushoz. A hiányzó telepített katalógus még nem hiba: első használatkor üres. A Minecraft-kategóriákból választhatsz telepítendő verziót. A segédprogram stderr üzeneteit külön kezeljük, hogy ne keveredjenek a JSON-katalógusba.
 
 A Linux-telepítés hibaüzenete most a sikertelen lépést és a kilépési kódot is jelzi (APT csomaglista, alapcsomag/JDK, Linux-helper/SSH-jogosultság vagy UFW). A telepítési napló a részletes hibát is tartalmazza, és a sudoers-ellenőrzés stderr üzenete nem vész el. Hibakereséshez a telepítő alatti naplódoboz utolsó 20–30 sora szükséges; hitelesítési jelszót/privát kulcsot nem kell elküldeni.
 
@@ -171,3 +171,18 @@ FELH_ID:1731|SZOLG_ID:15366|NODE:node_s1|
 ```
 
 `SZOLG_ID` a panel Szerverazonosító mezőjében látható szám (nem a belső adatbázis-sorszám); `NODE` a Linux-gép mentett neve. A létrehozás nem indítja el automatikusan a játékot. A hibák JSON-t adnak, sosem sikeres szöveget: `401` hibás kulcs, `403` megszűnt adminjog, `409` ütköző/folyamatban feldolgozott kérés, `410` törölt szerver, `422` sikertelen másolás. SSH-időtúllépésnél `500` is előfordulhat, ilyenkor az eredeti kulccsal folytasd; ne hozz létre új rendelést.
+
+
+## Játékszerver-templatek és verzióváltás
+
+Az admin **Játékszerver-templatek** oldalán Linux-gépenként kezelhetők a sablonok. A Vanilla, Bukkit, Spigot, Paper, Forge, Purpur és Fabric külön kategória; megnyitásuk a hivatalos szolgáltatói katalógusból lekéri az adott típus legfrissebb legfeljebb 10 stabil játékverzióját. A lista 10 percig gyorsítótárazott. Verziónként külön **Telepítés template-ként** gomb indítja a háttérben a letöltést/fordítást. Egyszerre egy telepítési feladat futhat egy gépen. Más játéktípushoz meglévő, teljes Linux-mappából egyedi verziózott template vehető fel.
+
+A telepített template minden verziójánál külön menthető a **minimum memória (MiB)** és az **Újratelepítés szükséges** jelölő. A szabály a kiválasztott Linux-gépre és template-verzióra vonatkozik. A minimumot új szerver létrehozásakor és verzióváltáskor szerveroldalon is ellenőrizzük; a túl kicsi memórialimit tiltást eredményez. A 0 memórialimit korlátlant jelent, a 0 minimum nem ír elő minimumot.
+
+Az ügyfél a **Verzióváltás** eszközben a már telepített templatek közül választhat típusonként csoportosítva; a nem elegendő memóriájú választás letiltott. Minecraftnál más típusra (például Vanilla → Paper) is válthat. **Csak offline állapotban** indítható: ezt PHP és a Linux-segédprogram is ellenőrzi, a folyamat idejére a Linux-oldali indítás zárolt.
+
+Ha az admin újratelepítést ír elő, az ügyfél külön jelölőnégyzettel erősíti meg a fájlok cseréjét; enélkül az API is elutasítja a műveletet. Először teljes mentés készül a `/home/gamedock/.gamedock-backups/<szerverazonosító>/<feladatazonosító>/` alatt, majd tiszta template-másolat kerül a példány helyére. A játékport és a szükséges konfiguráció automatikusan beállítódik. Újratelepítés nélkül a korábbi világ és konfiguráció megmarad; a játéktípusok/verziók közötti világ- és modkompatibilitás nem garantálható.
+
+**Meglévő telepítés frissítése:** töltsd fel a friss panelt, az admin Játékszerverek oldalán kattints az **Új szerverfunkciók engedélyezése** gombra, majd az érintett Linux-gépeknél futtasd az **Automatikus Linux-telepítés** műveletet. Ez felveszi a template-szabályok tábláját, a verziómetaadat-oszlopokat és frissíti a letöltési/újratelepítési segédprogramokat, sudo-jogokat. A meglévő szerverek megmaradnak.
+
+Ellenőrzések: `php tests/template_policy.php` (MySQL-integráció a `TEST_MYSQL_HOST` és `TEST_MYSQL_PASSWORD` változókkal); `tests/browser_templates.cjs` kizárólag a kontrollált, 70 verziós loopback fixture-höz. A böngészőteszt nem tölt le valódi játékfájlokat.

@@ -13,10 +13,13 @@ final class SchemaUpdater
     public function provisionEnabled(): bool
     {
         $available=array_column($this->db->query('SHOW COLUMNS FROM servers')->fetchAll(),'Field');
-        foreach (['startup_command','install_source','install_folder','provision_job','provision_state','provision_message','port','minecraft_type','minecraft_version','memory_limit_mb','cpu_limit_percent'] as $name) {
+        foreach (['startup_command','install_source','install_folder','provision_job','provision_state','provision_message','port','minecraft_type','minecraft_version','template_key','template_version','memory_limit_mb','cpu_limit_percent'] as $name) {
             if (!in_array($name,$available,true)) return false;
         }
-        return $this->versionsEnabled() && $this->publicHostEnabled() && (new GameRegistry($this->db))->available();
+        if(!$this->versionsEnabled())return false;
+        $versionColumns=array_column($this->db->query('SHOW COLUMNS FROM server_version_jobs')->fetchAll(),'Field');
+        foreach(['template_key','template_version'] as $name)if(!in_array($name,$versionColumns,true))return false;
+        return (new TemplatePolicy($this->db))->available() && $this->publicHostEnabled() && (new GameRegistry($this->db))->available();
     }
     public function versionsEnabled(): bool
     {
@@ -29,7 +32,7 @@ final class SchemaUpdater
     public function enableStartup(array $actor): void
     {
         if (!$this->db->query('SELECT is_admin FROM users WHERE id=?',[$actor['id']])->fetchColumn()) throw new RuntimeException('Adminisztrátori jogosultság szükséges.');
-        $columns=['memory_limit_mb'=>'INT UNSIGNED NOT NULL DEFAULT 0','cpu_limit_percent'=>'INT UNSIGNED NOT NULL DEFAULT 0','startup_command'=>'TEXT NULL','install_source'=>'VARCHAR(255) NULL','install_folder'=>'VARCHAR(120) NULL',
+        $columns=['template_key'=>'VARCHAR(200) NULL','template_version'=>'VARCHAR(64) NULL','memory_limit_mb'=>'INT UNSIGNED NOT NULL DEFAULT 0','cpu_limit_percent'=>'INT UNSIGNED NOT NULL DEFAULT 0','startup_command'=>'TEXT NULL','install_source'=>'VARCHAR(255) NULL','install_folder'=>'VARCHAR(120) NULL',
             'provision_job'=>'VARCHAR(32) NULL','provision_state'=>"VARCHAR(16) NOT NULL DEFAULT 'ready'",'provision_message'=>'VARCHAR(500) NULL','port'=>'SMALLINT UNSIGNED NULL','minecraft_type'=>'VARCHAR(24) NULL','minecraft_version'=>'VARCHAR(32) NULL'];
         $missing=[];
         $available=array_column($this->db->query('SHOW COLUMNS FROM servers')->fetchAll(),'Field');
@@ -37,7 +40,12 @@ final class SchemaUpdater
         $type=$this->db->query("SHOW COLUMNS FROM servers LIKE 'game'")->fetch();
         if(str_starts_with($type['Type'],'enum('))$missing[]='MODIFY COLUMN game VARCHAR(32) NOT NULL';
         try {
-            if(!$this->versionsEnabled()) $this->db->query('CREATE TABLE server_version_jobs (server_id BIGINT UNSIGNED PRIMARY KEY,job VARCHAR(32) NOT NULL,state VARCHAR(16) NOT NULL,startup_command TEXT NOT NULL,install_source VARCHAR(255) NOT NULL,minecraft_type VARCHAR(24) NOT NULL,minecraft_version VARCHAR(32) NOT NULL,message VARCHAR(500) NULL,FOREIGN KEY (server_id) REFERENCES servers(id) ON DELETE CASCADE)');
+            TemplatePolicy::install($this->db);
+            if($this->versionsEnabled()){
+                $versionColumns=array_column($this->db->query('SHOW COLUMNS FROM server_version_jobs')->fetchAll(),'Field');
+                foreach(['template_key'=>'VARCHAR(200) NULL','template_version'=>'VARCHAR(64) NULL'] as $name=>$type)if(!in_array($name,$versionColumns,true))$this->db->query('ALTER TABLE server_version_jobs ADD COLUMN '.$name.' '.$type);
+            }
+            if(!$this->versionsEnabled()) $this->db->query('CREATE TABLE server_version_jobs (server_id BIGINT UNSIGNED PRIMARY KEY,job VARCHAR(32) NOT NULL,state VARCHAR(16) NOT NULL,startup_command TEXT NOT NULL,install_source VARCHAR(255) NOT NULL,minecraft_type VARCHAR(24) NOT NULL,minecraft_version VARCHAR(32) NOT NULL,template_key VARCHAR(200) NULL,template_version VARCHAR(64) NULL,message VARCHAR(500) NULL,FOREIGN KEY (server_id) REFERENCES servers(id) ON DELETE CASCADE)');
             if(!$this->publicHostEnabled()) $this->db->query('ALTER TABLE nodes ADD COLUMN public_host VARCHAR(255) NULL');
             if($missing)$this->db->query('ALTER TABLE servers '.implode(',',$missing));
             if(!(new GameRegistry($this->db))->available()) {

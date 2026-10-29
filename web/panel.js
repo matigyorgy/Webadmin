@@ -10,6 +10,7 @@ async function queryServer(id, action) {
     } finally { clearTimeout(timeout); }
 }
 function showState(element, state) {
+    if(element?.id==='server-state')document.dispatchEvent(new CustomEvent('server-state-updated',{detail:state}));
     if (!element) return;
     element.textContent = state === 'active' ? 'online' : state === 'inactive' ? 'offline' : state;
     element.className = `badge ${state === 'active' ? 'text-bg-success' : 'text-bg-secondary'}`;
@@ -92,6 +93,10 @@ if (gameSelect) {
         if (startup) startup.placeholder = selected?.dataset.startup || '';
         if (source) source.placeholder = selected?.dataset.template || '';
         const minecraft = selected?.dataset.provider === 'minecraft';
+        const custom=document.getElementById('custom-template'), customPanel=document.getElementById('custom-template-options');
+        if(customPanel)customPanel.hidden=minecraft;
+        if(custom && !minecraft){custom.replaceChildren(new Option('Játéktípus alapértelmezett mappája',''));if(node?.value)try{const response=await fetch(`/admin_api.php?action=templates&node_id=${encodeURIComponent(node.value)}`,{cache:'no-store'});const data=await response.json();if(!response.ok)throw Error(data.error);for(const entry of data.templates || [])if(entry.provider==='folder' && entry.game===gameSelect.value && entry.state==='ready')custom.append(new Option(`${entry.name} · ${entry.version} · min. ${entry.minimum_memory_mb} MiB`,entry.key));}catch(error){custom.replaceChildren(new Option(error.message,''));}}
+
         if (options) options.hidden = !minecraft;
         if (minecraft && node?.value && templates) {
             templates.replaceChildren(new Option('Katalógus betöltése…', ''));
@@ -113,25 +118,11 @@ if (gameSelect) {
     gameSelect.addEventListener('change',updateGame);node?.addEventListener('change',updateGame);updateGame();
 }
 const templatePanel=document.querySelector('[data-template-node]');
-if(templatePanel) {
-    let busy=false;
-    const timer=setInterval(async()=>{
-        if(busy || document.hidden)return;busy=true;
-        try {
-            const response=await fetch(`/admin_api.php?action=templates&node_id=${encodeURIComponent(templatePanel.dataset.templateNode)}`,{cache:'no-store'});
-            const data=await response.json();if(!response.ok)throw Error(data.error);
-            templatePanel.querySelector('[data-template-message]').textContent=data.message;
-            const body=templatePanel.querySelector('tbody');body.replaceChildren();
-            for(const entry of data.templates || []) { const row=document.createElement('tr');for(const field of ['type','version','build','state','message']) {const cell=document.createElement('td');cell.textContent=entry[field] || '';row.append(cell);}const actions=document.createElement('td');
-            if(data.state!=='running') {
-                const form=document.createElement('form');form.method='post';form.action='/admin.php?section=templates&node='+encodeURIComponent(templatePanel.dataset.templateNode);
-                for(const [name,value] of Object.entries({csrf:templatePanel.dataset.csrf,node_id:templatePanel.dataset.templateNode,template_key:entry.key})) {const input=document.createElement('input');input.type='hidden';input.name=name;input.value=value;form.append(input);}
-                const button=document.createElement('button');button.className='btn btn-sm btn-outline-danger';button.name='action';button.value='delete_template';button.textContent='Törlés';form.append(button);actions.append(form);
-            }row.append(actions);body.append(row); }
-            if(data.state!=='running')clearInterval(timer);
-        } catch(error){templatePanel.querySelector('[data-template-message]').textContent=error.message;clearInterval(timer);}finally{busy=false;}
-    },5000);
-}
+if(templatePanel){let busy=false;const timer=setInterval(async()=>{
+    if(busy || document.hidden)return;busy=true;
+    try{const response=await fetch(`/admin_api.php?action=templates&node_id=${encodeURIComponent(templatePanel.dataset.templateNode)}`,{cache:'no-store'});const data=await response.json();if(!response.ok)throw Error(data.error);const message=templatePanel.querySelector('[data-template-message]');message.textContent=data.message || '';if(data.state!=='running'){clearInterval(timer);const link=document.createElement('a');link.href=location.href;link.className='ms-2';link.textContent='Telepített templatek frissítése';message.append(link);}}
+    catch(error){templatePanel.querySelector('[data-template-message]').textContent=error.message;clearInterval(timer);}finally{busy=false;}
+},5000);}
 const setup=document.getElementById('node-setup');
 if(setup) document.getElementById('start-node-setup').addEventListener('click',async()=>{
     const button=document.getElementById('start-node-setup');const output=document.getElementById('node-setup-result');
@@ -236,49 +227,79 @@ if (serverControls) {
 
 const versionPanel = document.getElementById('version-switch');
 if (versionPanel) {
-    const form = document.getElementById('version-form');
-    const choice = document.getElementById('version-choice');
-    const button = form.querySelector('button');
-    const message = versionPanel.querySelector('[data-version-message]');
-    let pendingVersion = false;
-    let checkingVersion = false;
-    function displayVersionJob(job) {
-        pendingVersion = ['queued', 'running'].includes(job.state);
-        button.disabled = pendingVersion || choice.options.length < 2;
-        choice.disabled = pendingVersion;
-        message.textContent = job.message || (choice.options.length < 2 ? 'Nincs másik letöltött verzió ehhez a típushoz.' : 'Válassz verziót, majd állítsd le a szervert a váltáshoz.');
-        for (const control of document.querySelectorAll('#server-controls button[value="start"], #server-controls button[value="restart"]')) control.disabled = pendingVersion;
+    const form=document.getElementById('version-form'), choice=document.getElementById('version-choice');
+    const button=form.querySelector('button'), message=versionPanel.querySelector('[data-version-message]');
+    const confirmBox=form.querySelector('[name=confirm_reinstall]'), warning=form.querySelector('[data-reinstall-warning]');
+    let pending=false, loading=false, state='unknown', job={state:'idle'}, versions=new Map();
+    versionPanel.hidden=location.hash!=='#version-switch';
+    const reveal=()=>{versionPanel.hidden=false;loadVersions().catch(error=>{state='unknown';message.textContent=error.message;update();});};
+    document.querySelectorAll('a[href="#version-switch"]').forEach(link=>link.addEventListener('click',reveal));
+    window.addEventListener('hashchange',()=>{if(location.hash==='#version-switch')reveal();});
+    function update(){
+        const selected=versions.get(choice.value), reinstall=!!selected?.requires_reinstall;
+        warning.hidden=!reinstall;confirmBox.required=reinstall;confirmBox.disabled=!reinstall || pending;
+        choice.disabled=pending;
+        for(const control of document.querySelectorAll('#server-controls button[value="start"],#server-controls button[value="restart"]'))control.disabled=pending;
+        button.disabled=pending || state!=='inactive' || !selected || selected.current || !selected.allowed || (reinstall && !confirmBox.checked);
+        if(state!=='inactive')message.textContent=state==='active' ? 'A szerver online. Verzióváltáshoz előbb állítsd le.' : 'A leállított állapot még nem ellenőrizhető. Verzióváltás zárolva.';
+        else if(pending)message.textContent=job.message || 'A verzióváltás folyamatban.';
+        else message.textContent=job.message || 'A szerver offline. Válassz típust és verziót.';
     }
-    async function loadVersions() {
-        const result = await queryServer(versionPanel.dataset.serverId, 'versions');
-        choice.replaceChildren(new Option('Válassz verziót', ''));
-        for (const entry of result.versions || []) choice.append(new Option(`${entry.type} · ${entry.version} · ${entry.build}`, entry.key));
-        versionPanel.querySelector('[data-current-version]').textContent = `${result.current_type} · ${result.current_version}`;
-        displayVersionJob(result.job);
+    async function loadVersions(){
+        if(loading)return;loading=true;
+        try{
+            const result=await queryServer(versionPanel.dataset.serverId,'versions');state=result.server_state;job=result.job;pending=['queued','running'].includes(job.state);
+            const old=choice.value;choice.replaceChildren(new Option('Válassz típust és verziót',''));versions=new Map();
+            const groups=new Map(), names={vanilla:'Vanilla',bukkit:'Bukkit',spigot:'Spigot',paper:'Paper',forge:'Forge',purpur:'Purpur',fabric:'Fabric'};
+            for(const [type,label] of Object.entries(names[result.current_type] ? names : {})){const group=document.createElement('optgroup');group.label=label;groups.set(type,group);choice.append(group);}
+            for(const entry of result.versions || []){
+                if(!groups.has(entry.type)){const group=document.createElement('optgroup');group.label=entry.name || entry.type;groups.set(entry.type,group);choice.append(group);}
+                const option=new Option(`${entry.version} · ${entry.build} · min. ${entry.minimum_memory_mb} MiB${entry.requires_reinstall ? ' · újratelepítés' : ''}${entry.current ? ' · jelenlegi' : ''}${!entry.allowed ? ' · kevés memória' : ''}`,entry.key);
+                option.disabled=entry.current || !entry.allowed;groups.get(entry.type).append(option);versions.set(entry.key,entry);
+            }
+            for(const group of groups.values())if(!group.children.length){const option=new Option('Nincs telepített template','');option.disabled=true;group.append(option);}
+            if(versions.has(old) && !versions.get(old).current && versions.get(old).allowed)choice.value=old;
+            for(const label of document.querySelectorAll('[data-platform-version]'))label.textContent=`${names[result.current_type] || result.current_type} ${result.current_version}`;
+            versionPanel.querySelector('[data-current-version]').textContent=`${result.current_type} · ${result.current_version}`;
+            update();
+        }finally{loading=false;}
     }
-    form.addEventListener('submit', async event => {
-        event.preventDefault();
-        if (pendingVersion || !choice.value) return;
-        pendingVersion = true;button.disabled = true;choice.disabled = true;
-        message.textContent = 'Verzióváltás indítása…';
-        const data = new FormData(form);data.set('template_key', choice.value);
-        data.set('action', 'change_version');data.set('server_id', versionPanel.dataset.serverId);
-        try {
-            const response = await fetch('/api.php', {method:'POST', body:data, credentials:'same-origin'});
-            const result = await response.json();
-            if (!response.ok) throw new Error(result.error || 'A verzióváltás nem indítható.');
-            displayVersionJob(result);
-        } catch (error) { pendingVersion = false;button.disabled = false;choice.disabled = false;message.textContent = error.message; }
+    choice.addEventListener('change',()=>{confirmBox.checked=false;update();});confirmBox.addEventListener('change',update);
+    document.addEventListener('server-state-updated',event=>{state=event.detail;update();});
+    form.addEventListener('submit',async event=>{
+        event.preventDefault();if(button.disabled)return;
+        const data=new FormData(form);data.set('action','change_version');data.set('server_id',versionPanel.dataset.serverId);
+        pending=true;update();
+        try{const response=await fetch('/api.php',{method:'POST',body:data,credentials:'same-origin'});const result=await response.json();if(!response.ok)throw Error(result.error);job=result;pending=['queued','running'].includes(result.state);update();}
+        catch(error){pending=false;update();message.textContent=error.message;}
     });
-    loadVersions().catch(error => { message.textContent = error.message; });
-    setInterval(async () => {
-        if (!pendingVersion || checkingVersion) return;
-        checkingVersion = true;
-        try {
-            const result = await queryServer(versionPanel.dataset.serverId, 'version_status');
-            displayVersionJob(result);
-            if (result.state === 'ready') { await loadVersions();document.dispatchEvent(new Event('server-operation-complete')); }
-        } catch (error) { message.textContent = error.message; }
-        finally { checkingVersion = false; }
-    }, 5000);
+    setInterval(async()=>{
+        if(document.hidden || versionPanel.hidden)return;
+        if(!pending){loadVersions().catch(error=>{state='unknown';update();message.textContent=error.message;});return;}
+        try{job=await queryServer(versionPanel.dataset.serverId,'version_status');pending=['queued','running'].includes(job.state);update();if(!pending){confirmBox.checked=false;await loadVersions();document.dispatchEvent(new Event('server-operation-complete'));}}
+        catch(error){message.textContent=error.message;}
+    },5000);
+    if(!versionPanel.hidden)reveal();
+}
+
+const releaseCatalog=document.querySelector('[data-release-catalog]');
+if(releaseCatalog)for(const category of releaseCatalog.querySelectorAll('[data-release-type]')){
+    let loaded=false,busy=false;
+    const message=category.querySelector('[data-release-message]'),retry=category.querySelector('[data-release-retry]');
+    async function load(){
+        if(loaded || busy || !category.open)return;busy=true;retry.hidden=true;message.textContent='Stabil kiadások lekérése…';
+        try{
+            const response=await fetch(`/admin_api.php?action=releases&node_id=${encodeURIComponent(releaseCatalog.dataset.node)}&type=${encodeURIComponent(category.dataset.releaseType)}`,{cache:'no-store'});
+            const data=await response.json();if(!response.ok)throw Error(data.error);
+            const body=category.querySelector('[data-release-rows]');body.replaceChildren();
+            for(const entry of data.templates || []){
+                const row=document.createElement('tr');for(const field of ['version','build']){const cell=document.createElement('td');cell.textContent=entry[field];row.append(cell);}
+                const cell=document.createElement('td'),form=document.createElement('form');form.method='post';
+                for(const [name,value] of Object.entries({csrf:releaseCatalog.dataset.csrf,node_id:releaseCatalog.dataset.node,template_key:entry.key})){const input=document.createElement('input');input.type='hidden';input.name=name;input.value=value;form.append(input);}
+                const button=document.createElement('button');button.name='action';button.value='install_template';button.className='btn btn-sm btn-success';button.textContent='Telepítés template-ként';form.append(button);cell.append(form);row.append(cell);body.append(row);
+            }
+            message.textContent=data.templates?.length ? 'Az adott típus legfrissebb elérhető stabil verziói.' : 'Ehhez a típushoz jelenleg nincs elérhető stabil kiadás.';loaded=true;
+        }catch(error){message.textContent=error.message;retry.hidden=false;}finally{busy=false;}
+    }
+    category.addEventListener('toggle',load);retry.addEventListener('click',load);
 }

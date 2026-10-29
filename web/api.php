@@ -15,7 +15,7 @@ try {
     $service=new GameDock\ServerService($db,new GameDock\SshClient());
     $service->find($user,$id); // Reject other owners before any network operation.
     session_write_close();
-    $result=$write ? ($action==='change_version' ? (new GameDock\VersionService($db,new GameDock\SshClient()))->request($user,$id,(string)($_POST['template_key'] ?? '')) : $service->perform($user,$id,$action)) : $service->read($user,$id,$action);
+    $result=$write ? ($action==='change_version' ? (new GameDock\VersionService($db,new GameDock\SshClient()))->request($user,$id,(string)($_POST['template_key'] ?? ''),($_POST['confirm_reinstall'] ?? '')==='1') : $service->perform($user,$id,$action)) : $service->read($user,$id,$action);
     echo json_encode($result,JSON_INVALID_UTF8_SUBSTITUTE | JSON_THROW_ON_ERROR);
 } catch (Throwable $e) {
     http_response_code(400);

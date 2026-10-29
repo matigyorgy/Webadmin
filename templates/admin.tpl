@@ -1,7 +1,7 @@
 {extends file='layout.tpl'}
 {block name=title}VGH.HU | Adminisztráció{/block}
 {block name=content}
-{assign var=titles value=['servers'=>'Játékszerverek','games'=>'Játéktípusok','templates'=>'Minecraft-templatek','nodes'=>'Linux-gépek','users'=>'Felhasználók','audit'=>'Műveleti napló','setup'=>'SSH és Linux-beállítások']}
+{assign var=titles value=['servers'=>'Játékszerverek','games'=>'Játéktípusok','templates'=>'Játékszerver-templatek','nodes'=>'Linux-gépek','users'=>'Felhasználók','audit'=>'Műveleti napló','setup'=>'SSH és Linux-beállítások']}
 <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-4"><div><span class="brand-label text-success">ADMINISZTRÁCIÓ</span><h2 class="h3 mt-2 mb-0">{$titles[$section]}</h2></div>{if $section == 'servers' || $section == 'nodes' || $section == 'users' || $section == 'games'}<a class="btn btn-success" href="/admin.php?section={$section}&new=1">+ Új hozzáadása</a>{/if}</div>
 <nav class="nav nav-pills flex-wrap gap-2 border-bottom pb-3 mb-4" aria-label="Adminmenü">{foreach $titles as $key=>$label}<a class="nav-link {if $section == $key}active{/if}" href="/admin.php?section={$key}">{$label}</a>{/foreach}</nav>
 {if $error}<div class="alert alert-danger" role="alert">{$error}</div>{/if}{if $notice}<div class="alert alert-success" role="status">{$notice}</div>{/if}

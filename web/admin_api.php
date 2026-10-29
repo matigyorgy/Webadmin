@@ -12,6 +12,7 @@ try {
         echo json_encode((new GameDock\NodeSetupService($db))->run($user,GameDock\Validation::id($_POST['node_id'] ?? 0),$_POST,$action==='setup_status'),JSON_INVALID_UTF8_SUBSTITUTE|JSON_THROW_ON_ERROR);exit;
     }
     if ($_SERVER['REQUEST_METHOD']!=='GET') { http_response_code(405);header('Allow: GET, POST');exit; }
+    if($action==='releases'){set_time_limit(90);$node=GameDock\Validation::id($_GET['node_id'] ?? 0);$type=(string)($_GET['type'] ?? 'vanilla');session_write_close();echo json_encode((new GameDock\TemplateService($db,new GameDock\SshClient()))->releases($user,$node,$type),JSON_INVALID_UTF8_SUBSTITUTE|JSON_THROW_ON_ERROR);exit;}
     if($action==='templates') {
         $node=GameDock\Validation::id($_GET['node_id'] ?? 0);session_write_close();
         echo json_encode((new GameDock\TemplateService($db,new GameDock\SshClient()))->catalog($user,$node),JSON_INVALID_UTF8_SUBSTITUTE|JSON_THROW_ON_ERROR);exit;

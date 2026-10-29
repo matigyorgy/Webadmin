@@ -112,18 +112,26 @@ final class AdminService
                 if ($startupEnabled) $this->db->query('UPDATE servers SET startup_command=? WHERE id=?',[$startup==='' ? null : $startup,$serverId]);
                 if (!$id || (($existing['provision_state'] ?? '')==='failed' && !empty($existing['provision_job']))) {
                     $source=trim((string)($data['install_source'] ?? '')) ?: $profile['template_path'];
-                    $mcType=null;$mcVersion=null;
+                    $mcType=null;$mcVersion=null;$templateKey=null;$templateVersion=null;
                     if($profile['provider']==='minecraft') {
                         $key=(string)($data['minecraft_template'] ?? '');
                         $catalog=(new TemplateService($this->db,new SshClient()))->catalog($actor,$node);
-                        $entry=null;foreach($catalog['templates'] ?? [] as $candidate)if(($candidate['key'] ?? '')===$key && ($candidate['state'] ?? '')==='ready')$entry=$candidate;
+                        $entry=null;foreach($catalog['templates'] ?? [] as $candidate)if(($candidate['key'] ?? '')===$key && ($candidate['state'] ?? '')==='ready' && ($candidate['provider'] ?? '')!=='folder' && array_key_exists($candidate['type'] ?? '',TemplatePolicy::TYPES))$entry=$candidate;
                         if(!$entry)throw new RuntimeException('Válassz letöltött Minecraft típust és verziót. Először szinkronizáld a node Minecraft-template katalógusát.');
+                        $templateKey=$entry['key'];$templateVersion=$entry['version'];
                         $source=$entry['path'];$startup=$explicitStartup ? $startup : $entry['startup'];$mcType=$entry['type'];$mcVersion=$entry['version'];
+                    }
+                    if($profile['provider']==='folder' && !empty($data['custom_template'])) {
+                        $catalog=(new TemplateService($this->db,new SshClient()))->catalog($actor,$node);$entry=null;
+                        foreach($catalog['templates'] ?? [] as $candidate)if(($candidate['key'] ?? '')===$data['custom_template'] && ($candidate['provider'] ?? '')==='folder' && ($candidate['game'] ?? '')===$game && ($candidate['state'] ?? '')==='ready')$entry=$candidate;
+                        if(!$entry)throw new RuntimeException('Válassz kész egyedi template-et ehhez a játékhoz.');
+                        TemplatePolicy::assertFits((new TemplatePolicy($this->db))->get($node,$entry),$limits);
+                        $source=$entry['path'];if(!$explicitStartup)$startup=$entry['startup'];$templateKey=$entry['key'];$templateVersion=$entry['version'];
                     }
                     $folder=(string)$serverId;
                     if (!str_starts_with($source,'/') || strlen($source)>255 || preg_match('/[\x00-\x1f\x7f]/',$source) || !preg_match('/\A[a-zA-Z0-9_-]{1,120}\z/',$folder)) throw new RuntimeException('Abszolút forrásmappa és egyszerű célmappanév szükséges.');
                     if ($this->db->query('SELECT id FROM servers WHERE node_id=? AND install_folder=? AND id<>?',[$node,$folder,$id ?? 0])->fetch()) throw new RuntimeException('Ez a célmappanév ezen a gépen már foglalt.');
-                    $this->db->query('UPDATE servers SET startup_command=?,install_source=?,install_folder=?,provision_job=?,provision_state=? WHERE id=?',[$startup!=='' ? $startup : $profile['startup_command'],$source,$folder,bin2hex(random_bytes(16)),'queued',$serverId]);
+                    $this->db->query('UPDATE servers SET startup_command=?,install_source=?,install_folder=?,provision_job=?,provision_state=?,template_key=?,template_version=? WHERE id=?',[$startup!=='' ? $startup : $profile['startup_command'],$source,$folder,bin2hex(random_bytes(16)),'queued',$templateKey,$templateVersion,$serverId]);
                 }
                 if(!$id || empty($existing['port']) || ($requestedPort!=='' && (int)$requestedPort!==(int)$existing['port'])) {
                     if ($id && in_array($existing['provision_state'] ?? '',['queued','running'],true)) throw new RuntimeException('Folyamatban lévő másolás közben a port nem módosítható.');
@@ -135,6 +143,8 @@ final class AdminService
                     $port=$requestedPort!=='' ? (int)$requestedPort : PortAllocator::choose($occupied);
                     $this->db->query('UPDATE servers SET port=?,minecraft_type=?,minecraft_version=? WHERE id=?',[$port,$mcType ?? $existing['minecraft_type'] ?? null,$mcVersion ?? $existing['minecraft_version'] ?? null,$serverId]);
                 }
+                if(isset($entry) && $entry)TemplatePolicy::assertFits((new TemplatePolicy($this->db))->get($node,$entry),$limits);
+                elseif(!empty($existing['template_key']))TemplatePolicy::assertFits((new TemplatePolicy($this->db))->get($node,['key'=>$existing['template_key']]),$limits);
                 $savedStartup=(string)$this->db->query('SELECT startup_command FROM servers WHERE id=?',[$serverId])->fetchColumn();
                 if ($savedStartup!=='') $this->db->query('UPDATE servers SET startup_command=? WHERE id=?',[StartupCommand::prepare($savedStartup,$limits),$serverId]);
                 $id=$serverId;
