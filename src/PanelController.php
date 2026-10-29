@@ -45,7 +45,8 @@ final class PanelController
                     foreach ($servers as &$server) { $server['game_name']=$gameNames[$server['game']] ?? $server['game']; $server['state']='nincs lekérdezve'; } unset($server);
                     if (isset($_GET['server'])) {
                         $s=$service->find($user,Validation::id($_GET['server']));
-                        $selected=['id'=>$s['id'],'name'=>$s['name'],'game_name'=>$gameNames[$s['game']] ?? $s['game'],'node_name'=>$s['node_name'],'port'=>$s['port'] ?? null,'provision_state'=>$s['provision_state'] ?? 'ready'];
+                        $host=$s['public_host'] ?: $s['ssh_host'];
+                        $selected=['address'=>str_contains($host,':') ? '['.$host.']' : $host,'memory_limit_mb'=>$s['memory_limit_mb'] ?? 0,'cpu_limit_percent'=>$s['cpu_limit_percent'] ?? 0,'id'=>$s['id'],'name'=>$s['name'],'game_name'=>$gameNames[$s['game']] ?? $s['game'],'node_name'=>$s['node_name'],'port'=>$s['port'] ?? null,'provision_state'=>$s['provision_state'] ?? 'ready'];
                         if (($s['provision_state'] ?? 'ready')==='ready') $console=['id'=>$s['id'],'name'=>$s['name'],'logs'=>$flash['logs'] ?? 'A napló a Frissítés gombbal kérdezhető le.'];
                         $history=$service->audit($user,(int)$s['id']);
                     } elseif ($page==='history') $history=$service->audit($user);

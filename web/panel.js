@@ -149,3 +149,25 @@ if(probe)probe.addEventListener('click',async()=>{
  const response=await fetch('/admin_api.php',{method:'POST',body:data});const result=await response.json();if(!response.ok)throw Error(result.error);document.getElementById('node-fingerprint').value=result.fingerprint;message.textContent='Lekérve. Első mentés előtt ellenőrizd a szolgáltatódnál.';
  }catch(error){message.textContent=error.message;}finally{probe.disabled=false;}
 });
+
+const resources = document.getElementById('server-resources');
+if (resources) {
+    let readingResources = false;
+    const updateResources = async () => {
+        if (readingResources || document.hidden) return;
+        readingResources = true;
+        try {
+            const result = await queryServer(resources.dataset.serverId, 'metrics');
+            resources.querySelector('[data-cpu]').textContent = `${Number(result.cpu_percent).toFixed(1)}%`;
+            resources.querySelector('[data-memory]').textContent = `${(Number(result.memory_bytes) / 1048576).toFixed(1)} MiB`;
+            resources.querySelector('[data-resource-message]').textContent = `Frissítve: ${new Date().toLocaleTimeString()} · ${result.limits_enforced ? 'Linux-korlátozás aktív' : 'Folyamatadatok'}`;
+            showState(document.getElementById('server-state'), result.state);
+        } catch (error) {
+            resources.querySelector('[data-cpu]').textContent = '—';
+            resources.querySelector('[data-memory]').textContent = '—';
+            resources.querySelector('[data-resource-message]').textContent = 'A használati adatok nem érhetők el. Ellenőrizd a Linux-telepítést és az SSH-kapcsolatot.';
+        } finally { readingResources = false; }
+    };
+    updateResources();
+    setInterval(updateResources, 5000);
+}

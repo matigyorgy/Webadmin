@@ -8,16 +8,42 @@ final class SshClient
 {
     public function execute(array $server, string $action, string $input = ''): array
     {
-        $command = (new ServerCommand())->build($server['unit_name'], $action, $input, str_replace('{port}',(string)($server['port'] ?? ''),(string)($server['startup_command'] ?? '')));
+        $command = (new ServerCommand())->build($server['unit_name'], $action, $input, str_replace('{port}',(string)($server['port'] ?? ''),(string)($server['startup_command'] ?? '')),$server);
         $ssh = $this->connect($server);
+        $ssh->enableQuietMode();
         if (!empty($server['startup_command']) && in_array($action,['stop','restart'],true)) $ssh->setTimeout(45);
         $output = $ssh->exec($command);
         $exitCode = $ssh->getExitStatus();
         if ($output === false || $ssh->isTimeout() || $exitCode !== 0) {
+            if (str_contains((string)$ssh->getStdError(),'Resource limits require')) throw new RuntimeException('A CPU- és memórialimithez írható Linux cgroup v2 CPU/memory vezérlő szükséges. Futtasd újra a webes Linux-telepítést; konténer/VPS esetén a szolgáltatói beállítást is ellenőrizni kell.');
             throw new RuntimeException('Az SSH-művelet nem sikerült. Ellenőrizd a szerver állapotát és a sudoers beállítást.');
         }
+        if ($action === 'metrics') return json_decode($output,true,512,JSON_THROW_ON_ERROR);
         if ($action === 'logs') return ['logs'=>$output];
         return $action === 'status' ? ['state'=>trim($output)] : ['accepted'=>true];
+    }
+    public function occupiedPorts(array $node): array
+    {
+        // Read both protocols and address families in the game's network namespace.
+        $script=<<<'PYTHON'
+import json
+from pathlib import Path
+ports=set()
+for protocol in ('tcp','tcp6','udp','udp6'):
+    path=Path('/proc/net')/protocol
+    if protocol.endswith('6') and not path.exists():continue
+    for row in path.read_text().splitlines()[1:]:
+        port=int(row.split()[1].rsplit(':',1)[1],16)
+        if 25000<=port<=25999:ports.add(port)
+print(json.dumps(sorted(ports)))
+PYTHON;
+        $ssh=$this->connect($node);$ssh->enableQuietMode();
+        $output=$ssh->exec('/usr/bin/python3 -c '.escapeshellarg($script));
+        if ($output===false || $ssh->isTimeout() || $ssh->getExitStatus()!==0) throw new RuntimeException('A foglalt Linux-portok nem ellenőrizhetők. Ellenőrizd az SSH-kapcsolatot és a Python-telepítést.');
+        $ports=json_decode($output,true,512,JSON_THROW_ON_ERROR);
+        if (!is_array($ports)) throw new RuntimeException('Érvénytelen portellenőrzési válasz.');
+        foreach ($ports as $port) if (!is_int($port) || $port<25000 || $port>25999) throw new RuntimeException('Érvénytelen portellenőrzési válasz.');
+        return $ports;
     }
     public static function probe(string $host,int $port): string
     {

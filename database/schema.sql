@@ -7,6 +7,7 @@ CREATE TABLE users (
 CREATE TABLE nodes (
  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
  name VARCHAR(120) NOT NULL,
+ public_host VARCHAR(255) NULL,
  ssh_host VARCHAR(255) NOT NULL,
  ssh_port SMALLINT UNSIGNED NOT NULL DEFAULT 22,
  ssh_user VARCHAR(64) NOT NULL,
@@ -28,6 +29,8 @@ CREATE TABLE servers (
  port SMALLINT UNSIGNED NULL,
  minecraft_type VARCHAR(24) NULL,
  minecraft_version VARCHAR(32) NULL,
+ memory_limit_mb INT UNSIGNED NOT NULL DEFAULT 0,
+ cpu_limit_percent INT UNSIGNED NOT NULL DEFAULT 0,
  unit_name VARCHAR(120) NOT NULL,
  startup_command TEXT NULL,
  install_source VARCHAR(255) NULL,

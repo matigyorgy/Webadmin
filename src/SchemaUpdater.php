@@ -13,15 +13,19 @@ final class SchemaUpdater
     public function provisionEnabled(): bool
     {
         $available=array_column($this->db->query('SHOW COLUMNS FROM servers')->fetchAll(),'Field');
-        foreach (['startup_command','install_source','install_folder','provision_job','provision_state','provision_message','port','minecraft_type','minecraft_version'] as $name) {
+        foreach (['startup_command','install_source','install_folder','provision_job','provision_state','provision_message','port','minecraft_type','minecraft_version','memory_limit_mb','cpu_limit_percent'] as $name) {
             if (!in_array($name,$available,true)) return false;
         }
-        return (new GameRegistry($this->db))->available();
+        return $this->publicHostEnabled() && (new GameRegistry($this->db))->available();
+    }
+    public function publicHostEnabled(): bool
+    {
+        return (bool)$this->db->query("SHOW COLUMNS FROM nodes LIKE 'public_host'")->fetch();
     }
     public function enableStartup(array $actor): void
     {
         if (!$this->db->query('SELECT is_admin FROM users WHERE id=?',[$actor['id']])->fetchColumn()) throw new RuntimeException('Adminisztrátori jogosultság szükséges.');
-        $columns=['startup_command'=>'TEXT NULL','install_source'=>'VARCHAR(255) NULL','install_folder'=>'VARCHAR(120) NULL',
+        $columns=['memory_limit_mb'=>'INT UNSIGNED NOT NULL DEFAULT 0','cpu_limit_percent'=>'INT UNSIGNED NOT NULL DEFAULT 0','startup_command'=>'TEXT NULL','install_source'=>'VARCHAR(255) NULL','install_folder'=>'VARCHAR(120) NULL',
             'provision_job'=>'VARCHAR(32) NULL','provision_state'=>"VARCHAR(16) NOT NULL DEFAULT 'ready'",'provision_message'=>'VARCHAR(500) NULL','port'=>'SMALLINT UNSIGNED NULL','minecraft_type'=>'VARCHAR(24) NULL','minecraft_version'=>'VARCHAR(32) NULL'];
         $missing=[];
         $available=array_column($this->db->query('SHOW COLUMNS FROM servers')->fetchAll(),'Field');
@@ -29,6 +33,7 @@ final class SchemaUpdater
         $type=$this->db->query("SHOW COLUMNS FROM servers LIKE 'game'")->fetch();
         if(str_starts_with($type['Type'],'enum('))$missing[]='MODIFY COLUMN game VARCHAR(32) NOT NULL';
         try {
+            if(!$this->publicHostEnabled()) $this->db->query('ALTER TABLE nodes ADD COLUMN public_host VARCHAR(255) NULL');
             if($missing)$this->db->query('ALTER TABLE servers '.implode(',',$missing));
             if(!(new GameRegistry($this->db))->available()) {
                 $this->db->query("CREATE TABLE game_types (slug VARCHAR(32) PRIMARY KEY,name VARCHAR(120) NOT NULL,template_path VARCHAR(255) NOT NULL,startup_command TEXT NOT NULL,provider VARCHAR(16) NOT NULL DEFAULT 'folder')");

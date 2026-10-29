@@ -43,7 +43,7 @@ def metadata(name):
     except FileNotFoundError:return {}
 
 def active(data,account):
-    return runtime.alive(data.get('runner'),account.pw_uid) or runtime.alive(data.get('game'),account.pw_uid)
+    return runtime.alive(data.get('runner'),account.pw_uid) or runtime.alive(data.get('game'),account.pw_uid) or bool(runtime.group_records(data['_name'],account.pw_uid) if data.get('_name') else [])
 
 def descendants(data,account):
     parents={value['pid'] for key,value in data.items() if key in ('runner','game') and runtime.alive(value,account.pw_uid)}
@@ -61,15 +61,21 @@ def descendants(data,account):
 
 def stop(data,account):
     targets=descendants(data,account)
+    # Include detached descendants still contained by the server cgroup.
+    targets+=runtime.group_records(data.get('_name',''),account.pw_uid) if data.get('_name') else []
     runtime.send(data.get('runner'),account.pw_uid,signal.SIGTERM)
     # A dead runner may leave its directly tracked game alive.
     runtime.send(data.get('game'),account.pw_uid,signal.SIGTERM)
     deadline=time.monotonic()+32
     while any(runtime.alive(record,account.pw_uid) for record in targets) and time.monotonic()<deadline:time.sleep(.1)
     for record in targets:runtime.send(record,account.pw_uid,signal.SIGKILL)
+    if data.get('_name'):runtime.kill_group(data['_name'])
+    deadline=time.monotonic()+2
+    while active(data,account) and time.monotonic()<deadline:time.sleep(.05)
     if active(data,account):raise ValueError('Could not stop the game')
 
-def start(name,account,directory,payload):
+def start(name,account,directory,payload,limits=None):
+    group=runtime.prepare_cgroup(name,limits or {})
     secure_directory(RUNTIME,0o711);secure_directory(LOGS,0o700)
     folder=RUNTIME+'/'+name
     if os.path.islink(folder):raise ValueError('Unsafe runtime symlink')
@@ -81,11 +87,11 @@ def start(name,account,directory,payload):
     try:
         process=subprocess.Popen(['/usr/bin/python3','-I',RUNNER,'--socket',console,'--command',payload,'--ready-fd',str(writefd)],
             cwd=directory,stdin=subprocess.DEVNULL,stdout=log,stderr=subprocess.STDOUT,start_new_session=True,
-            pass_fds=(writefd,),preexec_fn=runtime.drop(account),env=runtime.environment(account))
+            pass_fds=(writefd,),preexec_fn=runtime.drop_in_cgroup(account,group),env=runtime.environment(account))
         os.close(writefd);writefd=None
         if not select.select([readfd],[],[],5)[0]:raise ValueError('Runner did not acknowledge startup')
         response=json.loads(os.read(readfd,4096))
-        data={'runner':runtime.identity(process.pid),'game':runtime.identity(response['game_pid'])}
+        data={'runner':runtime.identity(process.pid),'game':runtime.identity(response['game_pid']),'cgroup':bool(group)}
         if not runtime.alive(data['runner'],account.pw_uid):raise ValueError('Runner exited during startup')
         path=CONTROL+'/'+name+'.json';temporary=path+'.tmp'
         with open(temporary,'w') as stream:json.dump(data,stream)
@@ -102,7 +108,7 @@ def start(name,account,directory,payload):
 
 def execute(argv):
     if os.geteuid()!=0:raise ValueError('Root helper required')
-    if len(argv) not in (3,4):raise ValueError('Invalid arguments')
+    if len(argv) not in (3,4,5):raise ValueError('Invalid arguments')
     name,action=argv[1:3]
     if not re.fullmatch(r'[A-Za-z0-9_][A-Za-z0-9_-]*(?:\.service)?',name):raise ValueError('Invalid server identifier')
     info=os.lstat(CONFIG)
@@ -111,13 +117,22 @@ def execute(argv):
     if server.get('launch') is not True:raise ValueError('Direct launch is not configured')
     account=pwd.getpwnam(server['user']);directory=server['directory']
     if account.pw_uid==0 or account.pw_gid==0 or not os.path.isabs(directory) or not os.path.isdir(directory):raise ValueError('Non-root user and game folder required')
-    if action not in ('start','restart','stop','status','logs','command'):raise ValueError('Invalid action')
-    if (action in ('start','restart','command'))!=(len(argv)==4):raise ValueError('Invalid argument count')
-    payload=decode(argv[3],500 if action=='command' else 4096) if len(argv)==4 else None
+    if action not in ('start','restart','stop','status','metrics','logs','command'):raise ValueError('Invalid action')
+    if action in ('start','restart'):
+        if len(argv) not in (4,5):raise ValueError('Invalid argument count')
+    elif len(argv)!=(4 if action=='command' else 3):raise ValueError('Invalid argument count')
+    limits=runtime.limits_payload(argv[4]) if len(argv)==5 else {}
+    payload=decode(argv[3],500 if action=='command' else 4096) if len(argv)>=4 else None
     secure_directory(CONTROL,0o700)
     with open(CONTROL+'/'+name+'.lock','a') as lock:
-        fcntl.flock(lock,fcntl.LOCK_EX);data=metadata(name)
+        fcntl.flock(lock,fcntl.LOCK_EX);data=metadata(name);data['_name']=name
         if action=='status':print('active' if active(data,account) else 'inactive');return
+        if action=='metrics':
+            running=active(data,account)
+            if not running:print(json.dumps({'state':'inactive','cpu_percent':0,'memory_bytes':0,'limits_enforced':False}));return
+            records=descendants(data,account);before=runtime.usage_snapshot(name,records,data.get('cgroup',False));stamp=time.monotonic();time.sleep(.2)
+            after=runtime.usage_snapshot(name,descendants(data,account),data.get('cgroup',False));elapsed=time.monotonic()-stamp
+            print(json.dumps({'state':'active','cpu_percent':round(max(0,after[0]-before[0])/elapsed*100,1),'memory_bytes':after[1],'limits_enforced':after[2]}));return
         if action=='logs':
             secure_directory(LOGS,0o700)
             try:
@@ -133,10 +148,10 @@ def execute(argv):
         if action=='start' and active(data,account):print('Already running');return
         if action in ('restart','stop'):stop(data,account)
         if action=='stop':print('Stopped');return
-        start(name,account,directory,argv[3]);print('Game command started')
+        start(name,account,directory,argv[3],limits);print('Game command started')
 
 if __name__=='__main__':
     os.umask(0o077)
     try:execute(sys.argv)
-    except (ValueError,KeyError,OSError,subprocess.SubprocessError):
-        print('Game operation failed: check game command, pinned user/folder and runner log',file=sys.stderr);sys.exit(1)
+    except (ValueError,KeyError,OSError,subprocess.SubprocessError) as error:
+        print('Game operation failed: '+str(error),file=sys.stderr);sys.exit(1)

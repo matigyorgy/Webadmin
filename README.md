@@ -72,11 +72,25 @@ A szinkronizálás meglévő kész buildet nem ír felül. A régebbi letöltöt
 
 A Linuxnak el kell érnie a Mojang, PaperMC, Forge, SpigotMC, Purpur, Fabric, Adoptium/GitHub és a buildeszközök függőségi tárainak HTTPS-végpontjait. Proxy esetén a Java/Git tanúsítvány- és proxybeállítások is legyenek helyesek; TLS-ellenőrzést ne tilts le.
 
+## Csatlakozási cím, használati adatok és limitek
+
+A **Szervereim → Kezelés és konzol** oldalon látható a csatlakozási cím és port, valamint öt másodpercenként frissül a teljes játékfolyamatcsoport CPU- és memóriahasználata. A Linux-gépnél külön megadható nyilvános játék IP/domain; üresen az SSH-címet jelenítjük meg (IPv6 cím szögletes zárójelet kap). NAT esetén a külső porttovábbításról is gondoskodni kell.
+
+Létrehozáskor és szerkesztéskor az admin megadhatja:
+
+- **Memórialimit (MiB):** például 2048 = 2 GiB. A kernel a teljes csoport memóriáját korlátozza; túllépéskor OOM-leállítás történhet. A Java `-Xmx` értékének ennél kisebbnek kell lennie a JVM egyéb memóriaigénye miatt.
+- **CPU-limit (%):** 100 egy mag, 150 másfél, 200 két mag CPU-idejének felel meg. A kernel időkvótával korlátozza, nem a magok számát állítja.
+- Mindkettőnél **0 = korlátlan**. Módosítás a következő indítás/újraindítás alkalmával érvényesül; az adatlapon a mentett limit látszik.
+
+A segédprogram indításkor automatikusan beállítja a saját root-tulajdonú **cgroup v2** csoportját és a CPU/memory vezérlőket. A runner és minden gyermekfolyamata ebbe kerül még a játékfelhasználóra váltás előtt; systemd-szolgáltatás nem kell. A játék nem írhatja felül a limitjeit. A memória-limit mellett a swap limitje 0. Korlátozás kérésekor írhatatlan/hiányzó cgroup v2 vezérlő esetén az indítás hibával leáll: korlátozás nélkül nem indul el. Konténeres/VPS tárhelyen ezt a gazdagépnek is támogatnia kell. Korlátlan futtatás cgroup nélkül is működik; ilyenkor a folyamatfa CPU-idejéből és RSS memóriájából számítjuk a használatot, ami becslés (megosztott lapok többször számíthatnak).
+
+A **Szerverazonosító** belső Linux-azonosító, nem szolgáltatásnév. Új szervernél üresen hagyható, automatikusan generáljuk. A célmappa továbbra is az adatbázisbeli számazonosítót használja.
+
 ## Szerverkönyvtárak, portok és konfiguráció
 
 Új példány létrehozásakor a cél **`/home/gamedock/<adatbázisbeli-szerver-ID>/`**, például `/home/gamedock/42/`. A célmappát nem kell és nem lehet kézzel megválasztani. Meglévő célmappát a másoló nem ír felül. Minden példány külön nologin Linux-felhasználót és privát, 0700 jogosultságú könyvtárat kap.
 
-Portkiosztás: **25000–25999**, egy Linux-gépen a panelen belül egyedi porttal. A mentett indítóparancs `{port}` helyőrzőjét a kiosztott ötjegyű érték helyettesíti. A Minecraft `server.properties` és a FiveM `server.cfg` TCP/UDP endpoint beállításai automatikusan elkészülnek. Más játékok template-jeinek szöveges cfg/properties/json/yaml/txt fájljaiban `{{PORT}}` is használható, amelyet másoláskor a panel kiír.
+Portkiosztás: **25000–25999**, véletlenszerűen választott szabad porttal: az első két számjegy mindig 25, az utolsó három véletlen. A node-adatbázissor zárolása alatt kizárjuk a panelen már kiosztott portokat és SSH-n a Linux `/proc/net/tcp`, `tcp6`, `udp`, `udp6` tábláiban foglalt portokat. Sikertelen portellenőrzésnél nem hozunk létre szervert. Egy később, a panelen kívül elindított program természetesen lefoglalhat még egy jelenleg szabad portot; ezért a játéktartományt célszerű a panelnek fenntartani. A mentett indítóparancs `{port}` helyőrzőjét a kiosztott ötjegyű érték helyettesíti. A Minecraft `server.properties` és a FiveM `server.cfg` TCP/UDP endpoint beállításai automatikusan elkészülnek. Más játékok template-jeinek szöveges cfg/properties/json/yaml/txt fájljaiban `{{PORT}}` is használható, amelyet másoláskor a panel kiír.
 
 A teljes fájlmásolás a saját játékfelhasználóval fut, nem rootként. Nincs symlink/hardlink-alapú közös játékadat. A forrás/célgyökér engedélylistáját a root tulajdonú `/etc/gamedock/servers.json` rögzíti. Nem kerülhet másolat az engedélyezett célgyökéren kívülre, és symlinkes/speciális/üres template elutasításra kerül.
 
@@ -94,7 +108,7 @@ A gép újraindítása után a példányok a panelről újraindítandók; bootin
 
 Admin: felhasználók, típusok, Linux-gépek, sablonok és szerverek kezelése, tulajdonosváltás, jelszó-reset, műveleti napló. Kliens: kizárólag saját szerverek és fiókadatok. Módosítások CSRF-védettek; jelszócsere/reset érvényteleníti a többi munkamenetet, a bejelentkezések fiók/IP szerint korlátozottak.
 
-Frissítés előtt készíts fájl- és adatbázismentést. Őrizd meg a saját `config/` fájlokat és SSH-kulcsokat, a többi kiadásfájlt azonos elrendezésben töltsd fel. Az admin **Új szerverfunkciók engedélyezése** gombja a hiányzó oszlopokat és a játéktípus-táblát hozzáadja, és a korábbi enumot bővíthető azonosítóra alakítja. ALTER/CREATE/INSERT jogosultság szükséges; a meglévő adatokat nem törli. A telepítőt ne futtasd újra.
+Frissítés előtt készíts fájl- és adatbázismentést. Őrizd meg a saját `config/` fájlokat és SSH-kulcsokat, a többi kiadásfájlt azonos elrendezésben töltsd fel. Az admin **Új szerverfunkciók engedélyezése** gombja a hiányzó oszlopokat és a játéktípus-táblát hozzáadja, és a korábbi enumot bővíthető azonosítóra alakítja. ALTER/CREATE/INSERT jogosultság szükséges; a meglévő adatokat nem törli. A panel telepítőjét ne futtasd újra. Az új CPU/memóriafunkciókhoz minden Linux-gépnél futtasd újra az **Automatikus Linux-telepítés** műveletet a segédprogramok frissítéséhez; majd indítsd újra az érintett játékot.
 
 A régi szerverkönyvtárakat a frissítő nem költözteti át és nem írja felül automatikusan. Az ID-alapú hely az új példányokra vonatkozik. A régi Linux-telepítést a webes Linux-beállítás gombbal frissítsd. A generált Smarty-fordítások a `var/smarty/compile/` alatt törölhetők, a konfiguráció nem.
 

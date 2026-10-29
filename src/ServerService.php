@@ -15,14 +15,15 @@ final class ServerService
     }
     public function find(array $user, int $id): array
     {
-        $server=$this->db->query('SELECT s.*,n.name AS node_name,n.ssh_host,n.ssh_port,n.ssh_user,n.ssh_fingerprint FROM servers s JOIN nodes n ON n.id=s.node_id WHERE s.id=? AND (s.user_id=? OR ?=1)',[$id,$user['id'],(int)$user['is_admin']])->fetch();
+        $public=(new SchemaUpdater($this->db))->publicHostEnabled() ? 'n.public_host' : 'NULL';
+        $server=$this->db->query('SELECT '.$public.' AS public_host,s.*,n.name AS node_name,n.ssh_host,n.ssh_port,n.ssh_user,n.ssh_fingerprint FROM servers s JOIN nodes n ON n.id=s.node_id WHERE s.id=? AND (s.user_id=? OR ?=1)',[$id,$user['id'],(int)$user['is_admin']])->fetch();
         if (!$server) throw new RuntimeException('A szerver nem található vagy nincs hozzá jogosultságod.');
         return $server;
     }
     public function read(array $user, int $id, string $action): array
     {
         if ($action==='provision') return (new ProvisionService($this->db,$this->ssh))->pollForUser($user,$id);
-        if (!in_array($action,['status','logs'],true)) throw new RuntimeException('Nem engedélyezett lekérdezés.');
+        if (!in_array($action,['status','logs','metrics'],true)) throw new RuntimeException('Nem engedélyezett lekérdezés.');
         $server=$this->find($user,$id);
         if (($server['provision_state'] ?? 'ready')!=='ready') throw new RuntimeException('A szerver fájljainak másolása még nem fejeződött be.');
         return $this->ssh->execute($server,$action);
@@ -41,6 +42,7 @@ final class ServerService
         } catch (Throwable $e) {
             $this->db->query('UPDATE audit_log SET outcome=? WHERE id=?',['failed',$audit]);
             error_log('GameDock SSH action failed: '.get_class($e));
+            if (str_contains($e->getMessage(),'cgroup v2')) throw $e;
             throw new RuntimeException('Az SSH-művelet nem sikerült. Ellenőrizd a Linux-gép elérhetőségét, a hostkulcsot, az SSH-kulcsot és a szolgáltatás jogosultságait.'.(!empty($server['startup_command']) ? ' Saját indítóparancsnál a gamedock-launch telepítése, a Linux-oldali engedélylista és egy nem ütköző unitnév is szükséges.' : ''));
         }
     }

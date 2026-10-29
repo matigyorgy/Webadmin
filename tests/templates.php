@@ -98,3 +98,21 @@ foreach($helperFailures as [$stdout,$exit,$stderr,$timeout,$expected]) {
 }
 check(GameDock\TemplateCommandResult::parse('{"state":"idle","templates":[]}',0,'')['state']==='idle','Empty valid catalog rejected');
 echo "10 template helper diagnostic checks passed.\n";
+
+check(GameDock\ResourceLimits::validate(['memory_limit_mb'=>'2048','cpu_limit_percent'=>'150'])===['memory_limit_mb'=>2048,'cpu_limit_percent'=>150],'Resource limits lost');
+foreach (['-1','1.5','10;id',1048577,[],true] as $bad) {
+ $caught=false;try {GameDock\ResourceLimits::validate(['memory_limit_mb'=>$bad]);} catch(RuntimeException $e) {$caught=true;}check($caught,'Invalid limit accepted');
+}
+$launch=$commands->build('example','start','','java -jar server.jar',['memory_limit_mb'=>4096,'cpu_limit_percent'=>200]);
+check(str_contains($launch,base64_encode('{"memory_limit_mb":4096,"cpu_limit_percent":200}')),'Limits missing from launch command');
+$occupied=range(25000,25999);unset($occupied[523]);
+check(GameDock\PortAllocator::choose($occupied)===25523,'Allocator did not select only free port');
+$caught=false;try{GameDock\PortAllocator::choose(range(25000,25999));}catch(RuntimeException $e){$caught=true;}check($caught,'Full range accepted');
+$occupied=[25000,25999];
+for($i=0;$i<100;$i++){$port=GameDock\PortAllocator::choose($occupied);check($port>=25000 && $port<=25999 && !in_array($port,$occupied,true),'Port collided');$occupied[]=$port;}
+echo "Resource limits and 102 port allocation checks passed.\n";
+
+$selected=['id'=>1,'name'=>'Survival','game_name'=>'Minecraft','node_name'=>'Linux','address'=>'[2001:db8::1]','port'=>25523,'memory_limit_mb'=>2048,'cpu_limit_percent'=>150];
+$html=renderTemplate($view,'panel.tpl',array_replace($base,['user'=>['id'=>2,'email'=>'client@example.com','is_admin'=>0],'selected'=>$selected]));
+check(str_contains($html,'[2001:db8::1]:25523') && str_contains($html,'2048 MiB') && str_contains($html,'150%') && str_contains($html,'data-memory'),'Connection/resource view missing');
+echo "Connection address and resource view passed.\n";
