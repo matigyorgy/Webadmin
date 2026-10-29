@@ -11,7 +11,7 @@ async function queryServer(id, action) {
 }
 function showState(element, state) {
     if (!element) return;
-    element.textContent = state;
+    element.textContent = state === 'active' ? 'online' : state === 'inactive' ? 'offline' : state;
     element.className = `badge ${state === 'active' ? 'text-bg-success' : 'text-bg-secondary'}`;
 }
 document.querySelectorAll('[data-status-id]').forEach(button => {
@@ -29,7 +29,6 @@ if (consolePanel) {
     const refresh = document.getElementById('refresh-console');
     const output = document.getElementById('console-output');
     const feedback = document.getElementById('console-feedback');
-    const automatic = document.getElementById('auto-refresh');
     let busy = false;
     let lastStatus = 0;
     async function update() {
@@ -41,7 +40,7 @@ if (consolePanel) {
             output.textContent = data.logs;
             if (atBottom) output.scrollTop = output.scrollHeight;
             feedback.textContent = `Frissítve: ${new Date().toLocaleTimeString('hu-HU')}`;
-        } catch (error) { feedback.textContent = error.name === 'AbortError' ? 'A lekérdezés túllépte az időkorlátot.' : error.message; automatic.checked = false; }
+        } catch (error) { feedback.textContent = error.name === 'AbortError' ? 'A lekérdezés túllépte az időkorlátot.' : error.message; }
         finally { busy = false; refresh.disabled = false; }
         if (Date.now() - lastStatus > 30000) {
             lastStatus = Date.now();
@@ -50,7 +49,7 @@ if (consolePanel) {
         }
     }
     refresh.addEventListener('click', update);
-    setInterval(() => { if (automatic.checked && !document.hidden) update(); }, 5000);
+    setInterval(update, 5000);
     update();
 }
 const provisionPanel = document.querySelector('[data-provision-admin], [data-provision-client]');

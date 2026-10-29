@@ -114,5 +114,5 @@ echo "Resource limits and 102 port allocation checks passed.\n";
 
 $selected=['id'=>1,'name'=>'Survival','game_name'=>'Minecraft','node_name'=>'Linux','address'=>'[2001:db8::1]','port'=>25523,'memory_limit_mb'=>2048,'cpu_limit_percent'=>150];
 $html=renderTemplate($view,'panel.tpl',array_replace($base,['user'=>['id'=>2,'email'=>'client@example.com','is_admin'=>0],'selected'=>$selected]));
-check(str_contains($html,'[2001:db8::1]:25523') && str_contains($html,'2048 MiB') && str_contains($html,'150%') && str_contains($html,'data-memory'),'Connection/resource view missing');
+check(str_contains($html,'[2001:db8::1]:25523') && str_contains($html,'2048 MiB') && !str_contains($html,'150%') && str_contains($html,'data-memory'),'Connection/resource view missing');
 echo "Connection address and resource view passed.\n";

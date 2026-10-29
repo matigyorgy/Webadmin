@@ -28,7 +28,7 @@ final class PanelController
                 if (!in_array($action,['start','stop','restart','logs','command','status'],true)) throw new RuntimeException('Ismeretlen művelet.');
                 $id=Validation::id($_POST['server_id'] ?? 0);
                 $result=$service->perform($user,$id,$action,(string)($_POST['command'] ?? ''));
-                $_SESSION['flash']=['notice'=>match($action){'command'=>'A parancsot továbbítottuk. Az eredményt a konzolnaplóban ellenőrizd.','logs'=>'A konzolnapló frissült.','status'=>'Állapot: '.($result['state'] ?? 'ismeretlen'),default=>'A vezérlési parancs lefutott. Ellenőrizd a szerver állapotát.'}];
+                $_SESSION['flash']=['notice'=>match($action){'command'=>'A parancsot továbbítottuk. Az eredményt a konzolnaplóban ellenőrizd.','logs'=>'A konzolnapló frissült.','status'=>'Állapot: '.match($result['state'] ?? ''){'active'=>'online','inactive'=>'offline',default=>'ismeretlen'},default=>'A vezérlési parancs lefutott. Ellenőrizd a szerver állapotát.'}];
                 if ($action==='logs') $_SESSION['flash']['logs']=$result['logs'];
                 $this->redirect('/?server='.$id);
             } catch (Throwable $e) {
