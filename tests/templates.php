@@ -124,6 +124,7 @@ check(substr_count($prepared,'export GAMEDOCK_MEMORY_MB=')===1 && str_contains($
 echo "Startup command limit checks passed.\n";
 
 foreach ([
+ "sudo: I'm sorry gamedock. I'm afraid I can't do that"=>'sudo elutasította',
  'ValueError: Unknown operation'=>'régebbi Minecraft-helper',
  'ValueError: Template synchronization is running'=>'szinkronizálása még fut',
  'ValueError: Template is in use by an active copy job'=>'verzióváltás fut',

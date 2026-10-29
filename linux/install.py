@@ -104,6 +104,11 @@ def install(args):
         os.chmod(temporary,0o440);os.replace(temporary,folder/'gamedock-panel')
     finally:
         if os.path.exists(temporary):os.unlink(temporary)
+    # Syntax alone is insufficient: a later sudoers rule can override this grant.
+    try:
+        subprocess.run(['sudo','-n','-l','-U',args.ssh_user,'--','/usr/local/sbin/gamedock-templates','delete','gamedock-policy-check'],check=True,capture_output=True)
+    except subprocess.CalledProcessError as error:
+        raise ValueError('The effective sudo policy denies gamedock-templates delete for '+args.ssh_user+'. Check conflicting sudoers rules; the helper has not been executed.') from error
     ssh=Path(account.pw_dir)/'.ssh'
     if not ssh.exists():
         ssh.mkdir(mode=0o700);os.chown(ssh,account.pw_uid,account.pw_gid)
