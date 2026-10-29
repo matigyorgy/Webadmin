@@ -5,7 +5,7 @@ use RuntimeException;
 final class Validation
 {
     public const GAMES = ['minecraft'=>'Minecraft','cs2'=>'Counter-Strike 2','fivem'=>'FiveM','css'=>'Counter-Strike: Source'];
-    public const STARTUP = ['minecraft'=>'java -Xms1G -Xmx4G -jar server.jar nogui','cs2'=>'./game/bin/linuxsteamrt64/cs2 -dedicated -console -usercon +map de_dust2','fivem'=>'./run.sh +exec server.cfg','css'=>'./srcds_run -game cstrike -console +map de_dust2 -port 27015'];
+    public const STARTUP = ['minecraft'=>'java -Xms1G -Xmx4G -jar server.jar nogui --port {port}','cs2'=>'./game/bin/linuxsteamrt64/cs2 -dedicated -console -usercon -port {port} +map de_dust2','fivem'=>'./run.sh +exec server.cfg','css'=>'./srcds_run -game cstrike -console +map de_dust2 -port {port}'];
     public static function text(array $data, string $name, int $max=120): string
     {
         $value=trim(is_string($data[$name] ?? null) ? $data[$name] : '');

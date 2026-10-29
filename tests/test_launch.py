@@ -23,56 +23,19 @@ launch=module('launch_helper','linux/gamedock-launch')
 runner=module('game_runner','linux/gamedock-runner')
 
 class LaunchTests(unittest.TestCase):
-    def setUp(self):
-        self.config={'minecraft-panel.service':{'launch':True,'user':'minecraft','directory':'/srv/games/minecraft'}}
-        patch.object(launch.os,'stat',return_value=SimpleNamespace(st_uid=0,st_mode=0o100644)).start()
-        patch('builtins.open',mock_open(read_data=json.dumps(self.config))).start()
-        patch.object(launch.pwd,'getpwnam',return_value=SimpleNamespace(pw_uid=1001,pw_gid=1001)).start()
-        patch.object(launch.os.path,'isdir',return_value=True).start()
-        self.run=patch.object(launch.subprocess,'run',return_value=SimpleNamespace(returncode=0,stdout='LoadState=loaded\nTransient=no\nActiveState=active\n')).start()
-        self.addCleanup(patch.stopall)
-    def test_persistent_unit_rejected(self):
-        with self.assertRaises(ValueError): launch.execute(['helper','minecraft-panel.service','stop'])
-        self.assertEqual(self.run.call_count,1)
-    def test_bad_action(self):
-        with self.assertRaises(ValueError):launch.execute(['helper','minecraft-panel.service','shell'])
-        self.run.assert_not_called()
-    def test_root_user_rejected(self):
-        with patch.object(launch.pwd,'getpwnam',return_value=SimpleNamespace(pw_uid=0,pw_gid=0)):
-            with self.assertRaises(ValueError):launch.execute(['helper','minecraft-panel.service','stop'])
-        self.run.assert_not_called()
-    def test_multiline_start_rejected(self):
-        command=base64.b64encode(b'java\nreboot').decode()
-        with self.assertRaises(ValueError):launch.execute(['helper','minecraft-panel.service','start',command])
-        self.run.assert_not_called()
-    def test_unknown_unit_rejected(self):
-        with self.assertRaises(KeyError):launch.execute(['helper','other.service','stop'])
-        self.run.assert_not_called()
-    def test_start_uses_pinned_uid_and_directory(self):
-        command='java -Xmx4G -jar server.jar nogui';payload=base64.b64encode(command.encode()).decode()
-        with patch.object(launch,'state',return_value={'LoadState':'not-found','ActiveState':'inactive'}), \
-             patch.object(launch.os,'makedirs'),patch.object(launch.os,'chmod'),patch.object(launch.os,'chown'), \
-             patch.object(launch.os.path,'islink',return_value=False),patch.object(launch.os.path,'lexists',return_value=False), \
-             patch.object(launch,'run') as run,patch('sys.stdout',new_callable=io.StringIO):
-            launch.execute(['helper','minecraft-panel.service','start',payload])
-        args=run.call_args.args[0]
-        self.assertIn('--uid=minecraft',args);self.assertIn('--gid=1001',args)
-        self.assertIn('--working-directory=/srv/games/minecraft',args)
-        self.assertIn('--property=NoNewPrivileges=yes',args)
-        self.assertEqual(args[-1],payload)
-        self.assertNotIn(command,args)
-    def test_active_start_does_not_restart(self):
-        payload=base64.b64encode(b'java -jar server.jar').decode()
-        with patch.object(launch,'state',return_value={'LoadState':'loaded','Transient':'yes','ActiveState':'active'}), \
-             patch.object(launch,'run') as run,patch('sys.stdout',new_callable=io.StringIO):
-            launch.execute(['helper','minecraft-panel.service','start',payload])
-        run.assert_not_called()
-    def test_payload_preserved(self):
-        command='JAVA_HOME=/path java -jar "my server.jar"; echo finished'
-        self.assertEqual(launch.decode(base64.b64encode(command.encode()).decode(),4096),command)
+    def test_pid_identity(self):
+        record=launch.runtime.identity(os.getpid())
+        self.assertTrue(launch.runtime.alive(record,os.geteuid()))
+        self.assertFalse(launch.runtime.alive(dict(record,start='wrong'),os.geteuid()))
+        self.assertFalse(launch.runtime.alive(record,os.geteuid()+1))
     def test_runner_refuses_root(self):
         with patch.object(runner.os,'geteuid',return_value=0):
             with self.assertRaises(ValueError):runner.serve('/tmp/unused.sock','id')
+    def test_payload_preserved(self):
+        command='JAVA_HOME=/path java -jar "my server.jar"; echo finished'
+        self.assertEqual(launch.decode(base64.b64encode(command.encode()).decode(),4096),command)
+    def test_multiline_rejected(self):
+        with self.assertRaises(ValueError):launch.decode(base64.b64encode(b'java\nreboot').decode(),4096)
 
 class RunnerIntegration(unittest.TestCase):
     @unittest.skipIf(os.geteuid()==0,'Run as an unprivileged test user')

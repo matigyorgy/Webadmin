@@ -1,8 +1,11 @@
 #!/usr/bin/python3
-"""Unprivileged game PTY and console socket; systemd owns the entire process cgroup."""
+"""Unprivileged game PTY and console socket; executes the configured command directly."""
 import argparse
 import base64
 import errno
+import json
+import signal
+import stat
 import os
 import pty
 import selectors
@@ -12,9 +15,13 @@ import socket
 import subprocess
 import sys
 
-def serve(path, command):
+def serve(path, command, ready_fd=None):
     if os.geteuid()==0: raise ValueError('Runner must never run as root')
     if not command.strip() or len(command.encode())>4096 or any(ord(c)<32 or ord(c)==127 for c in command): raise ValueError('Invalid startup command')
+    stopping=[False]
+    old_handlers={}
+    for signum in (signal.SIGTERM,signal.SIGINT):
+        old_handlers[signum]=signal.signal(signum,lambda *_: stopping.__setitem__(0,True))
     os.umask(0o077)
     listener=socket.socket(socket.AF_UNIX,socket.SOCK_STREAM)
     selector=selectors.DefaultSelector()
@@ -26,17 +33,22 @@ def serve(path, command):
             # Only this game user's shell interprets the admin-authored command.
             process=subprocess.Popen(['/bin/bash','-c',command],stdin=slave,stdout=slave,stderr=slave,start_new_session=True)
         finally: os.close(slave)
+        if ready_fd is not None:
+            os.write(ready_fd,json.dumps({'game_pid':process.pid}).encode());os.close(ready_fd)
         os.set_blocking(master,False)
         selector.register(master,selectors.EVENT_READ,'output')
         selector.register(listener,selectors.EVENT_READ,'console')
-        while process.poll() is None:
+        while process.poll() is None and not stopping[0]:
             for key,_ in selector.select(timeout=.2):
                 if key.data=='output':
                     try: data=os.read(master,65536)
                     except OSError as exc:
                         if exc.errno==errno.EIO: return process.wait()
                         raise
-                    if data: sys.stdout.buffer.write(data);sys.stdout.buffer.flush()
+                    if data:
+                        output=sys.stdout.buffer
+                        if stat.S_ISREG(os.fstat(output.fileno()).st_mode) and os.fstat(output.fileno()).st_size>8*1024*1024:os.ftruncate(output.fileno(),0)
+                        output.write(data);output.flush()
                 else:
                     connection,_=listener.accept()
                     with connection:
@@ -57,6 +69,12 @@ def serve(path, command):
                                 select.select([], [master], [], .1); continue
                             pending=pending[written:]
                         connection.sendall(b'OK')
+        if stopping[0] and process.poll() is None:
+            try:os.killpg(process.pid,signal.SIGTERM)
+            except ProcessLookupError:pass
+            try:process.wait(timeout=30)
+            except subprocess.TimeoutExpired:
+                os.killpg(process.pid,signal.SIGKILL);process.wait()
         # Drain trailing output on normal exit.
         while True:
             try: data=os.read(master,65536)
@@ -68,17 +86,19 @@ def serve(path, command):
         selector.close();listener.close()
         if master is not None: os.close(master)
         if process is not None and process.poll() is None:
-            process.terminate()
+            try:os.killpg(process.pid,signal.SIGTERM)
+            except ProcessLookupError:pass
             try: process.wait(timeout=2)
-            except subprocess.TimeoutExpired: process.kill();process.wait()
+            except subprocess.TimeoutExpired: os.killpg(process.pid,signal.SIGKILL);process.wait()
+        for signum,handler in old_handlers.items():signal.signal(signum,handler)
         try: os.unlink(path)
         except FileNotFoundError: pass
 
 if __name__=='__main__':
-    parser=argparse.ArgumentParser();parser.add_argument('--socket',required=True);parser.add_argument('--command',required=True)
+    parser=argparse.ArgumentParser();parser.add_argument('--socket',required=True);parser.add_argument('--command',required=True);parser.add_argument('--ready-fd',type=int)
     args=parser.parse_args()
     try:
         command=base64.b64decode(args.command,validate=True).decode('utf-8')
-        sys.exit(serve(args.socket,command))
+        sys.exit(serve(args.socket,command,args.ready_fd))
     except (ValueError,OSError,subprocess.SubprocessError):
         print('Game runner failed; check permissions and game command',file=sys.stderr);sys.exit(1)

@@ -1,17 +1,10 @@
 FROM debian:trixie-slim
-RUN --mount=type=secret,id=proxy_ca,target=/run/proxy-ca.pem apt-get -o Acquire::https::CaInfo=/run/proxy-ca.pem update -qq && apt-get -o Acquire::https::CaInfo=/run/proxy-ca.pem install -y --no-install-recommends openssh-server sudo python3 tmux && rm -rf /var/lib/apt/lists/*
-RUN useradd -m -s /bin/bash gamedock && useradd -m -s /bin/bash minecraft && mkdir -p /run/sshd /etc/gamedock /var/lib/gamedock-fixture && echo inactive > /var/lib/gamedock-fixture/state
-COPY tests/fixtures/ssh/systemctl /usr/bin/systemctl
-COPY tests/fixtures/ssh/systemd-run /usr/bin/systemd-run
-COPY tests/fixtures/ssh/journalctl /usr/bin/journalctl
-COPY tests/fixtures/ssh/game.py /opt/fixture/game.py
-COPY linux/gamedock-launch /usr/local/sbin/gamedock-launch
-COPY linux/gamedock-provision /usr/local/sbin/gamedock-provision
-COPY linux/gamedock-runner /usr/local/libexec/gamedock-runner
-COPY linux/gamedock-console /usr/local/sbin/gamedock-console
-COPY tests/fixtures/ssh/servers.json /etc/gamedock/servers.json
-COPY tests/fixtures/ssh/sudoers /etc/sudoers.d/gamedock
+RUN --mount=type=secret,id=proxy_ca,target=/run/proxy-ca.pem apt-get -o Acquire::https::CaInfo=/run/proxy-ca.pem update -qq && apt-get -o Acquire::https::CaInfo=/run/proxy-ca.pem install -y --no-install-recommends openssh-server sudo python3 && rm -rf /var/lib/apt/lists/*
+RUN useradd -m -s /bin/bash gamedock && useradd -m -s /bin/bash minecraft && mkdir -p /run/sshd /etc/gamedock /srv/gamedock/templates/custom /home/gamedock && chown root:root /home/gamedock && chmod 755 /home/gamedock && echo 'root:Fixture-root-password-123' | chpasswd && printf '\nPermitRootLogin yes\nPasswordAuthentication yes\n' >> /etc/ssh/sshd_config
+COPY linux /release/linux
+RUN python3 /release/linux/install.py --source-root /srv/gamedock/templates --target-root /home/gamedock && touch /etc/gamedock/test-fixture && rm -f /usr/bin/systemctl /usr/bin/systemd-run /usr/bin/journalctl
+COPY tests/fixtures/ssh/game.py /srv/gamedock/templates/custom/server.py
+RUN chmod 644 /srv/gamedock/templates/custom/server.py
 COPY tests/fixtures/ssh/entrypoint /entrypoint
-RUN mkdir -p /srv/games /srv/gamedock/templates/minecraft /srv/gamedock/templates/cs2 /srv/gamedock/templates/fivem /srv/gamedock/templates/css && for game in minecraft cs2 fivem css; do cp /opt/fixture/game.py /srv/gamedock/templates/$game/server.py; chmod 644 /srv/gamedock/templates/$game/server.py; done
-RUN chmod 644 /opt/fixture/game.py && chmod 755 /usr/bin/systemctl /usr/bin/systemd-run /usr/bin/journalctl /usr/local/sbin/gamedock-launch /usr/local/sbin/gamedock-provision /usr/local/libexec/gamedock-runner /usr/local/sbin/gamedock-console /entrypoint && chmod 440 /etc/sudoers.d/gamedock
+RUN chmod 755 /entrypoint
 ENTRYPOINT ["/entrypoint"]

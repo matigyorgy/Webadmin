@@ -45,14 +45,7 @@ final class Installer
             $node = ['name'=>$get('node_name'),'host'=>$get('ssh_host'),'port'=>(int)$get('ssh_port'),'user'=>$get('ssh_user'),'fingerprint'=>$get('ssh_fingerprint')];
         }
         $server = null;
-        if ($get('server_name') !== '') {
-            if (!$node || strlen($get('server_name')) > 120
-                || !in_array($get('game'), ['minecraft','cs2','fivem','css'], true)
-                || !preg_match('/\A[a-zA-Z0-9_-]+\.service\z/', $get('unit_name')) || strlen($get('unit_name')) > 120) {
-                throw new RuntimeException('Az első játékszerverhez Linux-gép, játéktípus és pontos .service unitnév szükséges.');
-            }
-            $server = ['name'=>$get('server_name'),'game'=>$get('game'),'unit'=>$get('unit_name')];
-        }
+        if ($get('server_name') !== '') throw new RuntimeException('A szervereket telepítés után az adminban hozd létre.');
         return ['dsn'=>"mysql:host=$host;port=$port;dbname=$name;charset=utf8mb4",'db_user'=>$user,'db_password'=>(string)($input['db_password'] ?? ''),
             'email'=>$email,'password_hash'=>password_hash($password, PASSWORD_DEFAULT),'node'=>$node,'server'=>$server];
     }
@@ -96,16 +89,13 @@ final class Installer
                 $created[] = $match[1];
             }
             $pdo->beginTransaction();
+            foreach(GameRegistry::defaults() as $profile)$pdo->prepare('INSERT INTO game_types(slug,name,template_path,startup_command,provider) VALUES(?,?,?,?,?)')->execute(array_values($profile));
             $pdo->prepare('INSERT INTO users(email,password_hash,is_admin) VALUES(?,?,1)')->execute([$data['email'],$data['password_hash']]);
             $userId = $pdo->lastInsertId();
             if ($data['node']) {
                 $n=$data['node'];
                 $pdo->prepare('INSERT INTO nodes(name,ssh_host,ssh_port,ssh_user,ssh_fingerprint) VALUES(?,?,?,?,?)')->execute([$n['name'],$n['host'],$n['port'],$n['user'],$n['fingerprint']]);
                 $nodeId=$pdo->lastInsertId();
-                if ($data['server']) {
-                    $s=$data['server'];
-                    $pdo->prepare('INSERT INTO servers(user_id,node_id,name,game,unit_name,startup_command,install_source,install_folder,provision_job,provision_state) VALUES(?,?,?,?,?,?,?,?,?,?)')->execute([$userId,$nodeId,$s['name'],$s['game'],$s['unit'],Validation::STARTUP[$s['game']],'/srv/gamedock/templates/'.$s['game'],substr($s['unit'],0,-8),bin2hex(random_bytes(16)),'queued']);
-                }
             }
             $settings=['DB_DSN'=>$data['dsn'],'DB_USER'=>$data['db_user'],'DB_PASSWORD'=>$data['db_password'],
                 'SSH_PRIVATE_KEY_PATH'=>$privateKeyPath];

@@ -13,7 +13,7 @@
   <h2 class="h3 text-success">Sikeres telepítés!</h2><p>A táblák és az adminfiók létrejöttek, a konfigurációt elmentettük. A telepítő automatikusan lezárult.</p>
   <h3 class="h5 mt-4">A panel nyilvános SSH-kulcsa</h3><p class="text-body-secondary">Ezt a sort add a Linux-gépen a kiválasztott SSH-felhasználó <code>~/.ssh/authorized_keys</code> fájljához. A privát kulcs a szerveren marad.</p>
   <textarea class="form-control font-monospace mb-3" rows="5" readonly aria-label="Nyilvános SSH-kulcs">{$success.public_key}</textarea>
-  <div class="alert alert-info">A panel telepítése kész. A Linux-gépen a kulcs engedélyezése, a systemd/sudoers és konzolhoz a tmux-segédprogram beállítása még szükséges. A telepítő nem telepíti magukat a játékokat.</div>
+  <div class="alert alert-info">A panel telepítése kész. A Linux-gép automatikus beállítása az adminban, a gép szerkesztésénél indítható. A telepítő nem telepíti magukat a játékokat.</div>
   <a class="btn btn-success" href="/">Tovább a bejelentkezéshez →</a>
  </div></section>
  {elseif $installed}
@@ -43,11 +43,6 @@
    <div class="col-md-4"><label class="form-label" for="ssh_port">SSH-port</label><input id="ssh_port" class="form-control" name="ssh_port" type="number" min="1" max="65535" value="{$values.ssh_port}"></div>
    <div class="col-md-8"><label class="form-label" for="ssh_user">SSH-felhasználó</label><input id="ssh_user" class="form-control" name="ssh_user" value="{$values.ssh_user}"><div class="form-text">Külön, korlátozott felhasználó, például gamedock; ne root.</div></div>
    <div class="col-12"><label class="form-label" for="ssh_fingerprint">Ellenőrzött SSH hostkulcs-ujjlenyomat</label><input id="ssh_fingerprint" class="form-control font-monospace" name="ssh_fingerprint" value="{$values.ssh_fingerprint}" placeholder="SHA256:..."><div class="form-text">A Linux-gép megbízható konzolján: <code>ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub -E sha256</code>. Az SSH által használt hostkulcs SHA256: kezdetű értékét másold ide.</div></div>
-  </div></div></section>
-  <section class="card rounded-4 mb-4"><div class="card-body p-4"><h2 class="h4 mb-3">4. Első játékszerver <span class="badge text-bg-secondary fs-6">Opcionális</span></h2><p class="text-body-secondary">Első szerverpéldányt rögzíthetsz az adminfiókhoz. A fájlok másolását az SSH-kulcs és a Linux másolási segédprogram beállítása után, az adminoldalról indíthatod. Az alapértelmezett forrás: /srv/gamedock/templates/játéktípus.</p><div class="row g-3">
-   <div class="col-md-6"><label class="form-label" for="server_name">Szerver neve</label><input id="server_name" class="form-control" name="server_name" maxlength="120" value="{$values.server_name}" placeholder="Survival"></div>
-   <div class="col-md-6"><label class="form-label" for="game">Játék</label><select id="game" class="form-select" name="game">{foreach ['minecraft'=>'Minecraft','cs2'=>'Counter-Strike 2','fivem'=>'FiveM','css'=>'Counter-Strike: Source'] as $value=>$label}<option value="{$value}"{if $values.game == $value} selected{/if}>{$label}</option>{/foreach}</select></div>
-   <div class="col-12"><label class="form-label" for="unit_name">Systemd-szolgáltatás neve</label><input id="unit_name" class="form-control" name="unit_name" maxlength="120" value="{$values.unit_name}"></div>
   </div></div></section>
   <p class="small text-body-secondary">A telepítő az adatbázisban táblákat hoz létre, adminfiókot készít, és elmenti a konfigurációt. Siker után automatikusan lezárul.</p>
   <button class="btn btn-success btn-lg w-100" type="submit">Telepítés indítása →</button>

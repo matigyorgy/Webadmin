@@ -17,7 +17,7 @@ class ProvisionTests(unittest.TestCase):
         self.root=Path(self.temp.name);self.source=self.root/'templates';self.source.mkdir();(self.source/'minecraft').mkdir()
         self.target=self.root/'games';self.target.mkdir();(self.root/'outside').mkdir()
         self.policy={'_provision':{'source_root':str(self.source),'target_root':str(self.target),'users':{'minecraft':'minecraft'}}}
-        self.payload={'job':'a'*32,'unit':'minecraft-panel.service','game':'minecraft','folder':'survival','source':str(self.source/'minecraft')}
+        self.payload={'job':'a'*32,'unit':'minecraft-panel.service','game':'minecraft','folder':'survival','source':str(self.source/'minecraft'),'port':25000}
         patch.object(provision,'secure').start();patch.object(provision.pwd,'getpwnam',return_value=SimpleNamespace(pw_uid=1001,pw_gid=1001)).start()
         self.addCleanup(patch.stopall)
     def test_valid_paths(self):

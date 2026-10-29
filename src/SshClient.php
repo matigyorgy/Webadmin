@@ -8,7 +8,7 @@ final class SshClient
 {
     public function execute(array $server, string $action, string $input = ''): array
     {
-        $command = (new ServerCommand())->build($server['unit_name'], $action, $input, (string)($server['startup_command'] ?? ''));
+        $command = (new ServerCommand())->build($server['unit_name'], $action, $input, str_replace('{port}',(string)($server['port'] ?? ''),(string)($server['startup_command'] ?? '')));
         $ssh = $this->connect($server);
         if (!empty($server['startup_command']) && in_array($action,['stop','restart'],true)) $ssh->setTimeout(45);
         $output = $ssh->exec($command);
@@ -18,6 +18,20 @@ final class SshClient
         }
         if ($action === 'logs') return ['logs'=>$output];
         return $action === 'status' ? ['state'=>trim($output)] : ['accepted'=>true];
+    }
+    public static function probe(string $host,int $port): string
+    {
+        if(!preg_match('/\A(?:[a-zA-Z0-9_.-]+|[a-fA-F0-9:]+)\z/',$host) || $port<1 || $port>65535)throw new RuntimeException('Érvénytelen SSH-cím/port.');
+        $ssh=new SSH2($host,$port,8);$parts=explode(' ',trim((string)$ssh->getServerPublicHostKey()));$raw=base64_decode($parts[1] ?? '',true);
+        if(!$raw)throw new RuntimeException('A hostkulcs nem kérdezhető le.');
+        return 'SHA256:'.rtrim(base64_encode(hash('sha256',$raw,true)),'=');
+    }
+    public function templates(array $node,string $action): array
+    {
+        if(!in_array($action,['catalog','sync'],true))throw new RuntimeException('Ismeretlen katalógusművelet.');
+        $ssh=$this->connect($node);$output=$ssh->exec('/usr/bin/sudo -n /usr/local/sbin/gamedock-templates '.$action);
+        if($output===false || $ssh->getExitStatus()!==0)throw new RuntimeException('A Minecraft-katalógus nem érhető el. Futtasd a webes Linux-telepítést.');
+        return json_decode($output,true,512,JSON_THROW_ON_ERROR);
     }
     public function provision(array $node,string $action,array $payload): array
     {

@@ -12,12 +12,22 @@ CREATE TABLE nodes (
  ssh_user VARCHAR(64) NOT NULL,
  ssh_fingerprint VARCHAR(100) NOT NULL
 );
+CREATE TABLE game_types (
+ slug VARCHAR(32) PRIMARY KEY,
+ name VARCHAR(120) NOT NULL,
+ template_path VARCHAR(255) NOT NULL,
+ startup_command TEXT NOT NULL,
+ provider VARCHAR(16) NOT NULL DEFAULT 'folder'
+);
 CREATE TABLE servers (
  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
  user_id BIGINT UNSIGNED NOT NULL,
  node_id BIGINT UNSIGNED NOT NULL,
  name VARCHAR(120) NOT NULL,
- game ENUM('minecraft','cs2','fivem','css') NOT NULL,
+ game VARCHAR(32) NOT NULL,
+ port SMALLINT UNSIGNED NULL,
+ minecraft_type VARCHAR(24) NULL,
+ minecraft_version VARCHAR(32) NULL,
  unit_name VARCHAR(120) NOT NULL,
  startup_command TEXT NULL,
  install_source VARCHAR(255) NULL,

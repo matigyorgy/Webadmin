@@ -41,10 +41,11 @@ final class PanelController
             if ($user) {
                 try {
                     $servers=$service->listing($user,mb_substr(trim((string)($_GET['q'] ?? '')),0,100));
-                    foreach ($servers as &$server) { $server['game_name']=Validation::GAMES[$server['game']] ?? $server['game']; $server['state']='nincs lekérdezve'; } unset($server);
+                    $gameNames=(new GameRegistry($this->database))->names();
+                    foreach ($servers as &$server) { $server['game_name']=$gameNames[$server['game']] ?? $server['game']; $server['state']='nincs lekérdezve'; } unset($server);
                     if (isset($_GET['server'])) {
                         $s=$service->find($user,Validation::id($_GET['server']));
-                        $selected=['id'=>$s['id'],'name'=>$s['name'],'game_name'=>Validation::GAMES[$s['game']],'node_name'=>$s['node_name'],'provision_state'=>$s['provision_state'] ?? 'ready'];
+                        $selected=['id'=>$s['id'],'name'=>$s['name'],'game_name'=>$gameNames[$s['game']] ?? $s['game'],'node_name'=>$s['node_name'],'port'=>$s['port'] ?? null,'provision_state'=>$s['provision_state'] ?? 'ready'];
                         if (($s['provision_state'] ?? 'ready')==='ready') $console=['id'=>$s['id'],'name'=>$s['name'],'logs'=>$flash['logs'] ?? 'A napló a Frissítés gombbal kérdezhető le.'];
                         $history=$service->audit($user,(int)$s['id']);
                     } elseif ($page==='history') $history=$service->audit($user);

@@ -17,8 +17,8 @@ foreach ([['db_host'=>'x;dbname=other'], ['db_port'=>'65536'], ['db_name'=>'db;h
     rejected(fn()=>$installer->validate(array_replace($input,$invalid)), 'Invalid installation input accepted');
 }
 $node=['node_name'=>'Linux','ssh_host'=>'games.example.com','ssh_port'=>'22','ssh_user'=>'gamedock',
-    'ssh_fingerprint'=>'SHA256:'.str_repeat('A',43),'server_name'=>'Survival','game'=>'minecraft','unit_name'=>'minecraft.service'];
-ensure($installer->validate(array_replace($input,$node))['server']['game']==='minecraft','First server validation failed');
+    'ssh_fingerprint'=>'SHA256:'.str_repeat('A',43),'server_name'=>'','game'=>'minecraft','unit_name'=>'minecraft'];
+ensure($installer->validate(array_replace($input,$node))['node']['host']==='games.example.com','Node validation failed');
 rejected(fn()=>$installer->validate(array_replace($input,$node,['ssh_user'=>'root'])), 'Root SSH user allowed');
 echo "10 installer validation checks passed.\n";
 
@@ -51,8 +51,8 @@ try {
     $user=$admin->query('SELECT * FROM users')->fetch(PDO::FETCH_ASSOC);
     ensure((int)$user['is_admin']===1 && password_verify($valid['admin_password'],$user['password_hash']),'Admin creation failed');
     ensure((int)$admin->query('SELECT COUNT(*) FROM nodes')->fetchColumn()===1,'First node missing');
-    ensure((int)$admin->query('SELECT COUNT(*) FROM servers')->fetchColumn()===1,'First server missing');
-    ensure($admin->query('SELECT provision_state FROM servers LIMIT 1')->fetchColumn()==='queued','Installer server bypassed copy requirement');
+    ensure((int)$admin->query('SELECT COUNT(*) FROM servers')->fetchColumn()===0,'Installer should leave server creation to admin');
+    ensure((int)$admin->query('SELECT COUNT(*) FROM game_types')->fetchColumn()===4,'Default game profiles missing');
     rejected(fn()=>$test->install($valid),'Reinstallation allowed');
     ensure((int)$admin->query('SELECT COUNT(*) FROM users')->fetchColumn()===1,'Reinstallation changed users');
     // Remove only fixture config to test nonempty database guard.

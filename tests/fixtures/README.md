@@ -1,18 +1,18 @@
-# Isolated integration fixtures
+# Isolated test fixtures
 
-These are test images, not production deployment instructions. Never use the SSH fixture on a real game server. Its systemctl/journalctl commands are controlled substitutes.
+Never deploy the SSH fixture to production: it enables a known root password only for local integration testing. Do not publish its SSH port. The image deliberately removes systemctl/systemd-run/journalctl; all game processes and copy jobs use the actual detached Python/PTY implementation.
 
 Build from the repository root:
 
 ```sh
 docker build -f tests/fixtures/php/Dockerfile -t gamedock-php82-test .
-docker build --secret id=proxy_ca,src=/etc/ssl/certs/ca-certificates.crt -f tests/fixtures/ssh/Dockerfile -t gamedock-ssh-fixture .
+docker build --secret id=proxy_ca,src=/etc/ssl/certs/ca-certificates.crt -f tests/fixtures/ssh/Dockerfile -t gamedock-direct-fixture .
 ```
 
-The SSH build uses the supplied combined trust bundle for package downloads. Keep proxy configuration and TLS/package verification enabled. The container generates its own host keys during package installation; no private keys are checked in.
+Create a disposable MySQL 8.4 container and a fresh copy of the application on an isolated network, publishing only the web port on loopback. Install with owner@example.com / Web-test-password-123. Mount a directory containing an empty authorized_keys file at /keys on the SSH fixture. The browser workflow then configures the host using the **web installer**, proving that it installs the actual panel key.
 
-For tests, create an isolated Docker network, a disposable MySQL 8.4 container and a fresh copy of the application served by the PHP image on a loopback-only port. Do not mount your production config. Install that copy with owner@example.com / Web-test-password-123 against the disposable database. Export its generated **public** key to a temporary file named authorized_keys and mount its directory read-only at /keys in the SSH fixture. Run the SSH container on the same internal test network without publishing its SSH port.
+Run the Playwright/Chromium test with `GAMEDOCK_TEST_URL` (loopback only) and `GAMEDOCK_TEST_SSH_HOST` set: `node tests/browser_workflow.cjs`. It creates a node and custom game profile, runs the password-based bootstrap with package installation disabled, creates a template-based server, checks /home/gamedock/ID and 25000, and tests start/console/restart/stop and flat mobile layout. Playwright and Chromium are development test tools, not application dependencies.
 
-Read the SSH host fingerprint from the fixture's trusted local console with `ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub -E sha256`. Set GAMEDOCK_TEST_URL to the panel's loopback URL, GAMEDOCK_TEST_SSH_HOST to the SSH container name, and GAMEDOCK_TEST_SSH_FINGERPRINT to the SHA256 value. Run `python3 tests/http_workflow.py` from the host. The systemctl fixture must initially be inactive and the application database freshly installed. Stop and remove all fixture containers, test databases, temporary key files and the test network afterward.
+`tests/fixtures/minecraft_catalog.py` creates a clearly labelled **fake** forty-entry catalog from the test Python game, ten versions of four core Minecraft types. It is not a real Minecraft download. After running it inside the disposable SSH fixture, `tests/browser_minecraft.cjs` tests type/version selection, EULA/port configuration and the next 25xxx port. Catalog parser/checksum/JDK extraction tests are in tests/test_minecraft.py.
 
-The test creates users/nodes/servers, performs power and console operations and changes passwords. It is intentionally restricted to loopback URLs. Real games, Steam/FiveM downloads and game networking are outside this test.
+Remove all disposable containers, databases, networks and temporary files after testing. Never run these browser workflows against real user data.

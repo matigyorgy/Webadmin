@@ -8,9 +8,10 @@ final class ServerService
     public function __construct(private Database $db, private SshClient $ssh) {}
     public function listing(array $user, string $search=''): array
     {
-        $provision=(new SchemaUpdater($this->db))->provisionEnabled() ? 's.provision_state' : "'ready'";
-        $rows=$this->db->query('SELECT '.$provision.' AS provision_state,s.id,s.name,s.game,s.unit_name,n.name AS node_name,u.email AS owner_email FROM servers s JOIN nodes n ON n.id=s.node_id JOIN users u ON u.id=s.user_id WHERE (s.user_id=? OR ?=1) ORDER BY s.name',[$user['id'],(int)$user['is_admin']])->fetchAll();
-        return array_values(array_filter($rows,static fn($s)=>$search==='' || mb_stripos($s['name'].' '.$s['node_name'].' '.(Validation::GAMES[$s['game']] ?? ''),$search)!==false));
+        $current=(new SchemaUpdater($this->db))->provisionEnabled();$provision=$current ? 's.provision_state' : "'ready'";$port=$current ? 's.port' : 'NULL';
+        $rows=$this->db->query('SELECT '.$provision.' AS provision_state,'.$port.' AS port,s.id,s.name,s.game,s.unit_name,n.name AS node_name,u.email AS owner_email FROM servers s JOIN nodes n ON n.id=s.node_id JOIN users u ON u.id=s.user_id WHERE (s.user_id=? OR ?=1) ORDER BY s.name',[$user['id'],(int)$user['is_admin']])->fetchAll();
+        $names=(new GameRegistry($this->db))->names();
+        return array_values(array_filter($rows,static fn($s)=>$search==='' || mb_stripos($s['name'].' '.$s['node_name'].' '.($names[$s['game']] ?? $s['game']),$search)!==false));
     }
     public function find(array $user, int $id): array
     {

@@ -1,7 +1,8 @@
 {
   "_provision": {
     "source_root": "/srv/gamedock/templates",
-    "target_root": "/srv/games",
+    "target_root": "/home/gamedock",
+    "allow_custom_games": true,
     "users": {
       "minecraft": "minecraft",
       "cs2": "cs2",

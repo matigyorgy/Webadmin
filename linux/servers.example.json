@@ -1,6 +1,0 @@
-{
-  "minecraft-survival.service": {"user": "minecraft", "tmux_target": "minecraft-survival:0.0"},
-  "cs2-public.service": {"user": "cs2", "tmux_target": "cs2-public:0.0"},
-  "fivem-public.service": {"user": "fivem", "tmux_target": "fivem-public:0.0"},
-  "css-public.service": {"user": "css", "tmux_target": "css-public:0.0"}
-}

@@ -1,0 +1,256 @@
+#!/usr/bin/python3
+"""Official Minecraft catalogs and unprivileged template preparation."""
+import base64,fcntl,hashlib,importlib.util,json,os,pwd,re,shlex,shutil,subprocess,sys,tempfile,time
+import urllib.request,urllib.parse,xml.etree.ElementTree as XML
+import tarfile,posixpath,platform,signal,stat
+from pathlib import Path
+library=Path(__file__).resolve().parent/'gamedock_runtime.py'
+if not library.is_file():library=Path('/usr/local/libexec/gamedock_runtime.py')
+spec=importlib.util.spec_from_file_location('rt',library);rt=importlib.util.module_from_spec(spec);spec.loader.exec_module(rt)
+CONFIG='/etc/gamedock/servers.json';CACHE='/var/lib/gamedock/minecraft';SELF='/usr/local/sbin/gamedock-templates'
+UA='GameDock/1.0 (+https://github.com/matigyorgy/Webadmin)'
+JAVA_VERSIONS={};RELEASES={}
+
+def public_directory(path):
+    path=Path(path)
+    if not path.exists():path.mkdir(mode=0o755)
+    info=path.lstat()
+    if not stat.S_ISDIR(info.st_mode) or info.st_uid!=0 or info.st_mode&0o022:raise ValueError('Unsafe template publication directory')
+    os.chmod(path,0o755)
+
+def atomic(path,data):
+    descriptor,tmp=tempfile.mkstemp(dir=os.path.dirname(path))
+    try:
+        with os.fdopen(descriptor,'w') as stream:json.dump(data,stream,ensure_ascii=False)
+        os.replace(tmp,path)
+    finally:
+        if os.path.exists(tmp):os.unlink(tmp)
+
+def cfg():
+    info=os.lstat(CONFIG)
+    if info.st_uid!=0 or info.st_mode&0o022 or not __import__('stat').S_ISREG(info.st_mode):raise ValueError('Unsafe config')
+    with open(CONFIG) as stream:return json.load(stream)
+
+def allowed(url):
+    parts=urllib.parse.urlsplit(url);host=parts.hostname or ''
+    domains=('mojang.com','minecraft.net','papermc.io','minecraftforge.net','spigotmc.org','adoptium.net','github.com','githubusercontent.com','purpurmc.org','fabricmc.net')
+    if parts.scheme!='https' or parts.username or parts.password or parts.port not in (None,443) or not any(host==d or host.endswith('.'+d) for d in domains):raise ValueError('Untrusted download destination')
+    return url
+class Redirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self,req,fp,code,msg,headers,newurl):allowed(newurl);return super().redirect_request(req,fp,code,msg,headers,newurl)
+def response(url):return urllib.request.build_opener(Redirect()).open(urllib.request.Request(allowed(url),headers={'User-Agent':UA}),timeout=45)
+def text(url):
+    with response(url) as stream:data=stream.read(16*1024*1024+1)
+    if len(data)>16*1024*1024:raise ValueError('Metadata too large')
+    return data.decode('utf-8')
+def metadata(url):return json.loads(text(url))
+def versions(values):return sorted({v for v in values if re.fullmatch(r'\d+\.\d+(?:\.\d+)?',v)},key=lambda v:tuple(map(int,v.split('.'))),reverse=True)
+def entry(kind,version,build,url,algorithm=None,digest=None):
+    if not isinstance(version,str) or len(version)>32 or not re.fullmatch(r'\d+\.\d+(?:\.\d+)?',version):raise ValueError('Invalid Minecraft release version')
+    if not re.fullmatch(r'[0-9A-Za-z._-]{1,100}',str(build)):raise ValueError('Invalid build')
+    return {'type':kind,'version':version,'build':str(build),'key':kind+':'+version+':'+str(build),'url':allowed(url),'algorithm':algorithm,'digest':digest,'state':'pending','message':''}
+def vanilla():
+    manifest=metadata('https://piston-meta.mojang.com/mc/game/version_manifest_v2.json');result=[];RELEASES.update({r['id']:r['url'] for r in manifest['versions'] if r['type']=='release'})
+    for release in [v for v in manifest['versions'] if v['type']=='release'][:10]:
+        detail=metadata(release['url']);artifact=detail['downloads']['server'];row=entry('vanilla',release['id'],artifact['sha1'][:12],artifact['url'],'sha1',artifact['sha1']);row['java']=detail.get('javaVersion',{}).get('majorVersion');JAVA_VERSIONS[release['id']]=row['java'];result.append(row)
+    return result
+def paper():
+    project=metadata('https://fill.papermc.io/v3/projects/paper');result=[]
+    for version in versions(v for group in project['versions'].values() for v in group):
+        builds=metadata('https://fill.papermc.io/v3/projects/paper/versions/'+version+'/builds')
+        stable=[b for b in builds if b.get('channel')=='STABLE']
+        if not stable:continue
+        build=max(stable,key=lambda b:int(b['id']));download=build['downloads']['server:default'];checksum=download.get('checksums',{}).get('sha256')
+        if not checksum:raise ValueError('Paper SHA256 missing')
+        result.append(entry('paper',version,build['id'],download['url'],'sha256',checksum))
+        if len(result)==10:break
+    return result
+def forge():
+    root=XML.fromstring(text('https://maven.minecraftforge.net/net/minecraftforge/forge/maven-metadata.xml'));mapping={}
+    for node in root.findall('./versioning/versions/version'):
+        version,_,build=(node.text or '').partition('-')
+        if re.fullmatch(r'\d+\.\d+(?:\.\d+)?',version) and re.fullmatch(r'\d+(?:\.\d+)+',build):mapping.setdefault(version,[]).append(build)
+    result=[]
+    for version in versions(mapping)[:10]:
+        build=max(mapping[version],key=lambda b:tuple(map(int,b.split('.'))));artifact=version+'-'+build
+        url='https://maven.minecraftforge.net/net/minecraftforge/forge/'+artifact+'/forge-'+artifact+'-installer.jar';digest=text(url+'.sha1').strip().split()[0]
+        if not re.fullmatch(r'[a-fA-F0-9]{40}',digest):raise ValueError('Forge checksum missing')
+        result.append(entry('forge',version,build,url,'sha1',digest))
+    return result
+def bukkit():
+    supported=versions(re.findall(r'href="(\d+\.\d+(?:\.\d+)?)\.json"',text('https://hub.spigotmc.org/versions/')))
+    build=metadata('https://hub.spigotmc.org/jenkins/job/BuildTools/lastSuccessfulBuild/api/json')['number']
+    return [entry('bukkit',v,build,'https://hub.spigotmc.org/jenkins/job/BuildTools/'+str(int(build))+'/artifact/target/BuildTools.jar') for v in supported[:10]]
+def spigot():
+    result=bukkit()
+    for row in result:row['type']='spigot';row['key']=row['key'].replace('bukkit:','spigot:',1)
+    return result
+def purpur():
+    result=[]
+    for version in versions(metadata('https://api.purpurmc.org/v2/purpur')['versions'])[:10]:
+        build=metadata('https://api.purpurmc.org/v2/purpur/'+version)['builds']['latest'];url='https://api.purpurmc.org/v2/purpur/'+version+'/'+str(int(build))
+        detail=metadata(url);digest=detail['md5']
+        if not re.fullmatch(r'[a-fA-F0-9]{32}',digest):raise ValueError('Purpur checksum missing')
+        result.append(entry('purpur',version,build,url+'/download','md5',digest))
+    return result
+def fabric():
+    games=metadata('https://meta.fabricmc.net/v2/versions/game');installers=metadata('https://meta.fabricmc.net/v2/versions/installer')
+    installer=next(i for i in installers if i.get('stable'));result=[]
+    for version in versions(g['version'] for g in games if g.get('stable'))[:10]:
+        loaders=metadata('https://meta.fabricmc.net/v2/versions/loader/'+version);loader=next(row['loader']['version'] for row in loaders if row['loader'].get('stable'))
+        url=installer['url'];digest=text(url+'.sha1').strip().split()[0]
+        if not re.fullmatch(r'[a-fA-F0-9]{40}',digest):raise ValueError('Fabric checksum missing')
+        row=entry('fabric',version,loader+'_'+installer['version'],url,'sha1',digest);row['loader']=loader;result.append(row)
+    return result
+def download(row,path):
+    digest=hashlib.new(row['algorithm'] or 'sha256');count=0
+    with response(row['url']) as source,open(path,'wb') as target:
+        while True:
+            block=source.read(1024*1024)
+            if not block:break
+            count+=len(block)
+            if count>2*1024**3:raise ValueError('Artifact too large')
+            digest.update(block);target.write(block)
+    if row.get('digest') and digest.hexdigest().lower()!=row['digest'].lower():raise ValueError('Artifact checksum mismatch')
+    return digest.hexdigest()
+def extract_jdk(archive,destination):
+    if os.geteuid()==0:raise ValueError('JDK extraction must run as non-root')
+    with tarfile.open(archive) as source:
+        for member in source:
+            normal=posixpath.normpath(member.name)
+            if member.name.startswith('/') or normal=='..' or normal.startswith('../') or not(member.isfile() or member.isdir() or member.issym() or member.islnk()):raise ValueError('Unsafe JDK archive')
+            if member.issym() or member.islnk():
+                target=posixpath.normpath(posixpath.join(posixpath.dirname(normal) if member.issym() else '',member.linkname))
+                if member.linkname.startswith('/') or target=='..' or target.startswith('../'):raise ValueError('Unsafe JDK link')
+            final=os.path.realpath(os.path.join(destination,normal))
+            if os.path.commonpath([os.path.realpath(destination),final])!=os.path.realpath(destination):raise ValueError('JDK path escaped')
+            member.mode &= 0o777
+            if hasattr(tarfile,'data_filter'):source.extract(member,destination,filter='data')
+            else:source.extract(member,destination)
+
+def install_jdk(required,settings):
+    if not 8<=required<=99:raise ValueError('Invalid Java requirement')
+    root=Path(settings['_provision']['source_root']);destination=root/'.java'/str(required)
+    if (destination/'bin/java').is_file():return str(destination/'bin/java')
+    arch={'x86_64':'x64','aarch64':'aarch64'}.get(platform.machine())
+    if not arch:raise ValueError('Unsupported Java architecture')
+    assets=metadata('https://api.adoptium.net/v3/assets/latest/'+str(required)+'/hotspot?architecture='+arch+'&image_type=jdk&os=linux')
+    package=assets[0]['binary']['package'];digest=package['checksum']
+    if not re.fullmatch(r'[a-fA-F0-9]{64}',digest):raise ValueError('JDK checksum missing')
+    account=pwd.getpwnam(settings['_provision']['users']['minecraft']);stage=Path(tempfile.mkdtemp(prefix='.jdk-',dir=root));os.chown(stage,account.pw_uid,account.pw_gid)
+    payload={'url':package['link'],'algorithm':'sha256','digest':digest}
+    try:
+        env=rt.environment(account);env.update({k:v for k,v in os.environ.items() if k.lower() in ('http_proxy','https_proxy','no_proxy','ssl_cert_file')})
+        subprocess.run(['/usr/bin/python3','-I',SELF,'jdk',base64.b64encode(json.dumps(payload).encode()).decode(),str(stage)],preexec_fn=rt.drop(account),env=env,check=True,timeout=1200)
+        folders=[p for p in stage.iterdir() if p.is_dir() and (p/'bin/java').is_file()]
+        if len(folders)!=1:raise ValueError('JDK output missing')
+        public_directory(destination.parent);os.rename(folders[0],destination);return str(destination/'bin/java')
+    finally:
+        if shutil.rmtree.avoids_symlink_attacks:shutil.rmtree(stage)
+
+def java_for(row,settings):
+    override=settings.get('_minecraft',{}).get('java')
+    if override:return override
+    parts=tuple(map(int,row['version'].split('.')))
+    if not row.get('java') and row['version'] in RELEASES and row['version'] not in JAVA_VERSIONS:JAVA_VERSIONS[row['version']]=metadata(RELEASES[row['version']]).get('javaVersion',{}).get('majorVersion')
+    required=row.get('java') or JAVA_VERSIONS.get(row['version']) or (21 if parts>=(1,20,5) else 17 if parts>=(1,18) else 16 if parts>=(1,17) else 8)
+    candidates=list(Path('/usr/lib/jvm').glob('java-'+str(required)+'-*/bin/java'))
+    if candidates:return str(candidates[0])
+    result=subprocess.run(['/usr/bin/java','-version'],capture_output=True,text=True,timeout=10) if os.path.exists('/usr/bin/java') else None
+    match=re.search(r'version "(?:1\.)?(\d+)',result.stderr if result else '')
+    if not match or int(match.group(1))!=required:return install_jdk(required,settings)
+    return '/usr/bin/java'
+
+def build_command(arguments,cwd,timeout):
+    if os.geteuid()==0:raise ValueError('Build command must be unprivileged')
+    process=subprocess.Popen(arguments,cwd=cwd,start_new_session=True)
+    try:
+        code=process.wait(timeout=timeout)
+        if code:raise subprocess.CalledProcessError(code,arguments)
+    finally:
+        try:os.killpg(process.pid,signal.SIGTERM)
+        except (ProcessLookupError,PermissionError):pass
+        if process.poll() is None:
+            try:process.wait(timeout=3)
+            except subprocess.TimeoutExpired:os.killpg(process.pid,signal.SIGKILL);process.wait()
+
+def build(row,stage,java):
+    if os.geteuid()==0:raise ValueError('Build must not run as root')
+    os.umask(0o022);os.chdir(stage);Path('template').mkdir();Path('work').mkdir()
+    if row['type'] in ('vanilla','paper','purpur'):download(row,'template/server.jar')
+    else:
+        download(row,'work/installer.jar')
+        if row['type']=='fabric':
+            build_command([java,'-jar','../work/installer.jar','server','-mcversion',row['version'],'-loader',row['loader'],'-downloadMinecraft'],'template',3600)
+            if not Path('template/fabric-server-launch.jar').is_file():raise ValueError('Fabric launcher missing')
+        elif row['type']=='forge':
+            build_command([java,'-jar','../work/installer.jar','--installServer'],'template',3600)
+            if not Path('template/run.sh').is_file():raise ValueError('Forge runner missing')
+            Path('template/user_jvm_args.txt').write_text('-Xms512M\n-Xmx2G\n')
+        else:
+            build_command([java,'-jar','installer.jar','--rev',row['version'],'--compile','spigot' if row['type']=='spigot' else 'craftbukkit','--output-dir','output'],'work',7200)
+            jars=list(Path('work/output').glob('spigot*.jar' if row['type']=='spigot' else 'craftbukkit*.jar'))
+            if len(jars)!=1:raise ValueError('CraftBukkit output missing')
+            shutil.copy2(jars[0],'template/server.jar')
+    Path('template/.gamedock-template.json').write_text(json.dumps({'key':row['key'],'type':row['type'],'version':row['version']}))
+def catalog():
+    try:
+        with open(CACHE+'/catalog.json') as stream:value=json.load(stream)
+        if value.get('state')=='running' and value.get('worker') and not rt.alive(value['worker'],0):value.update(state='failed',message='A katalógusfrissítés megszakadt. Újraindítható.');atomic(CACHE+'/catalog.json',value)
+        return value
+    except FileNotFoundError:return {'state':'idle','templates':[],'message':'Még nincs szinkronizált katalógus.'}
+def sync():
+    os.makedirs(CACHE,mode=0o700,exist_ok=True)
+    with open(CACHE+'/lock','a') as lock:
+        fcntl.flock(lock,fcntl.LOCK_EX);old=catalog()
+        if old.get('state')=='running' and rt.alive(old.get('worker'),0):return old
+        value={'state':'running','templates':old['templates'],'message':'A hivatalos kiadások lekérése és a sablonok előkészítése elindult.'};atomic(CACHE+'/catalog.json',value)
+        env=rt.environment();env.update({k:v for k,v in os.environ.items() if k.lower() in ('http_proxy','https_proxy','no_proxy','ssl_cert_file')})
+        with open(CACHE+'/sync.log','ab') as log:child=subprocess.Popen(['/usr/bin/python3','-I',SELF,'worker'],stdin=subprocess.DEVNULL,stdout=log,stderr=subprocess.STDOUT,start_new_session=True,env=env)
+        value['worker']=rt.identity(child.pid);atomic(CACHE+'/catalog.json',value);return value
+def worker():
+    with open(CACHE+'/lock','a') as lock:fcntl.flock(lock,fcntl.LOCK_EX);value=catalog()
+    settings=cfg();root=Path(settings['_provision']['source_root'])/'minecraft';public_directory(root)
+    account=pwd.getpwnam(settings['_provision']['users']['minecraft'])
+    if account.pw_uid==0:raise ValueError('Non-root template builder required')
+    previous={row['key']:row for row in value['templates']};rows=[];errors=[]
+    for kind,provider in [('vanilla',vanilla),('paper',paper),('forge',forge),('bukkit',bukkit),('spigot',spigot),('purpur',purpur),('fabric',fabric)]:
+        try:planned=provider()
+        except Exception as error:errors.append(kind+': a hivatalos katalógus nem érhető el.');print(type(error).__name__,str(error),file=sys.stderr);continue
+        rows.extend(planned);value['templates']=rows;atomic(CACHE+'/catalog.json',value)
+        for row in planned:
+            public_directory(root/kind);public_directory(root/kind/row['version']);final=root/kind/row['version']/row['build']
+            old=previous.get(row['key'])
+            if old and old.get('state')=='ready' and not final.is_symlink() and final.is_dir():row.update(old);continue
+            row['state']='building';value['message']=kind+' '+row['version']+' letöltése/fordítása';atomic(CACHE+'/catalog.json',value)
+            stage=Path(tempfile.mkdtemp(prefix='.mc-build-',dir=root));os.chown(stage,account.pw_uid,account.pw_gid)
+            try:
+                java=java_for(row,settings)
+                payload=base64.b64encode(json.dumps(row).encode()).decode();env=rt.environment(account)
+                env.update({k:v for k,v in os.environ.items() if k.lower() in ('http_proxy','https_proxy','no_proxy','ssl_cert_file')})
+                subprocess.run(['/usr/bin/python3','-I',SELF,'build',payload,str(stage),java],preexec_fn=rt.drop(account),env=env,check=True,timeout=8000)
+                for directory,dirs,files in os.walk(stage/'template',followlinks=False):
+                    if any(Path(directory,name).is_symlink() for name in dirs+files):raise ValueError('Template contains symlink')
+                if final.exists():raise ValueError('Existing template not overwritten')
+                os.rename(stage/'template',final);os.chmod(final,0o755)
+                row.update(state='ready',path=str(final),startup=('JAVA_HOME='+shlex.quote(str(Path(java).parent.parent))+' PATH='+shlex.quote(str(Path(java).parent))+':$PATH ./run.sh nogui --port {port}' if kind=='forge' else shlex.quote(java)+' -Xms512M -Xmx2G -jar '+('fabric-server-launch.jar' if kind=='fabric' else 'server.jar')+' nogui --port {port}'),message='Elkészült; a példány indításához a megfelelő Java-verzió szükséges.')
+            except Exception as error:row.update(state='failed',message='Letöltés/fordítás sikertelen. Ellenőrizd a Java/JDK, Git, hálózat és lemezterület állapotát.');print(type(error).__name__,str(error),file=sys.stderr)
+            finally:
+                if shutil.rmtree.avoids_symlink_attacks:shutil.rmtree(stage)
+            atomic(CACHE+'/catalog.json',value)
+    value.update(state='partial' if errors or any(r['state']!='ready' for r in rows) else 'ready',message='; '.join(errors) or 'A katalógus frissítése befejeződött. Csak az elkészült sablonok választhatók.',updated_at=int(time.time()));atomic(CACHE+'/catalog.json',value)
+
+if __name__=='__main__':
+    try:
+        action=sys.argv[1]
+        if action=='jdk' and len(sys.argv)==4:
+            if os.geteuid()==0:raise ValueError('JDK builder must be non-root')
+            row=json.loads(base64.b64decode(sys.argv[2],validate=True));folder=sys.argv[3];archive=os.path.join(folder,'jdk.tar.gz');download(row,archive);extract_jdk(archive,folder);os.unlink(archive)
+        elif action=='build' and len(sys.argv)==5:build(json.loads(base64.b64decode(sys.argv[2],validate=True)),sys.argv[3],sys.argv[4])
+        elif os.geteuid()!=0:raise ValueError('Root helper required')
+        elif action=='catalog':print(json.dumps(catalog(),ensure_ascii=False))
+        elif action=='sync':print(json.dumps(sync(),ensure_ascii=False))
+        elif action=='worker':worker()
+        else:raise ValueError('Unknown operation')
+    except Exception as error:
+        print(type(error).__name__+': '+str(error),file=sys.stderr);sys.exit(1)

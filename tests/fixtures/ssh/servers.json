@@ -1,4 +1,0 @@
-{
- "minecraft.service":{"user":"minecraft","tmux_target":"minecraft-survival:0.0"},
- "_provision":{"source_root":"/srv/gamedock/templates","target_root":"/srv/games","users":{"minecraft":"minecraft","cs2":"minecraft","fivem":"minecraft","css":"minecraft"}}
-}

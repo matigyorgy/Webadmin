@@ -1,319 +1,109 @@
-# Modern GameDock · sablonból létrehozott szerverek
+# GameDock
 
-A panel modern, sötét, letisztult Bootstrap 5.3.8 felületet kapott oldalsó navigációval és mobilnézettel. Az admin és kliens menüje szerepkör szerint különül el.
+PHP 8.2+, MySQL, Smarty és SSH2 alapú, Composer nélkül telepíthető játékszerver-panel. Flat, sötét Bootstrap 5.3.8 felület, külön admin- és kliensmenüvel.
 
-**Minden adminból létrehozott új játékszervernél külön másolat készül a megadott Linux-forrásmappából.** Az adminűrlapon beállítható a játék, tulajdonos, Linux-gép, unitnév, indítóparancs, forrásmappa és új célmappanév. A másolás háttérben fut; az állapot az admin és tulajdonos kliensnézetében is frissül. Indítás és konzol csak sikeres másolás után engedélyezett.
+## Webes telepítés
 
-## Egyszeri Linux-beállítás
+1. Csomagold ki a teljes kiadást a tárhelyre. A domain dokumentumgyökere a `web/` könyvtár legyen. Az `autoload.php`, `bootstrap.php`, `src/`, `lib/`, `templates/`, `linux/`, `database/`, `config/`, `var/` a webgyökér mellett, egy szinttel feljebb maradjon.
+2. A PHP-folyamat olvashassa a projektet, és írhassa a `config/`, `var/` könyvtárakat. PHP 8.2+ és `pdo_mysql` szükséges; ne adj 777 jogosultságot.
+3. Nyisd meg a domaint. A telepítő bekéri az üres MySQL-adatbázis adatait és az első adminfiókot. Létrehozza a táblákat, az alap játéktípusokat, az adminfiókot és a panel SSH-kulcspárját. Nem kell SQL-t importálni vagy Composert futtatni.
+4. A telepítő siker után lezárul. Admin: `/admin.php`, kliens: `/`. A konfiguráció és privát kulcs a nem publikus `config/` könyvtárba kerül, 0600 jogosultsággal. Környezeti változó továbbra is felülírhatja a konfigurációt.
 
-A játékszerveres gépen csomagold ki a projektet, majd rendszergazdaként:
-
-```sh
-sudo python3 linux/install.py --source-root /srv/gamedock/templates --target-root /srv/games --ssh-user gamedock
-```
-
-A telepítő helyi Python 3, systemd/systemd-run, sudo, runuser, useradd és visudo eszközöket igényel. Nem tölt le csomagokat vagy játékokat. Telepíti a root tulajdonú segédprogramokat, létrehozza a hiányzó korlátozott játékfelhasználókat és az SSH-fiókot, beállítja a szűk segédprogramos sudo-jogokat, és megőrzi a meglévő szerverbejegyzéseket/authorized_keys fájlokat. Kétszer futtatva is ellenőrizve. A panel nyilvános SSH-kulcsát továbbra is az SSH-fiók authorized_keys fájljába kell tenni.
-
-A két gyökérmappa tetszőlegesen megadható, de külön, nem egymás alatti, root tulajdonú, mások által nem írható könyvtár legyen. A korlátozás a Linux-gépen a root által kezelt `/etc/gamedock/servers.json` fájlban marad, a webes mezők ezt nem írják felül. A `linux/provision.example.json` mutatja az alapbeállítást. A sablon alatti fájlok legyenek olvashatók a kijelölt játékfelhasználónak, és ne tartalmazzanak symlinket, speciális eszközt vagy FIFO-t. Üres sablon nem telepíthető.
-
-Töltsd fel az előkészített, teljes játékfájlokat például ide:
-
-```text
-/srv/gamedock/templates/minecraft/
-/srv/gamedock/templates/cs2/
-/srv/gamedock/templates/fivem/
-/srv/gamedock/templates/css/
-```
-
-A játékok letöltése, runtime-jai, licencei/EULA-ja és a használni kívánt portok beállítása az üzemeltető feladata. A panel nem tölt le Steam/FiveM/Minecraft csomagokat és nem fogad el helyetted licenceket.
-
-## Új szerver létrehozása
-
-1. Adminisztráció → Linux-gépek: rögzítsd a gépet, ellenőrzött hostkulcsát és az SSH-fiókot; teszteld a kapcsolatot.
-2. Adminisztráció → Játékszerverek → Új hozzáadása: válassz játékot, tulajdonost és Linux-gépet. Adj új, nem ütköző unitnevet (pl. `minecraft-survival.service`).
-3. Add meg az indítóparancsot és a forrásmappát (pl. `/srv/gamedock/templates/minecraft`). Üres forrásmezőnél az alapértelmezett `/srv/gamedock/templates/játéktípus` útvonalat használjuk.
-4. A célmappa mezőbe csak az új mappa neve kerül (pl. `survival-01`), amelyet a Linuxon engedélyezett célgyökér alá hozunk létre (`/srv/games/survival-01`). Üresen az unitnév .service nélküli része lesz.
-5. Mentéskor a fájlok aszinkron másolása elindul. Minden új példány külön, nologin Linux-felhasználót kap; a másolt fájlok ennek tulajdonába kerülnek, a példány főkönyvtára 0700 jogosultságú. Siker után a Linux indítási engedélylistája automatikusan megkapja ezt a konkrét unitot és célmappát. Csak ezután indítható a szerver.
-
-Meglévő célmappát és állandó systemd-unitot nem írunk felül. Ugyanaz a másolási kérelem idempotens: hálózati bizonytalanság után újraküldve nem indul második másolás. Hibás másolásnál az adminállapot jelzi a problémát; a forrás/cél mezők javíthatók és újrapróbálhatók. Folyamatban lévő másolásnál a panelbejegyzés törlése tiltott. Sikeres létrehozás után a forrás, cél, unit és Linux-gép helyben nem költöztethető: ehhez új példányt kell készíteni. Szerkesztés/Indítás/Újraindítás nem másolja újra a fájlokat.
-
-A másolás root felügyelet alatt, külön példányfelhasználóval, **nem rootként** fut; csak az engedélyezett forrásgyökér alól és célgyökér alá dolgozhat. A root által rögzített game-user és könyvtár indítóparancsból nem változtatható meg. A másolás teljes átmásolás, nem symlink vagy hardlink. Az alap játékfelhasználók csoportja csak a sablon olvasásához szükséges; a futó példányok külön UID-val és privát főkönyvtárral különülnek el. A panelből törlés nem törli automatikusan a Linux-fiókot vagy a játékfájlokat. Hibánál a célkönyvtár nem íródik felül; félkész staging könyvtár (`.gamedock-copy-...`) megmaradhat a célgyökérben, amelyet rendszergazdaként, az adott sikertelen job ellenőrzése után lehet eltakarítani.
-
-## Meglévő panel frissítése
-
-Őrizd meg a saját `config/local.json` és SSH-kulcsfájlokat. Töltsd fel a teljes új kiadást a `web/` könyvtárelrendezéssel, majd jelentkezz be újra. Az Admin → Játékszerverek oldalon kattints az **Új szerverfunkciók engedélyezése** gombra, ha megjelenik. Ez csak a hiányzó adatbázisoszlopokat adja hozzá, a meglévő szerverek `ready` állapotot kapnak, nem másolódnak és nem törlődnek. ALTER TABLE jogosultság szükséges. A telepítőt ne futtasd újra. Új telepítésnél az oszlopok automatikusan elkészülnek; az opcionális első szerver másolási kérelme az SSH-beállítás után az adminból indítható.
-
----
-
-# Adminból megadható indítóparancsok
-
-Az **Adminisztráció → Játékszerverek → Új hozzáadása / Szerkesztés** űrlapon mind a négy játéknál megadható az **Indítóparancs**.
-
-- Minecraft: `java -Xms1G -Xmx4G -jar server.jar nogui`
-- Counter-Strike 2: `./game/bin/linuxsteamrt64/cs2 -dedicated -console -usercon +map de_dust2`
-- FiveM: `./run.sh +exec server.cfg`
-- Counter-Strike: Source: `./srcds_run -game cstrike -console +map de_dust2 -port 27015`
-
-A példákat a telepített játékhoz kell igazítani. Egy sor, legfeljebb 4096 bájt. A parancsot csak admin szerkesztheti, a kliensek nem kapják meg sem a listában, sem az API-ban. Az Indítás és Újraindítás a mentett parancsot használja. Már futó szervernél az Indítás nem indít második példányt; a módosított parancs érvényesítéséhez Újraindítás kell. A parancs maradjon előtérben: ne használj nohup/screen/tmux vagy háttérbe küldő `&` indítást.
-
-**Üres mező:** a korábbi, előre beállított systemd-szolgáltatásos működés marad. **Kitöltött mező:** az új Linux-indító átmeneti systemd-szolgáltatást hoz létre a root által engedélyezett játékfelhasználóval és munkakönyvtárban. Ebben a módban a konzolhoz nem kell tmux: a nem rootként futó PTY-runner továbbítja a játék bemenetét/kimenetét.
-
-## Meglévő panel frissítése
-
-A fájlok frissítésekor őrizd meg a saját `config/` fájljaidat. Lépj be adminként a Játékszerverek oldalra, és ha megjelenik, kattints az **Új szerverfunkciók engedélyezése** gombra. Ez a hiányzó indítóparancs- és másolási oszlopokat adja a servers táblához, a meglévő adatokat nem törli. A művelet CSRF- és adminjogosultság-ellenőrzött, ismételhető. Az adatbázis-felhasználónak ALTER TABLE jogosultság kell. Friss telepítésnél az oszlop automatikusan elkészül. A telepítőt ne futtasd újra.
-
-## Linux-oldali egyszeri beállítás az új módhoz
-
-A játékok továbbra is előre telepítendők, külön, nem root felhasználóval. Systemd, systemd-run, Python 3 és Bash szükséges.
-
-Rootként vagy sudo-val, a kibontott projekt könyvtárában:
-
-```sh
-sudo install -d -o root -g root -m 755 /usr/local/libexec /etc/gamedock
-sudo install -o root -g root -m 755 linux/gamedock-launch /usr/local/sbin/gamedock-launch
-sudo install -o root -g root -m 755 linux/gamedock-runner /usr/local/libexec/gamedock-runner
-```
-
-A root tulajdonú, csoport/mások által nem írható `/etc/gamedock/servers.json` fájlban egységenként engedélyezd az új módot. A `linux/servers-launch.example.json` teljes mintát ad a négy játékhoz. A meglévő konfigurációt ne írd felül: az új bejegyzéseket fésüld bele, például:
-
-```json
-{
-  "minecraft-panel.service": {
-    "launch": true,
-    "user": "minecraft",
-    "directory": "/srv/games/minecraft"
-  }
-}
-```
-
-A directory létező, abszolút munkakönyvtár, a user létező, korlátozott játékfelhasználó legyen. A root által rögzített felhasználót és könyvtárat a webes indítóparancs nem írhatja át. A panelen ugyanazt az unitnevet add meg. **Válassz olyan nevet, amely nem ütközik meglévő állandó systemd-unittal:** az indító nem írja felül és nem állítja le az ilyen szolgáltatásokat. Például a korábbi minecraft.service mellé az új módban minecraft-panel.service használható; a régi példányt/portot üzemeltetőként külön rendezd, ne futtasd őket azonos porton egyszerre.
-
-`sudo visudo -f /etc/sudoers.d/gamedock` segítségével unitonként engedélyezd a pontos műveleteket:
-
-```sudoers
-gamedock ALL=(root) NOPASSWD: /usr/local/sbin/gamedock-launch minecraft-panel.service start *
-gamedock ALL=(root) NOPASSWD: /usr/local/sbin/gamedock-launch minecraft-panel.service restart *
-gamedock ALL=(root) NOPASSWD: /usr/local/sbin/gamedock-launch minecraft-panel.service stop
-gamedock ALL=(root) NOPASSWD: /usr/local/sbin/gamedock-launch minecraft-panel.service logs
-gamedock ALL=(root) NOPASSWD: /usr/local/sbin/gamedock-launch minecraft-panel.service command *
-```
-
-A panel **SSH és Linux-beállítások** menüje a mentett indítási módhoz megfelelő sudoers-sorokat mutatja. Általános root/sudo/Bash/systemd-run jogosultságot ne adj az SSH-felhasználónak. A root segédprogram kizárólag az engedélyezett unitot vezérli; a tényleges Bash-indítóparancs csak az adott játék UID/GID-jával, NoNewPrivileges mellett fut.
-
-A játék kimenete journald-ba kerül; a konzol az utolsó 150 sort olvassa. A teljes systemd-csoport leáll, nem csak az indító shell. A leállítás normál SIGTERM-et használ, 30 másodperces systemd leállítási határidővel; játékfüggő mentési/lezárási parancsot szükség esetén előtte a konzolból adj ki. A panel SSH-időkorlátja ebben a módban Stop/Restart esetén 45 másodperc. A gép újraindítása után az átmeneti szolgáltatásokat a panelről újra el kell indítani; automatikus bootindítást ez a mód nem állít be.
-
----
-
-# Használat és frissítés — admin- és kliensfelület
-
-A panel főoldala a kliensfelület (`/`); admin bejelentkezés után az **Adminisztráció** menü vagy a **/admin.php** nyitja meg az adminfelületet. Composer nem szükséges, PHP 8.2+ és MySQL szükséges, a dokumentumgyökér `web/`.
-
-## Meglévő sikeres telepítés frissítése
-
-1. Készíts mentést a fájlokról és az adatbázisról.
-2. Töltsd fel a friss kiadás fájljait azonos könyvtárelrendezésben. A saját `config/local.json`, `config/ssh-private.pem`, `config/ssh-public.pub` fájlokat őrizd meg. A `web/` tartalma a tárhely `web/` mappájába kerül, a többi könyvtár mellé, egy szinttel feljebb.
-3. A `var/` könyvtár legyen a PHP-folyamatnak írható (ide kerül a Smarty-fordítás és a bejelentkezési védelem állapota). A korábbi generált Smarty-fordítások törölhetők a `var/smarty/compile/` könyvtárból. A konfigurációt ne töröld.
-4. **Az adatbázist nem kell újratelepíteni.** Az indítóparancsok új oszlopát szükség esetén az adminoldali frissítőgombbal add hozzá; a telepítőt ne indítsd újra.
-5. Jelentkezz be újra: a korábbi munkamenetekből hiányzó hitelesítési verzió miatt a frissítés kijelentkeztet.
-
-## Admin munkafolyamat
-
-- **Felhasználók:** ügyfél/admin létrehozása, e-mail és szerepkör szerkesztése, új jelszó beállítása, törlés. Szerverrel rendelkező felhasználó csak az átrendelés után törölhető. A saját adminfiók nem törölhető/demotálható; az utolsó admin védett.
-- **Linux-gépek:** név, SSH-cím, port, korlátozott felhasználó és ellenőrzött SHA256 hostkulcs rögzítése/szerkesztése; kulcsos kapcsolat tesztelése; üres gép törlése.
-- **Játékszerverek:** név, játék, tulajdonos, Linux-gép, indítóparancs és sablonmásolás beállítása; szerkesztés/átrendelés; kivétel a panelből. Azonos unit egy node-on egyszer szerepelhet. A kivétel nem állítja le és nem törli a játékot a Linux-gépről.
-- **SSH és Linux-beállítások:** a tényleges panelkulcs nyilvános részének megtekintése, SSH-fiók és kulcs telepítési útmutatója, a nyilvántartott szerverekből generált pontos sudoers-sorok és konzolbeállítási útmutató.
-- **Műveleti napló:** az utolsó 200 admin-, fiók- és szerverművelet. Konzolparancsok szövegét nem naplózzuk.
-
-Javasolt sorrend: Linux-fiók és nyilvános kulcs → Linux-gép hozzáadása → SSH-teszt → ügyfélfiók → szerver hozzáadása és tulajdonoshoz rendelése → sudoers/systemd/konzol beállítása → vezérlés tesztje.
-
-## Kliens munkafolyamat
-
-- Saját szerverek kereshető listája; szerverenként állapotlekérdezés.
-- **Kezelés és konzol:** indítás, leállítás, újraindítás; az utolsó 150 journalsor; játékparancs küldése.
-- Konzolfrissítés kézzel vagy bekapcsolható 5 másodperces időzítéssel. Ez időszakos SSH-lekérdezés, nem WebSocket-stream. Háttérbe tett lapon az automatikus frissítés szünetel. A lista nem vár végig minden SSH-gépet.
-- Saját műveleti előzmények és fiókbeállítások. E-mail-/jelszócseréhez a jelenlegi jelszó szükséges.
-- Az ügyfél a szerverazonosító átírásával sem kap hozzáférést más tulajdonos szerveréhez. Admin-végpontokon szerveroldali szerepkör-ellenőrzés van.
-
-Minden módosító űrlap CSRF-védett. Sikeres művelet után átirányítás következik, így egy egyszerű oldalfrissítés nem ismétli meg a parancsot. Jelszócsere/reset érvényteleníti a többi munkamenetet. A bejelentkezési próbálkozások fiókonként/IP-nként korlátozottak 15 perces ablakban; a PHP webszerver valós REMOTE_ADDR értékét használjuk, nem bízunk tetszőleges proxyfejlécekben.
-
-**A játékokat és a Linux szolgáltatásait előzetesen be kell állítani.** A panel helyi sablonból másol, de a játékokat nem tölti le, licenceket nem fogad el, és nem ad magának korlátlan rootjogot. Nincs még fájlkezelő, mentés-visszaállítás, erőforrásmérés, e-mailes jelszó-visszaállítás vagy számlázás. Éles bevezetés előtt a saját Linux-konfiguráción és játékpéldányokon is ellenőrizd a működést.
-
----
-
-# Egyszerű webes telepítés
-
-1. Töltsd le a GitHub ZIP-et, és csomagold ki a tárhelyre. PHP 8.2+ és a **pdo_mysql** bővítmény szükséges; Composer nem kell.
-2. A domain dokumentumgyökere a projekt **web/** könyvtára legyen. A **config/** és **var/** könyvtár a PHP-folyamat számára írható legyen; ne használj 777 jogosultságot. Nyilvános szerveren HTTPS-t használj, és a frissen feltöltött telepítőt csak te érhesd el a telepítés befejezéséig.
-3. Nyisd meg a domaint: automatikusan a webes telepítőre irányít. Add meg az előzetesen létrehozott, **üres** MySQL-adatbázis címét, portját, nevét, felhasználóját, jelszavát, valamint az első admin e-mail-címét és jelszavát. Opcionálisan megadhatod az első Linux-gépet és a már telepített játékszerverét is.
-4. Kattints a **Telepítés indítása** gombra. A táblák, adminfiók, SSH-kulcspár és a helyi konfiguráció automatikusan elkészülnek. Nem kell SQL-t importálni, környezeti változókat megadni vagy parancssorban adminfiókot készíteni. Siker után a telepítő lezárul.
-5. Másold a sikeroldalon megjelenő nyilvános SSH-kulcsot a Linux-gép kijelölt SSH-felhasználójának `~/.ssh/authorized_keys` fájljába. A nyilvános kulcs később a `config/ssh-public.pub` fájlból is kiolvasható. A privát kulcsot ne másold és ne tedd a webgyökérbe.
-
-A MySQL-felhasználónak CREATE, SELECT, INSERT, UPDATE, DELETE, valamint sikertelen telepítés visszavonásához DROP jogosultság kell az adott adatbázison. Az adatbázist és felhasználót a tárhely kezelőfelületén kell előre létrehozni. Meglévő táblákat a telepítő nem ír felül; korábbi telepítés frissítéséhez ne futtasd újra.
-
-A konfiguráció a `config/local.json` fájlba kerül, 0600 jogosultsággal, a publikus könyvtáron kívül. Az SSH privát kulcs ugyanitt található, szintén korlátozott jogosultsággal. A környezeti változók továbbra is felülírják a fájl értékeit. A konfigurációt a PHP-folyamat felhasználójának kell tudnia olvasni. A `config/` könyvtárról biztonságos, nem nyilvános mentést készíts.
-
-A `config/local.json` jelenléte lezárja a telepítőt; külön telepítőzárat nem kell kézzel törölni. A párhuzamos telepítéseket fájlzár akadályozza meg. Normál hiba esetén a telepítő csak az adott próbálkozás során létrehozott táblákat és kulcsokat takarítja el. Folyamatleállás vagy adatbázis-kapcsolatszakadás után maradhatnak részleges táblák: ilyenkor csak a telepítéshez fenntartott üres adatbázist állítsd helyre, más adatokat ne törölj.
-
-A webes telepítő **a panelt** állítja be. A játékszerverek telepítése, az SSH-kulcs engedélyezése, a systemd/sudoers és konzolhoz a tmux-segédprogram beállítása a Linux-gépen továbbra is szükséges; ezek lépései lejjebb találhatók. A beállított hostkulcs-ujjlenyomatot a telepítő nem ellenőrzi távoli kapcsolattal.
-
-Reverse proxy mögötti HTTPS-nél a webszerver/PHP-FPM felé helyesen jelezni kell a HTTPS-t, vagy a `COOKIE_SECURE=1` környezeti változót kell beállítani. A kliens által küldött X-Forwarded-Proto fejlécben az alkalmazás önmagában nem bízik meg.
-
----
-
-# GameDock — PHP + Smarty + SSH2
-
-Kezdeti, objektumorientált PHP 8.2+ / MySQL 8 játékszerver-kezelő. Játékok: Minecraft, Counter-Strike 2, FiveM, Counter-Strike: Source. Felhasználónként több szerver, több Linux-gép; az admin minden szervert lát. Bootstrap 5.3.8, helyben kiszolgálva.
-
-## Kézi telepítés (alternatíva a webes telepítő helyett)
-
-1. PHP 8.2+, pdo_mysql és mbstring szükséges. Composer nem kell.
-2. Töltsd le és csomagold ki a teljes projektet. A `lib/` könyvtár már tartalmazza a szükséges Smarty és SSH2 könyvtárakat; nincs függőségtelepítési lépés.
-3. Hozz létre MySQL adatbázist és külön felhasználót. Üres adatbázisba egyszer importáld a `database/schema.sql` fájlt. Korábbi HTTP-ügynökös telepítésnél mentés után a `database/migrate-ssh.sql` fájlt használd helyette, majd töltsd ki az új SSH mezőket minden csomóponthoz.
-4. A PHP folyamat környezetében add meg: `DB_DSN=mysql:host=localhost;dbname=webadmin;charset=utf8mb4`, `DB_USER`, `DB_PASSWORD`, `SSH_PRIVATE_KEY_PATH` (abszolút útvonal a webgyökéren kívül), opcionálisan `SSH_KEY_PASSPHRASE`. Nincs automatikus .env-betöltés. Titkokat ne tegyél Gitbe.
-5. Első admin: biztonságos terminálban `read -rs NEW_USER_PASSWORD`, majd `export NEW_USER_PASSWORD`, aztán `php bin/create-user.php admin@example.com --admin`. Végül `unset NEW_USER_PASSWORD`. Legalább 12 karakteres jelszó kell. Normál felhasználóhoz hagyd el a `--admin` kapcsolót.
-6. A `var/smarty/compile` könyvtár legyen a PHP-FPM felhasználójának írható, de ne legyen 777. A dokumentumgyökér kizárólag `web/`. Élesben HTTPS és PHP-FPM szükséges.
-7. Helyi fejlesztés a projekt gyökeréből: `COOKIE_SECURE=0 php -S 127.0.0.1:8080 -t web`. A COOKIE_SECURE=0 csak helyi HTTP-hez való.
-
-## SSH2 Linux-kapcsolat
-
-A phpseclib 3 SSH2 protokollon kommunikál; nem igényli a PHP ssh2 kiterjesztését és nincs szükség HTTP-ügynökre. A korábbi HTTP-ügynököt az SSH2-kommunikáció váltotta fel.
-
-- Hozz létre külön `gamedock` SSH-felhasználót minden Linux-gépen. A nyilvános kulcsát add az authorized_keys fájlhoz; a hozzáférést forrás-IP-vel, port-/agent-/X11-forwarding és PTY tiltásával korlátozd.
-- A panel privát kulcsa a webgyökéren kívül legyen, kizárólag a PHP-szolgáltatás által olvasható. A jelenlegi verzió közös kulcsot használ a csomópontokhoz.
-- Minden játékpéldány külön, korlátozott felhasználóval futó systemd-szolgáltatás legyen. Unitnév: csak betű, szám, kötőjel, aláhúzás, majd `.service`.
-- `visudo` segítségével csak az adott unitok pontos parancsait engedélyezd. Például:
-
-```sudoers
-gamedock ALL=(root) NOPASSWD: /usr/bin/systemctl start minecraft-survival.service
-gamedock ALL=(root) NOPASSWD: /usr/bin/systemctl stop minecraft-survival.service
-gamedock ALL=(root) NOPASSWD: /usr/bin/systemctl restart minecraft-survival.service
-```
-
-Ne adj általános sudo vagy systemctl jogosultságot. Ellenőrizd a gépen a `/usr/bin/systemctl` és `/usr/bin/sudo` útvonalakat. A státuszlekérdezés sudo nélkül fut.
-
-A hostkulcs SHA256 ujjlenyomatát a Linux-gép megbízható konzolján kérdezd le, például `ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub -E sha256`. Az SSH által kiválasztott hostkulcshoz tartozó teljes `SHA256:...` értéket kell rögzíteni. Ne bízz ellenőrizetlen ssh-keyscan eredményben. A panel még hitelesítés előtt ellenőrzi az ujjlenyomatot; eltéréskor megtagadja a kapcsolatot.
-
-## Csomópont és szerver felvétele
-
-A webes adminmenü a javasolt megoldás. Az alábbi SQL csak alternatív, kézi üzemeltetési példa:
-
-```sql
-INSERT INTO nodes (name, ssh_host, ssh_port, ssh_user, ssh_fingerprint)
-VALUES ('Linux 1', 'games.example.com', 22, 'gamedock', 'SHA256:ELLENORZOTT_UJJLENYOMAT');
-
-SELECT id, email FROM users;
-SELECT id, name FROM nodes;
-
-INSERT INTO servers (user_id, node_id, name, game, unit_name)
-VALUES (1, 1, 'Survival', 'minecraft', 'minecraft-survival.service');
-```
-
-A game értékei: minecraft, cs2, fivem, css. Az SSH host és user megbízható adminisztrátori beállítás. A gép TCP/22 portja legyen a panelből elérhető; felhőkörnyezetben ehhez külön TCP-hálózati engedély kellhet.
-
-## Felépítés
-
-- `web/index.php`: alkalmazásindítás, session és HTTP-fejlécek.
-- `src/PanelController.php`: kérések, hitelesítés, tulajdonosi ellenőrzés, auditálás.
-- `src/Database.php`: PDO-adatelérés.
-- `src/SshClient.php`: kulcsos SSH2, hostkulcs-ellenőrzés, korlátozott systemctl parancsok.
-- `src/SmartyView.php`: Smarty, automatikus HTML-escape, oldalak gyorsítótárazása kikapcsolva.
-- `templates/panel.tpl`, `templates/partials/csrf.tpl`: HTML / Smarty, PHP és hálózati hívások nélkül.
-- `web/vendor/bootstrap`: Bootstrap CSS és licenc; `lib/`: mellékelt PHP-könyvtárak; `autoload.php`: saját osztálybetöltő.
-
-## Ellenőrzés és korlátok
-
-`php tests/templates.php` hat renderelési ellenőrzést futtat: login, CSRF, üres lista, admin fejléc, HTML-escape, szerverműveletek. A PHP-fájlokat `php -l` paranccsal ellenőrizd. A teljes integrációhoz MySQL és valódi SSH/systemd gép kell: két normál felhasználóval ellenőrizd az elszigetelést, majd a vezérlést, állapotot és audit_log rekordokat.
-
-Az admin-/kliensmunkafolyamatokhoz van webes felület és bejelentkezési próbálkozás-korlátozás. A további korlátokat a dokumentum eleje sorolja fel. Az elfogadott systemctl parancs nem bizonyítja a játék hálózati elérhetőségét; a saját játékpéldányokon külön ellenőrzés szükséges.
-
-## Konzol és naplók
-
-A szerverkártyák **Konzol** gombja az utolsó 150 systemd-journalsort jeleníti meg (legfeljebb 128 KiB). A napló kézzel vagy bekapcsolható időzítéssel frissül; ez nem folyamatos WebSocket-stream. Az oldal automatikusan HTML-escape-eli a naplót. A konzolparancs-küldés egyetlen, legfeljebb 500 bájtos sort fogad, CSRF- és tulajdonosi ellenőrzéssel. A művelet és eredménye auditálódik; a parancsszöveg nem kerül az auditba, mert titkot tartalmazhat.
-
-A Linux-gépen rendszergazdaként:
-
-```bash
-apt install tmux python3
-install -d -o root -g root -m 755 /etc/gamedock
-install -o root -g root -m 755 linux/gamedock-console /usr/local/sbin/gamedock-console
-install -o root -g root -m 644 linux/servers.example.json /etc/gamedock/servers.json
-```
-
-A `/etc/gamedock/servers.json` fájlban kizárólag a ténylegesen kezelt unitokat, nem root játékfelhasználókat és pontos tmux paneleket hagyd meg. A könyvtár és a segédprogram sem lehet a játék-/SSH-felhasználók által írható. A sudoers-ben unitonként engedélyezd a segédprogramot, például:
-
-```sudoers
-gamedock ALL=(root) NOPASSWD: /usr/local/sbin/gamedock-console minecraft-survival.service logs
-gamedock ALL=(root) NOPASSWD: /usr/local/sbin/gamedock-console minecraft-survival.service command *
-```
-
-A parancsparamétert a segédprogram szigorúan dekódolja és validálja; nem futtat shellt. Az engedélyezési listát a root által kezelt JSON adja. Más unitokhoz külön sudoers-sorok kellenek. A játékparancsok magán a játékszerveren nagy jogosultságúak lehetnek, ezért a játékpluginokat és a játékfelhasználó fájlhozzáféréseit is korlátozd.
-
-**Konzolbemenethez a játékot előre elkészített tmux munkamenetben kell futtatni**, ugyanazzal a Linux-felhasználóval, `-L gamedock` socketnévvel, és a JSON-ban megadott pontos `session:0.0` célponttal. A tmux panelben közvetlenül a játékfolyamat fusson; ne maradjon interaktív shell a játék kilépése után. Például a tmux `new-session -d -s minecraft-survival -- /usr/bin/java -jar server.jar nogui` közvetlen programindítás, ha a megfelelő felhasználóval, munkakönyvtárban és `-L gamedock` kapcsolóval fut. A meglévő systemd unitot ehhez az üzemeltetőnek kell illesztenie: a leállítás a tényleges játékfolyamatot is állítsa le, ne csak a tmux indítófolyamatát. A játék konzolkimenetét a journalba kell irányítani (például üzemeltető által beállított tmux pipe-pane segítségével), különben a konzolnézet csak a systemd naplót mutatja.
-
-A tmux-/journald-integráció és a játékok telepítése nem automatikus. A segédprogram nem biztosít terminál-/shell-hozzáférést a webfelületen. Ha a játék nem tmux alatt fut, az indítás/leállítás és journald-napló továbbra is használható, a parancsküldés hibával leáll.
-
-További ellenőrzések: a `php tests/templates.php` SSH-parancs-engedélyezési teszteket is futtat. A Linux-segédprogram tesztjei: `python3 -m unittest discover -s tests -p "test_*.py"` (mockolt rendszerparancsok).
-
-## Composer nélküli kiadás
-
-A telepítés és futtatás teljesen Composer nélkül történik. A mellékelt verziókat és upstream commitokat a `lib/dependencies.json` rögzíti, a licencek a csomagkönyvtárakban találhatók. A saját osztálybetöltő a projekt és a függőségek névtereit kezeli. A `lib/checksums.sha256` a beépített könyvtárfájlok ellenőrzőösszegeit tartalmazza: ellenőrzés a projekt gyökerében `sha256sum -c lib/checksums.sha256`. A függőségek biztonsági frissítéseit ezután a projekt új kiadásával kell telepíteni.
-
-Frissítéskor a korábbi `vendor/` könyvtár már nem használt. Az adatbázis- és SSH-környezeti változók, a dokumentumgyökér és a Smarty írható fordítási könyvtára változatlan marad.
-
-A mellékelt könyvtárak és az SSH-kulcsok betöltésének önálló tesztje: `php tests/dependencies.php` (hálózati kapcsolat nélkül).
-
-## Webes telepítő tesztelése
-
-`php tests/installer.php` a mezők ellenőrzését teszteli. A MySQL-integrációhoz add meg a `TEST_MYSQL_HOST` és `TEST_MYSQL_PASSWORD` környezeti változókat egy **kizárólag tesztelésre használt**, root felhasználóval elérhető MySQL-példányhoz. A teszt saját véletlen nevű adatbázist készít és eltakarít. A `php tests/templates.php` a telepítő űrlapját, zárolt állapotát és sikeroldalát is ellenőrzi.
-
-A webes telepítési folyamat PHP 8.2 + MySQL 8.4 alatt ellenőrizve: űrlap, CSRF, hibás SQL-adatok, táblák létrehozása és hiba utáni visszavonása, admin/node/server felvétel, konfigurációs és kulcsjogosultságok, telepítőzár, első bejelentkezés. Valódi játékszerverhez SSH-kapcsolatot ezek a tesztek nem létesítenek.
-
-## 500-as hiba diagnosztikája
-
-A teljes legfrissebb ZIP-et töltsd fel, a `lib/` könyvtárral és a gyökérben lévő `bootstrap.php` fájllal együtt. Meglévő telepítés frissítésekor őrizd meg a saját `config/local.json`, `config/ssh-private.pem` és `config/ssh-public.pub` fájljaidat. A telepítőt ne futtasd újra a meglévő adatbázison.
-
-A webes PHP-verziót a domainhez tartozó tárhelybeállításban ellenőrizd: PHP 8.2+ szükséges. A parancssori PHP verziója ettől eltérhet. A dokumentumgyökér a projekt `web/` könyvtára legyen, a teljes projekt többi könyvtára pedig egy szinttel feljebb maradjon.
-
-Az indulás már olvasható üzenettel jelzi az alacsony PHP-verziót, hiányzó fő fájlokat, nem írható Smarty-könyvtárat, nem olvasható/hibás konfigurációt és nem működő PHP sessiont. Váratlan hibánál a válaszban hibaazonosító jelenik meg; ugyanaz az azonosító megtalálható a szerver PHP error_log naplójában a részletes okkal. A hibaoldal nem ír ki jelszót, privát kulcsot vagy stack trace-t. A webszerver által még a PHP indulása előtt visszaadott hibákat továbbra is a webszerver error_log naplójában kell keresni.
-
-A minimális `/check.php` oldal autoload és adatbázis nélkül megmutatja a webes PHP-verziót, a pdo_mysql meglétét, a fő fájlok olvashatóságát és a könyvtárak írhatóságát. Jelszót és privát kulcsot nem olvas. Ha ez az oldal is 500-at ad, a hibát a PHP/webszerver tárhelybeállításaiban és error_log naplójában kell keresni.
-
-### Ha a tárhely webgyökere `web/`
-
-A projekt már `web/` könyvtárat tartalmaz. Ezt másold a tárhely azonos nevű `web/` könyvtárába. A projekt többi elemét a `web/` mellé, egy szinttel feljebb töltsd fel. Például:
+Példa a tárhelyre:
 
 ```text
 /home/www/dev.vgh.hu/
   autoload.php
   bootstrap.php
-  src/
-  lib/
-  templates/
-  database/
-  config/
-  var/
-  web/                 ← a domain dokumentumgyökere
-    index.php
-    install.php
-    check.php
-    style.css
-    vendor/bootstrap/
+  src/ lib/ templates/ linux/ database/ config/ var/
+  web/
+    index.php install.php admin.php api.php admin_api.php check.php
+    style.css panel.js vendor/bootstrap/
 ```
 
-Ha a naplóban `Failed opening required '/home/www/dev.vgh.hu/autoload.php'` szerepel, a gyökérben lévő fájlokat is fel kell tölteni, nem elég csak a `web/` tartalma. A betöltési útvonalat ne irányítsd át egy véletlen másik autoload.php fájlra. A `lib/`, `config/` és más belső könyvtárakat ne tedd a nyilvános `web/` alá.
+## Linux-gép automatikus beállítása a weben
 
-## Admin-/kliensintegrációs tesztek
+Az admin Linux-gépek menüjében add meg a címet, SSH-portot és a panel használatára szánt fiókot (alapból `gamedock`). A **Hostkulcs lekérése** gomb megadja az ujjlenyomatot; első alkalommal vesd össze a szolgáltató megbízható adataival. Mentsd a gépet, nyisd meg a szerkesztést, majd az **Automatikus Linux-telepítés** résznél add meg egyszer a telepítési SSH-hozzáférést.
 
-- `php tests/templates.php`: login, szerverlista, kezelőnézet, konzol-escape, SSH-parancspolitika, installer, adminűrlapok és profil.
-- `php tests/accounts.php`: külön teszt-MySQL-lel CRUD, jogosultságok, tulajdonosváltás, duplikált unitok tiltása, törlési korlátok, jelszó-/session-érvénytelenítés, profil és rate limit. `TEST_MYSQL_HOST` és `TEST_MYSQL_PASSWORD` kell, kizárólag tesztadatbázis-rendszergazdai kapcsolathoz. A teszt saját véletlen nevű adatbázist hoz létre és eltávolít.
-- `tests/http_workflow.py`: kizárólag izolált, loopback címen elérhető friss tesztpanelhez és SSH-fixture-höz. Felhasználókat, node-ot és szervereket készít/töröl; éles panelen tilos futtatni. A fájl eleje írja le a szükséges környezeti változókat.
+- A telepítési fiók root vagy jelszó nélküli sudo-jogú admin legyen. Jelszóval vagy privát kulccsal hitelesíthető; a privát kulcs passphrase is megadható.
+- A telepítési jelszó/privát kulcs nem kerül adatbázisba, szerveroldali munkamenetbe vagy mentett konfigurációba. A folyamat állapotkéréseihez a böngésző memóriájában marad, majd törlődik. Ha bezárod a lapot, a háttérfeladat folytatódik; állapotának folytatásához ismét megadható a hozzáférés.
+- A telepítő ellenőrzi a hostkulcsot, SFTP-n feltölti és visszaolvasással ellenőrzi a segédprogramokat, beállítja a panel nyilvános kulcsát és a szükséges korlátozott sudo-jogokat.
+- Aktív UFW esetén a 25000–25999 TCP/UDP tartomány megnyitható a telepítési jelölőnégyzettel. Külső szolgáltatói tűzfalhoz a tárhely kezelőfelületén kell hozzáférés; azt a panel nem írja át.
+- Debian/Ubuntu alatt bekapcsolható a szükséges csomagok (Python, sudo, Git, JDK, CA-tanúsítványok, archívumkezelők) automatikus telepítése. Más rendszeren a szükséges csomagoknak már rendelkezésre kell állniuk.
+- Nyilvános szerveren a panelhez HTTPS-t használj. SSH-/tűzfalszabályzatot és root-hozzáférést a panel nem tud létrehozni egy még elérhetetlen gépen; működő telepítési SSH-hozzáférés előfeltétel.
 
-Az ellenőrzés PHP 8.2 + MySQL 8.4 alatt megtörtént: admin CRUD, két ügyfél elszigetelése, CSRF, XSS-escape, hostkulcs-eltérés elutasítása, valódi OpenSSH kulcsos hitelesítés, start/stop/restart, tmux konzolparancs és napló, tulajdonosváltás, jelszó-reset utáni kijelentkeztetés és profilmentés. A Linux-fixture systemctl/journalctl parancsai kontrollált tesztprogramok voltak; a négy tényleges játék futását ez nem teszteli.
+Nem kell kézzel SSH-val belépni vagy sudoers-/indítószkripteket szerkeszteni a normál webes munkafolyamathoz. A háttérben futó installert a panel végzi. Opcionális CLI-alternatíva:
 
-## Indítási és másolási ellenőrzések
+```sh
+sudo python3 linux/install.py --source-root /srv/gamedock/templates --target-root /home/gamedock --ssh-user gamedock
+```
 
-A Python tesztek `python3 -m unittest discover -s tests -p 'test_*.py'` paranccsal futnak. A runner-integrációt nem root felhasználóval kell futtatni. Ellenőrzik a rootként indítás tiltását, a root által rögzített UID/GID és munkakönyvtár használatát, a PTY-konzolt, a forrásgyökérből kilépés tiltását, a cél felülírásának tiltását, az üres/symlinkes sablon elutasítását és az önálló másolatot.
+A Linux-oldali feltétel Python 3.9+ és pidfd-t támogató Linux-kernel. Az installer nem igényel systemd-t, tmuxot vagy screen-t. Az SSH-fiók meglévő kulcsai és a meglévő szerverbejegyzések megmaradnak. A `/home/gamedock` felső könyvtár root tulajdonú lesz; a benne lévő SSH-kulcsok tulajdonosát nem változtatja meg, a példányok saját alkönyvtárat kapnak.
 
-A teljes HTTP-folyamat elkülönített SSH-fixture-rel ellenőrizve: új példányok másolása, állapot követése, indítóparancs futtatása, konzol bemenet/kimenet, tulajdonosi jogosultságok, admin CRUD és jelszó-/sessionkezelés. A tesztgépen a systemd/systemctl/journalctl kontrollált helyettesítő program volt, a tényleges fájlmásolás és a game-UID-ra váltás valódi. A valódi systemd-szolgáltatást és a négy tényleges játékot a saját Linux-gépen külön kell ellenőrizni.
+## Tetszőleges játéktípusok
 
-Chromium böngészővel az admin létrehozás és aszinkron állapotfrissítés, az asztali/mobil dizájn, a kliens menüjének elkülönítése, a JavaScript-hibák hiánya és a vízszintes túlcsordulás hiánya is ellenőrizve.
+Az admin **Játéktípusok** menüjében létrehozhatsz, szerkeszthetsz és törölhetsz saját típusokat:
+
+- megjelenített név és stabil, kisbetűs azonosító;
+- alapértelmezett Linux template mappa;
+- alapértelmezett indítóparancs;
+- saját mappás vagy Minecraft-katalógus alapú template-kezelés.
+
+A négy induló típus csak kezdőbeállítás. Nem korlátozza a panelt Minecraft/CS2/FiveM/CS:Source játékokra. Használatban lévő típus nem törölhető. Saját mappás típusnál az indítóparancs használja a `{port}` helyőrzőt, például `./server -port {port}`, vagy `PORT={port} ./start.sh`. A FiveM alapkonfigurációját a panel közvetlenül írja.
+
+Counter-Strike vagy más saját mappás játéknál a típus alap template útvonala és az új szerver forrásmappája szabadon megadható, de a Linuxon engedélyezett forrásgyökér alatt maradjon. A szükséges játékfájloknak már ebben a template-ben kell lenniük; a panel ezekből készít másolatot, nem használ SteamCMD-t.
+
+## Minecraft-típusok és az utolsó 10 verzió
+
+A **Minecraft-templatek** adminmenüben válassz Linux-gépet, majd indíts szinkronizálást. A letöltés/fordítás aszinkron, a gépen fut, a lap állapotot mutat.
+
+Támogatott szolgáltatók: **Vanilla, Paper, Forge, Bukkit, Spigot, Purpur, Fabric**. Típusonként a legutóbbi tíz stabil **Minecraft-verzió** kerül a katalógusba, és azon belül a legfrissebb stabil build/loader. Nem tíz külön buildet mutatunk ugyanahhoz az egy Minecraft-verzióhoz.
+
+- Vanilla: Mojang hivatalos manifest és server artifact.
+- Paper: a hivatalos Fill v3 letöltési API, kizárólag STABLE build.
+- Forge: hivatalos Maven-metaadat és installer, korlátozott felhasználóval futtatva.
+- Bukkit/Spigot: hivatalos verziólista és a rögzített sikeres BuildTools build; automatikus CraftBukkit/Spigot-fordítás. Ez tíz verziónál sokáig tarthat és jelentős lemezterületet igényel.
+- Purpur: hivatalos verzió-/build API.
+- Fabric: hivatalos game/loader/installer metaadat és server installer.
+
+HTTPS-ellenőrzés végig bekapcsolva marad; ahol az upstream közöl ellenőrzőösszeget, letöltés után ellenőrizzük. BuildTools esetén a hivatalos Jenkins buildhez kötött HTTPS-artifactot használjuk. A hiányzó megfelelő JDK a hivatalos Adoptium API-ból, SHA256-ellenőrzéssel készíthető elő. Az archívum kibontása, Forge/Fabric installer és BuildTools **nem rootként** fut. A buildből csak a használható template kerül a katalógusba, a munkakönyvtár eltakarítható.
+
+A szinkronizálás meglévő kész buildet nem ír felül. A régebbi letöltött sablonokat nem törli automatikusan. Hibás vagy folyamatban lévő template nem választható szerverhez. Új szervernél a típus/verzió kiválasztása és a Minecraft EULA kifejezett elfogadása szükséges. A panel ezek alapján beállítja az indítóparancsot, `server.properties` portját és az `eula.txt` fájlt.
+
+A Linuxnak el kell érnie a Mojang, PaperMC, Forge, SpigotMC, Purpur, Fabric, Adoptium/GitHub és a buildeszközök függőségi tárainak HTTPS-végpontjait. Proxy esetén a Java/Git tanúsítvány- és proxybeállítások is legyenek helyesek; TLS-ellenőrzést ne tilts le.
+
+## Szerverkönyvtárak, portok és konfiguráció
+
+Új példány létrehozásakor a cél **`/home/gamedock/<adatbázisbeli-szerver-ID>/`**, például `/home/gamedock/42/`. A célmappát nem kell és nem lehet kézzel megválasztani. Meglévő célmappát a másoló nem ír felül. Minden példány külön nologin Linux-felhasználót és privát, 0700 jogosultságú könyvtárat kap.
+
+Portkiosztás: **25000–25999**, egy Linux-gépen a panelen belül egyedi porttal. A mentett indítóparancs `{port}` helyőrzőjét a kiosztott ötjegyű érték helyettesíti. A Minecraft `server.properties` és a FiveM `server.cfg` TCP/UDP endpoint beállításai automatikusan elkészülnek. Más játékok template-jeinek szöveges cfg/properties/json/yaml/txt fájljaiban `{{PORT}}` is használható, amelyet másoláskor a panel kiír.
+
+A teljes fájlmásolás a saját játékfelhasználóval fut, nem rootként. Nincs symlink/hardlink-alapú közös játékadat. A forrás/célgyökér engedélylistáját a root tulajdonú `/etc/gamedock/servers.json` rögzíti. Nem kerülhet másolat az engedélyezett célgyökéren kívülre, és symlinkes/speciális/üres template elutasításra kerül.
+
+A másolás állapota az admin és tulajdonos kliensoldalán követhető. Indítás csak siker után engedélyezett. Hibás feladat forrása javítható és újrapróbálható. Törlés a panelből nem törli automatikusan a Linux-fájlokat és a Linux-fiókot. Folyamatban lévő másolási bejegyzés törlése tiltott.
+
+## Közvetlen parancsindítás, konzol
+
+Az Indítás a mentett parancsot futtatja `/bin/bash -c` alatt a példány könyvtárában, a saját UID/GID-jával, új háttérfolyamatként. Nincs systemd-szolgáltatás, rendszerindítási unit, tmux vagy screen. Az SSH-bontás nem állítja le. A parancs maradjon előtérben, ne daemonizálja önmagát és ne használjon `nohup`/`&`/`screen`/`tmux` indítást.
+
+A PTY-runner kezeli a konzol bemenetét/kimenetét. Az állapot és leállítás root által rögzített PID+indulási idő+UID alapján, Linux pidfd segítségével történik; a PID újrafelhasználását nem tekintjük ugyanannak a szervernek. A leállítás normál SIGTERM-et ad, majd határidő után a követett folyamatokat lezárja. A napló korlátozott méretű, az utolsó 150 sor látható. A kliens indíthat, leállíthat, újraindíthat, konzolparancsot adhat és kézi/automatikus naplófrissítést használhat.
+
+A gép újraindítása után a példányok a panelről újraindítandók; bootindítást nem állítunk be. Korábban szolgáltatásként vagy más módon futó játékokat frissítés előtt egyszer állíts le; ismeretlen folyamatokat a panel nem vesz át és nem öl meg találomra.
+
+## Jogosultságok és frissítés
+
+Admin: felhasználók, típusok, Linux-gépek, sablonok és szerverek kezelése, tulajdonosváltás, jelszó-reset, műveleti napló. Kliens: kizárólag saját szerverek és fiókadatok. Módosítások CSRF-védettek; jelszócsere/reset érvényteleníti a többi munkamenetet, a bejelentkezések fiók/IP szerint korlátozottak.
+
+Frissítés előtt készíts fájl- és adatbázismentést. Őrizd meg a saját `config/` fájlokat és SSH-kulcsokat, a többi kiadásfájlt azonos elrendezésben töltsd fel. Az admin **Új szerverfunkciók engedélyezése** gombja a hiányzó oszlopokat és a játéktípus-táblát hozzáadja, és a korábbi enumot bővíthető azonosítóra alakítja. ALTER/CREATE/INSERT jogosultság szükséges; a meglévő adatokat nem törli. A telepítőt ne futtasd újra.
+
+A régi szerverkönyvtárakat a frissítő nem költözteti át és nem írja felül automatikusan. Az ID-alapú hely az új példányokra vonatkozik. A régi Linux-telepítést a webes Linux-beállítás gombbal frissítsd. A generált Smarty-fordítások a `var/smarty/compile/` alatt törölhetők, a konfiguráció nem.
+
+## Ellenőrzés és korlátok
+
+PHP: `php tests/templates.php`, `php tests/installer.php`, `php tests/dependencies.php`. A `php tests/accounts.php` csak külön teszt-MySQL-lel futtatható (`TEST_MYSQL_HOST`, `TEST_MYSQL_PASSWORD`): saját véletlen nevű adatbázist hoz létre/töröl. Python: `python3 -m unittest discover -s tests -p 'test_*.py'`, nem root felhasználóval. A böngészős tesztek kizárólag izolált loopback tesztpéldányhoz valók.
+
+A közvetlen SSH-indítás, webes Linux-beállítás, egyéni játéktípus, ID-könyvtár, 25xxx port, konfigurációírás, konzol és flat asztali/mobil felület izolált Linux-fixture-rel tesztelve. A Minecraft-katalógus kiválasztása tesztkatalógussal, az upstream-metaadat feldolgozása és checksum-ellenőrzés mockokkal tesztelhető. A fejlesztői környezet hálózati korlátozása miatt a valódi teljes Minecraft/Forge/BuildTools/Fabric letöltés és fordítás nem futott le itt; ezt a tényleges Linux-gép szinkronizálási állapota igazolja majd. Sikertelen artifact nem jelenik meg használható template-ként.
+
+Nincs általános webes fájlkezelő, biztonsági mentés/visszaállítás, számlázás vagy e-mailes jelszó-visszaállítás. Az automatikus konfiguráció a fent ismert fájlokat és porthelyőrzőket kezeli; tetszőleges egyedi játék minden saját beállítását a template-ben/indítóparancsban kell megadni.
+
+500-as hibánál a `/check.php` oldal megmutatja a PHP-verziót, szükséges fő fájlok olvashatóságát és könyvtárjogokat. Jelszót/privát kulcsot nem ír ki. Váratlan hiba esetén a válasz hibaazonosítója alapján keresd a részletet a tárhely PHP error_log naplójában.

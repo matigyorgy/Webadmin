@@ -13,6 +13,8 @@ $db=new GameDock\Database();$auth=new GameDock\AuthService($db);$admin=new GameD
 $prefix=bin2hex(random_bytes(5));$password='A-strong-test-password-123';
 try {
     foreach (explode(';',file_get_contents(dirname(__DIR__).'/database/schema.sql')) as $sql) if (trim($sql)!=='') $db->query($sql);
+    (new GameDock\GameRegistry($db))->seed();
+    $db->query("UPDATE game_types SET provider='folder' WHERE slug='minecraft'");
     $email='owner-'.$prefix.'@example.com';
     $db->query('INSERT INTO users(email,password_hash,is_admin) VALUES(?,?,1)',[$email,password_hash($password,PASSWORD_DEFAULT)]);
     $auth->login(['email'=>$email,'password'=>$password]); $owner=$auth->current(); verify((int)$owner['is_admin']===1,'Admin login failed');
@@ -22,19 +24,23 @@ try {
     denies(fn()=>(new GameDock\SchemaUpdater($db))->enableStartup($client),'Client schema change allowed');
     $nodeData=['name'=>'Linux <test>','ssh_host'=>'127.0.0.1','ssh_port'=>'22','ssh_user'=>'gamedock','ssh_fingerprint'=>'SHA256:'.str_repeat('A',43)];
     $nodeId=$admin->save($owner,'nodes',$nodeData);
+    $admin->save($owner,'games',['slug'=>'custom','name'=>'My Custom Game','template_path'=>'/srv/gamedock/templates/custom','startup_command'=>'python3 server.py --port {port}','provider'=>'folder']);
+    verify(isset((new GameDock\GameRegistry($db))->names()['custom']),'Custom game profile missing');
     $serverData=['name'=>'Survival <test>','game'=>'minecraft','unit_name'=>'minecraft.service','user_id'=>(string)$clientId,'node_id'=>(string)$nodeId];
     $serverId=$admin->save($owner,'servers',$serverData);
     verify($servers->find($client,$serverId)['provision_state']==='queued','New server did not require template copy');
     denies(fn()=>$servers->perform($client,$serverId,'start'),'Unprovisioned game started');
     $db->query('UPDATE servers SET provision_state=? WHERE id=?',['ready',$serverId]);
     foreach(GameDock\Validation::GAMES as $game=>$label) {
-        $custom=$serverData; $custom['id']=$serverId; $custom['game']=$game; $custom['startup_command']='./start --name="<example>"';
+        $custom=$serverData; $custom['id']=$serverId; $custom['game']=$game; $custom['startup_command']='./start --name="<example>" --port {port}';
         $admin->save($owner,'servers',$custom);
         verify($servers->find($client,$serverId)['startup_command']===$custom['startup_command'],'Startup command not saved for '.$game);
         verify(!array_key_exists('startup_command',$servers->listing($client)[0]),'Startup command leaked into client list');
     }
     $serverData['id']=$serverId; $admin->save($owner,'servers',$serverData); unset($serverData['id']);
 
+    verify((int)$servers->find($client,$serverId)['port']>=25000 && (int)$servers->find($client,$serverId)['port']<=25999,'Invalid port range');
+    verify($servers->find($client,$serverId)['install_folder']===(string)$serverId,'Target folder is not the server ID');
     verify(count($servers->listing($client))===1 && count($servers->listing($other))===0,'Owner list isolation failed');
     denies(fn()=>$servers->find($other,$serverId),'Other owner read allowed');
     $before=$db->query('SELECT COUNT(*) FROM audit_log')->fetchColumn();

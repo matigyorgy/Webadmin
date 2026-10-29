@@ -1,6 +1,0 @@
-{
-  "minecraft-panel.service": {"launch": true, "user": "minecraft", "directory": "/srv/games/minecraft"},
-  "cs2-panel.service": {"launch": true, "user": "cs2", "directory": "/srv/games/cs2"},
-  "fivem-panel.service": {"launch": true, "user": "fivem", "directory": "/srv/games/fivem"},
-  "css-panel.service": {"launch": true, "user": "css", "directory": "/srv/games/css"}
-}
