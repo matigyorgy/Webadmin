@@ -31,9 +31,9 @@ final class AdminService
         if (!$record) throw new RuntimeException('A bejegyzés nem található.');
         return $record;
     }
-    public function save(array $actor, string $section, array $data): int
+    public function save(array $actor, string $section, array $data, ?callable $onSaved=null): int
     {
-        return $this->db->transaction(function () use($actor,$section,$data) {
+        return $this->db->transaction(function () use($actor,$section,$data,$onSaved) {
             $this->admin($actor);
             $id=empty($data['id']) ? null : Validation::id($data['id']);
             if ($id!==null) $this->find($actor,$section,$id);
@@ -141,6 +141,7 @@ final class AdminService
             } else throw new RuntimeException('Ismeretlen bejegyzéstípus.');
             $id ??= (int)$this->db->lastInsertId();
             $this->audit($actor,$section.'_save:'.$id,$section==='servers' ? $id : 0);
+            if($onSaved!==null)$onSaved($id);
             return $id;
         });
     }

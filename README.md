@@ -145,3 +145,29 @@ A friss panel külön jelzi a hiányzó gamedock-templates programot, a jelszó 
 A teljes kiadás feltöltése után a gép szerkesztésénél add meg a telepítési root/admin SSH-hozzáférést, és indítsd a Linux beállítása automatikusan műveletet. A befejező üzenet legyen sikeres, majd térj vissza a katalógushoz. A hiányzó katalógus még nem hiba: első használatkor az állapot üres, és a szinkronizálás indítható. A segédprogram stderr üzeneteit külön kezeljük, hogy ne keveredjenek a JSON-katalógusba.
 
 A Linux-telepítés hibaüzenete most a sikertelen lépést és a kilépési kódot is jelzi (APT csomaglista, alapcsomag/JDK, Linux-helper/SSH-jogosultság vagy UFW). A telepítési napló a részletes hibát is tartalmazza, és a sudoers-ellenőrzés stderr üzenete nem vész el. Hibakereséshez a telepítő alatti naplódoboz utolsó 20–30 sora szükséges; hitelesítési jelszót/privát kulcsot nem kell elküldeni.
+
+## Külső szerverlétrehozási API
+
+Adminbeállítás: `/api_settings.php`. Itt készíthető vagy visszavonható az API-kulcs, a szükséges ismétlésvédelmi tábla automatikusan létrejön. A kulcs csak egyszer látható, a panel kizárólag SHA-256 lenyomatát tárolja a webgyökéren kívül. Az API az őt létrehozó adminhoz kötődik; az adminjog visszavonása az API-hozzáférést is megszünteti.
+
+Végpont: **`https://dev.vgh.hu/provision_api.php`**, más telepítésnél a saját domainnel. Kizárólag `POST application/json`, `Authorization: Bearer <kulcs>` és kötelező, rendelésenként egyedi, 8–128 karakteres `Idempotency-Key` fejléc támogatott. A kulcsot szerveroldalon kezeld, HTTPS-en küldd. Nginx/FastCGI továbbítsa az Authorization fejlécet PHP-nak (`fastcgi_param HTTP_AUTHORIZATION $http_authorization;`), amennyiben ezt a tárhely nem teszi meg alapból.
+
+```sh
+curl 'https://dev.vgh.hu/provision_api.php' \
+  -H "Authorization: Bearer $GAMEDOCK_API_KEY" \
+  -H 'Idempotency-Key: rendeles-20261029-001' \
+  -H 'Content-Type: application/json' \
+  --data '{"action":"create","user_id":1731,"node_id":1,"game":"cs2","memory_limit_mb":4096,"cpu_limit_percent":200}'
+```
+
+A `user_id` a meglévő ügyfél számos adatbázis-azonosítója; `node_id` a Linux-gép adatbázis-azonosítója; `game` az admin játéktípus-azonosítója. Az API ügyfelet nem hoz létre. Opcionális: `port` (25000–25999, elhagyva véletlen), `install_source`, `startup_command`, `memory_limit_mb`, `cpu_limit_percent`, Minecraftnál a már letöltött `minecraft_template` kulcs. A template és indítóparancs alapból a játéktípus beállításából jön. A node neve például `node_s1` legyen (betű/szám/pont/kötőjel/aláhúzás).
+
+A `202` válasz JSON-ban jelzi a folyamatban lévő másolást. Azonos `Idempotency-Key` fejléccel, `{"action":"status"}` törzzsel kérdezd le 3 másodpercenként. Ha a létrehozási kérés hálózati hibával megszakad, az eredeti `create` kérés is biztonságosan megismételhető azonos kulccsal és adatokkal. Más paraméterek azonos kulccsal `409` hibát adnak. A kérés és szerverbejegyzés egy tranzakcióban készül, párhuzamos ismétlés nem hoz létre második szervert. A szerver későbbi törlése után ugyanaz a kulcs nem használható újra.
+
+**Csak a Linux-oldali másolás sikeres befejezése után** érkezik `201`, `text/plain; charset=UTF-8` válasz, pontosan ebben a formában, sortörés nélkül:
+
+```text
+FELH_ID:1731|SZOLG_ID:15366|NODE:node_s1|
+```
+
+`SZOLG_ID` a panel Szerverazonosító mezőjében látható szám (nem a belső adatbázis-sorszám); `NODE` a Linux-gép mentett neve. A létrehozás nem indítja el automatikusan a játékot. A hibák JSON-t adnak, sosem sikeres szöveget: `401` hibás kulcs, `403` megszűnt adminjog, `409` ütköző/folyamatban feldolgozott kérés, `410` törölt szerver, `422` sikertelen másolás. SSH-időtúllépésnél `500` is előfordulhat, ilyenkor az eredeti kulccsal folytasd; ne hozz létre új rendelést.

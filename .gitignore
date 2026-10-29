@@ -4,3 +4,6 @@ __pycache__/
 
 /vendor/
 /var/smarty/compile/*
+
+/config/provision-api.json
+/config/.api-*
