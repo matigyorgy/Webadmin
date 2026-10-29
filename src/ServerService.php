@@ -71,6 +71,6 @@ final class ServerService
         $sql='SELECT a.*,s.name AS server_name FROM audit_log a LEFT JOIN servers s ON s.id=a.server_id WHERE (s.user_id=? OR (a.server_id=0 AND a.user_id=?) OR ?=1)';
         $params=[$user['id'],$user['id'],(int)$user['is_admin']];
         if ($id!==null) { $sql.=' AND a.server_id=?'; $params[]=$id; }
-        return $this->db->query($sql.' ORDER BY a.id DESC LIMIT 100',$params)->fetchAll();
+        return AuditText::rows($this->db->query($sql.' ORDER BY a.id DESC LIMIT 100',$params)->fetchAll());
     }
 }
