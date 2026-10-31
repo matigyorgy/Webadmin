@@ -58,6 +58,27 @@ PYTHON;
         $ssh=$this->connect($node);$ssh->enableQuietMode();if($action==='releases')$ssh->setTimeout(60);$output=$ssh->exec('/usr/bin/sudo -n /usr/local/sbin/gamedock-templates '.$action.(in_array($action,['delete','custom-save','releases','install','steam-install'],true) ? ' '.escapeshellarg($key) : ''));
         return TemplateCommandResult::parse($output,$ssh->getExitStatus(),(string)$ssh->getStdError(),$ssh->isTimeout());
     }
+    public function ftp(array $server,string $action,array $payload=[]): array
+    {
+        if(!in_array($action,['list','create','delete'],true) || !preg_match('/\A[A-Za-z0-9_][A-Za-z0-9_-]*(?:\.service)?\z/',$server['unit_name']))throw new RuntimeException('Érvénytelen FTP-művelet.');
+        $ssh=$this->connect($server);$ssh->enableQuietMode();$ssh->setTimeout(20);
+        // No PTY and no password in process arguments, shell history or sudo command logs.
+        if(!$ssh->exec('/usr/bin/sudo -n /usr/local/sbin/gamedock-ftp '.$action.' '.escapeshellarg($server['unit_name']),false))throw new RuntimeException('Az FTP-segédprogram nem indult el.');
+        if($action==='create')$ssh->write(json_encode($payload,JSON_THROW_ON_ERROR),SSH2::CHANNEL_EXEC);
+        $ssh->sendEOF(SSH2::CHANNEL_EXEC);$output='';
+        while(true){
+            $chunk=$ssh->read('',SSH2::READ_NEXT,SSH2::CHANNEL_EXEC);
+            if($chunk===true)break;
+            if($chunk===false || $ssh->isTimeout())throw new RuntimeException('Az FTP-művelet válasza nem igazolt. Ellenőrizd a hozzáférés állapotát, mielőtt újra próbálod.');
+            $output.=$chunk;if(strlen($output)>65536)throw new RuntimeException('Érvénytelen FTP-válasz.');
+        }
+        if($ssh->getExitStatus()!==0){
+            $error=(string)$ssh->getStdError();
+            foreach(['FTP username already in use'=>'Ez az FTP-felhasználónév ezen a Linux-gépen már foglalt.','FTP setup required'=>'A Linux-gépen még nincs beállítva a Pure-FTPd. Futtasd az Automatikus Linux-telepítést bekapcsolt csomagtelepítéssel.','Invalid FTP username'=>'Érvénytelen FTP-felhasználónév.','Invalid FTP password'=>'Érvénytelen FTP-jelszó.'] as $needle=>$message)if(str_contains($error,$needle))throw new RuntimeException($message);
+            throw new RuntimeException('Az FTP-szolgáltatás nem érhető el. Ellenőrizd a Pure-FTPd telepítését, a Linux-segédprogramot és a gép gamedock-ftp.log naplóját.');
+        }
+        return json_decode($output,true,512,JSON_THROW_ON_ERROR);
+    }
     public function automation(array $server,string $action,array $payload): array
     {
         if(!in_array($action,['list','schedule_add','schedule_delete','backup','restore','backup_delete','ack_restore','policy','clear_schedules'],true) || !preg_match('/\A[A-Za-z0-9_][A-Za-z0-9_-]*(?:\.service)?\z/',$server['unit_name']))throw new RuntimeException('Érvénytelen időzítési művelet.');

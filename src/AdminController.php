@@ -42,7 +42,10 @@ final class AdminController
                     $_SESSION['admin_notice']='Az új szerverfunkciók, az időzítő és a biztonsági mentés adatbázisfrissítése elkészült. A meglévő szerverek és adatok megmaradtak. Az érintett gépeken frissítsd a Linux-segédprogramokat az Automatikus Linux-telepítéssel.';
                 } elseif ($action==='save') {
                     $created=$section==='servers' && empty($_POST['id']);
-                    $savedId=$service->save($user,$section,$_POST); $_SESSION['admin_notice']='A bejegyzést elmentettük.';
+                    $previousServer=$section==='servers' && !empty($_POST['id']) ? $service->find($user,'servers',Validation::id($_POST['id'])) : null;
+                    $savedId=$service->save($user,$section,$_POST,function(int $id)use($section,$previousServer,$user){
+                        if($section==='servers' && $previousServer!==null && ($previousServer['provision_state'] ?? 'ready')==='ready' && (int)$previousServer['user_id']!==(int)($_POST['user_id'] ?? 0))(new FtpService($this->db,$this->ssh))->perform($user,$id,'ftp_delete');
+                    }); $_SESSION['admin_notice']='A bejegyzést elmentettük.';
                     $savedServer=$section==='servers' ? $service->find($user,'servers',$savedId) : null;
                     if($savedServer && !$created && ($savedServer['provision_state'] ?? '')==='ready' && array_key_exists('last_restore_job',$savedServer)){
                         try{(new AutomationService($this->db,$this->ssh))->updatePolicy($user,$savedId);}

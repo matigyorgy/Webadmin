@@ -1,5 +1,7 @@
 #!/usr/bin/python3
 """One-time local Linux setup. Run from the downloaded release as root, never from the web."""
+import importlib.machinery
+import importlib.util
 import argparse
 import fcntl
 import json
@@ -90,12 +92,12 @@ def install(args):
         cfg['_provision']={'source_root':str(source),'target_root':str(target),'users':users,'allow_custom_games':True}
         save(CONFIG,(json.dumps(cfg,indent=2)+'\n').encode(),0o600)
     root=Path(__file__).resolve().parent
-    for name,destination in [('gamedock-automation','/usr/local/sbin/gamedock-automation'),('gamedock-versions','/usr/local/sbin/gamedock-versions'),('gamedock-provision','/usr/local/sbin/gamedock-provision'),('gamedock-launch','/usr/local/sbin/gamedock-launch'),('gamedock_runtime.py','/usr/local/libexec/gamedock_runtime.py'),('gamedock-templates','/usr/local/sbin/gamedock-templates'),('gamedock-runner','/usr/local/libexec/gamedock-runner')]:
+    for name,destination in [('gamedock-ftp','/usr/local/sbin/gamedock-ftp'),('gamedock-automation','/usr/local/sbin/gamedock-automation'),('gamedock-versions','/usr/local/sbin/gamedock-versions'),('gamedock-provision','/usr/local/sbin/gamedock-provision'),('gamedock-launch','/usr/local/sbin/gamedock-launch'),('gamedock_runtime.py','/usr/local/libexec/gamedock_runtime.py'),('gamedock-templates','/usr/local/sbin/gamedock-templates'),('gamedock-runner','/usr/local/libexec/gamedock-runner')]:
         save(Path(destination),(root/name).read_bytes(),0o755)
     cron=next((path for path in ('/usr/sbin/cron','/usr/sbin/crond') if Path(path).is_file()),None)
     if not cron or not Path('/usr/sbin/service').is_file():raise ValueError('A running cron service is required; install cron and tzdata before setup')
     cron_dir=Path('/etc/cron.d');cron_dir.mkdir(exist_ok=True);safe(cron_dir)
-    save(cron_dir/'gamedock-automation',b'SHELL=/bin/sh\nPATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\n* * * * * root /usr/bin/python3 -I /usr/local/sbin/gamedock-automation tick >> /var/log/gamedock-automation.log 2>&1\n',0o644)
+    save(cron_dir/'gamedock-automation',b'SHELL=/bin/sh\nPATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\n* * * * * root /usr/bin/python3 -I /usr/local/sbin/gamedock-automation tick >> /var/log/gamedock-automation.log 2>&1\n* * * * * root /usr/bin/python3 -I /usr/local/sbin/gamedock-ftp maintain >> /var/log/gamedock-automation.log 2>&1\n',0o644)
     log=Path('/var/log/gamedock-automation.log')
     if not log.exists():
         descriptor=os.open(log,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600);os.close(descriptor)
@@ -103,7 +105,7 @@ def install(args):
     # Broad helper access is confined by immutable root policy; no shell/systemctl sudo is granted.
     sudoers=(args.ssh_user+' ALL=(root) NOPASSWD: /usr/local/sbin/gamedock-versions create *\n'+args.ssh_user+' ALL=(root) NOPASSWD: /usr/local/sbin/gamedock-versions status *\n'+args.ssh_user+' ALL=(root) NOPASSWD: /usr/local/sbin/gamedock-provision create *\n'+
              args.ssh_user+' ALL=(root) NOPASSWD: /usr/local/sbin/gamedock-provision status *\n'+
-             args.ssh_user+' ALL=(root) NOPASSWD: /usr/local/sbin/gamedock-automation list *, /usr/local/sbin/gamedock-automation schedule_add *, /usr/local/sbin/gamedock-automation schedule_delete *, /usr/local/sbin/gamedock-automation backup *, /usr/local/sbin/gamedock-automation restore *, /usr/local/sbin/gamedock-automation backup_delete *, /usr/local/sbin/gamedock-automation ack_restore *, /usr/local/sbin/gamedock-automation policy *, /usr/local/sbin/gamedock-automation clear_schedules *\n'+args.ssh_user+' ALL=(root) NOPASSWD: /usr/local/sbin/gamedock-launch *\n'+args.ssh_user+' ALL=(root) NOPASSWD: /usr/local/sbin/gamedock-templates catalog\n'+args.ssh_user+' ALL=(root) NOPASSWD: /usr/local/sbin/gamedock-templates sync\n'+args.ssh_user+' ALL=(root) NOPASSWD: /usr/local/sbin/gamedock-templates delete *, /usr/local/sbin/gamedock-templates releases *, /usr/local/sbin/gamedock-templates install *, /usr/local/sbin/gamedock-templates custom-save *, /usr/local/sbin/gamedock-templates steam-install cs2, /usr/local/sbin/gamedock-templates steam-install css, /usr/local/sbin/gamedock-templates steam-install cs16\n')
+             args.ssh_user+' ALL=(root) NOPASSWD: NOLOG_INPUT: /usr/local/sbin/gamedock-ftp list *, /usr/local/sbin/gamedock-ftp create *, /usr/local/sbin/gamedock-ftp delete *\n'+args.ssh_user+' ALL=(root) NOPASSWD: /usr/local/sbin/gamedock-automation list *, /usr/local/sbin/gamedock-automation schedule_add *, /usr/local/sbin/gamedock-automation schedule_delete *, /usr/local/sbin/gamedock-automation backup *, /usr/local/sbin/gamedock-automation restore *, /usr/local/sbin/gamedock-automation backup_delete *, /usr/local/sbin/gamedock-automation ack_restore *, /usr/local/sbin/gamedock-automation policy *, /usr/local/sbin/gamedock-automation clear_schedules *\n'+args.ssh_user+' ALL=(root) NOPASSWD: /usr/local/sbin/gamedock-launch *\n'+args.ssh_user+' ALL=(root) NOPASSWD: /usr/local/sbin/gamedock-templates catalog\n'+args.ssh_user+' ALL=(root) NOPASSWD: /usr/local/sbin/gamedock-templates sync\n'+args.ssh_user+' ALL=(root) NOPASSWD: /usr/local/sbin/gamedock-templates delete *, /usr/local/sbin/gamedock-templates releases *, /usr/local/sbin/gamedock-templates install *, /usr/local/sbin/gamedock-templates custom-save *, /usr/local/sbin/gamedock-templates steam-install cs2, /usr/local/sbin/gamedock-templates steam-install css, /usr/local/sbin/gamedock-templates steam-install cs16\n')
     folder=Path('/etc/sudoers.d');folder.mkdir(exist_ok=True);safe(folder)
     descriptor,temporary=tempfile.mkstemp(dir=folder,prefix='gamedock-check-')
     try:
@@ -117,6 +119,8 @@ def install(args):
         subprocess.run(['sudo','-n','-l','-U',args.ssh_user,'--','/usr/local/sbin/gamedock-templates','delete','gamedock-policy-check'],check=True,capture_output=True)
     except subprocess.CalledProcessError as error:
         raise ValueError('The effective sudo policy denies gamedock-templates delete for '+args.ssh_user+'. Check conflicting sudoers rules; the helper has not been executed.') from error
+    if args.setup_ftp:
+        loader=importlib.machinery.SourceFileLoader('ftp_setup',str(root/'gamedock-ftp'));spec=importlib.util.spec_from_loader(loader.name,loader);ftp=importlib.util.module_from_spec(spec);loader.exec_module(ftp);ftp.install(args.ftp_host)
     ssh=Path(account.pw_dir)/'.ssh'
     if not ssh.exists():
         ssh.mkdir(mode=0o700);os.chown(ssh,account.pw_uid,account.pw_gid)
@@ -140,7 +144,7 @@ def install(args):
     print('Add the panel public SSH key to '+str(ssh/'authorized_keys')+' if not already present.')
 
 if __name__=='__main__':
-    parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--source-root');parser.add_argument('--target-root');parser.add_argument('--ssh-user',default='gamedock');parser.add_argument('--panel-public-key-file')
+    parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--setup-ftp',action='store_true');parser.add_argument('--ftp-host');parser.add_argument('--source-root');parser.add_argument('--target-root');parser.add_argument('--ssh-user',default='gamedock');parser.add_argument('--panel-public-key-file')
     try:install(parser.parse_args())
     except (ValueError,OSError,subprocess.SubprocessError) as error:
         detail=getattr(error,'stderr',None)

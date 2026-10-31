@@ -15,7 +15,13 @@ if [ "$3" = "1" ]; then
  if command -v apt-get >/dev/null 2>&1; then
   export DEBIAN_FRONTEND=noninteractive
   STEP='APT csomaglista frissitese';apt-get update
-  STEP='Alapcsomagok telepitese';apt-get install -y python3 sudo passwd git default-jdk-headless ca-certificates tar unzip cron tzdata
+  FTP_PREEXISTED=0
+  if dpkg-query -W -f='${Status}' pure-ftpd 2>/dev/null | grep -q '^install ok installed$'; then FTP_PREEXISTED=1; fi
+  STEP='Alapcsomagok telepitese';apt-get install -y python3 sudo passwd git default-jdk-headless ca-certificates tar unzip cron tzdata pure-ftpd openssl
+  if [ "$FTP_PREEXISTED" = "0" ]; then
+   service pure-ftpd stop
+   update-rc.d pure-ftpd disable
+  fi
   if [ "$(uname -m)" = "x86_64" ]; then
    STEP='SteamCMD futtatokonyvtarak telepitese';apt-get install -y lib32gcc-s1 lib32stdc++6
   fi
@@ -28,11 +34,13 @@ if [ "$3" = "1" ]; then
  fi
 fi
 STEP='Linux-fajlok, fiokok, SSH-kulcs es jogosultsagok beallitasa'
-python3 install.py --source-root "$1" --target-root /home/gamedock --ssh-user "$2" --panel-public-key-file panel.pub
+python3 install.py --source-root "$1" --target-root /home/gamedock --ssh-user "$2" --panel-public-key-file panel.pub --setup-ftp --ftp-host "${5:-}"
 STEP='UFW jatekportok beallitasa'
 if [ "${4:-0}" = "1" ] && command -v ufw >/dev/null 2>&1 && ufw status | grep -q '^Status: active'; then
  ufw allow 25000:25999/tcp
  ufw allow 25000:25999/udp
+ ufw allow 2121/tcp
+ ufw allow 50000:50100/tcp
 fi
 printf '{"state":"ready","message":"A Linux-segédprogramok, kulcsok és jogosultságok beállítása elkészült."}\n' > setup-state.json
 trap - EXIT

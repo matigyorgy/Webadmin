@@ -74,6 +74,9 @@ def create(payload):
         owner_backup=backup_base/unit;owner_backup.mkdir(mode=0o711,exist_ok=True);p.secure(owner_backup,True)
         stage=base/('.gamedock-version-'+job_id);stage.mkdir(mode=0o700);os.chown(stage,account.pw_uid,account.pw_gid)
         job={'reinstall':reinstall,'settings':{'game':server['game'],'port':server['port'],'minecraft':minecraft,'eula':minecraft},'operation':'version','unit':unit,'source':str(source),'target':str(target),'backup':str(owner_backup/job_id),'stage':str(stage),'user':server['user'],'template':row,'state':'queued','message':'A verzióváltás előkészítése elindult.'}
+        ftp_path=Path(__file__).resolve().parent/'gamedock-ftp'
+        if not ftp_path.exists():ftp_path=Path('/usr/local/sbin/gamedock-ftp')
+        ftp_loader=importlib.machinery.SourceFileLoader('version_ftp',str(ftp_path));ftp_spec=importlib.util.spec_from_loader(ftp_loader.name,ftp_loader);ftp=importlib.util.module_from_spec(ftp_spec);ftp_loader.exec_module(ftp);ftp.disconnect_unit(unit)
         p.atomic(p.job_path(job_id),job);cfg.setdefault('_version_jobs',{})[unit]=job_id;p.atomic(p.CONFIG,cfg)
         try:
             with open(p.JOBS+'/'+job_id+'.log','ab') as output:child=subprocess.Popen(['/usr/bin/python3','-I',SELF,'worker',job_id],stdin=subprocess.DEVNULL,stdout=output,stderr=subprocess.STDOUT,start_new_session=True,env=p.runtime.environment())

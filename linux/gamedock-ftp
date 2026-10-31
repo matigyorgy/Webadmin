@@ -1,0 +1,228 @@
+#!/usr/bin/python3 -I
+"""Pure-FTPd external authentication and per-instance, expiring virtual accounts."""
+import base64,contextlib,fcntl,hashlib,hmac,importlib.machinery,importlib.util,ipaddress,json,os,pwd,re,signal,socket,ssl,stat,subprocess,sys,tempfile,time
+from pathlib import Path
+path=Path(__file__).resolve().parent/'gamedock-provision'
+if not path.is_file():path=Path('/usr/local/sbin/gamedock-provision')
+loader=importlib.machinery.SourceFileLoader('ftp_provision',str(path));spec=importlib.util.spec_from_loader(loader.name,loader);p=importlib.util.module_from_spec(spec);loader.exec_module(p)
+ROOT=Path('/etc/gamedock/ftp');RUN=Path('/run/gamedock-ftp');LOG=Path('/var/log/gamedock-ftp.log')
+CONTROL=Path('/run/gamedock-control')
+TTL=15*86400;SELF='/usr/local/sbin/gamedock-ftp'
+
+def read(path,default):
+    try:p.secure(str(path));return json.loads(path.read_text())
+    except FileNotFoundError:return default
+
+def prepare():
+    for path in (ROOT,RUN):path.mkdir(mode=0o700,parents=True,exist_ok=True);p.secure(str(path),True)
+
+@contextlib.contextmanager
+def locked():
+    prepare()
+    with open(ROOT/'users.lock','a') as handle:fcntl.flock(handle,fcntl.LOCK_EX);yield
+
+def unit_name(unit):
+    if not isinstance(unit,str) or not re.fullmatch(r'[A-Za-z0-9_][A-Za-z0-9_-]*(?:\.service)?',unit):raise ValueError('Invalid server')
+    return unit
+
+def instance(unit):
+    unit_name(unit);cfg=p.config();server=cfg[unit];target=Path(server['directory']);account=pwd.getpwnam(server['user']);base=Path(cfg['_provision']['target_root'])
+    if not server.get('launch') or account.pw_uid<100 or account.pw_gid<=0 or target.parent!=base or target.is_symlink() or target.resolve()!=target or not target.is_dir():raise ValueError('Unsafe FTP instance')
+    p.secure(str(base),True);return server,account,target
+
+def binding(server):return {key:server.get(key) for key in ('user','directory','provision_job')}
+def expires(record):return (record.get('last_login') or record['created_at'])+TTL
+
+def busy(unit):
+    job=read(Path('/var/lib/gamedock/automation/units')/unit/'job.json',{})
+    if job.get('state') in ('queued','running') or (job.get('operation')=='restore' and job.get('state')=='ready' and not job.get('reconciled')):return True
+    cfg=p.config();key=cfg.get('_version_jobs',{}).get(unit)
+    return bool(key and p.read_job(key).get('state') in ('queued','running'))
+
+def descendant(pid,master):
+    for _ in range(6):
+        try:
+            parent=int((Path('/proc')/str(pid)/'stat').read_text().rsplit(') ',1)[1].split()[1])
+            if parent==master:return True
+            if parent<=1:return False
+            pid=parent
+        except (OSError,ValueError,IndexError):return False
+    return False
+
+def disconnect_names(names):
+    if not names:return
+    state=read(RUN/'processes.json',{});master=state.get('server')
+    if not p.runtime.alive(master,0):return
+    result=subprocess.run(['/usr/sbin/pure-ftpwho','-s','-n'],capture_output=True,text=True,timeout=5)
+    for line in result.stdout.splitlines():
+        fields=line.split('|')
+        if len(fields)<8 or not fields[0].isdigit() or fields[1] not in names:continue
+        pid=int(fields[0]);record=p.runtime.identity(pid)
+        try:name=(Path('/proc')/str(pid)/'comm').read_text().strip()
+        except OSError:continue
+        if record and name=='pure-ftpd' and descendant(pid,master['pid']):p.runtime.send(record,record['uid'],signal.SIGTERM)
+
+def disconnect_unit(unit):
+    if not (ROOT/'settings.json').exists():return
+    with locked():disconnect_names([name for name,row in read(ROOT/'users.json',{}).items() if row['unit']==unit])
+
+def remove_unit(unit):
+    unit_name(unit)
+    if not (ROOT/'settings.json').exists():return
+    with locked():
+        rows=read(ROOT/'users.json',{});names=[name for name,row in rows.items() if row['unit']==unit]
+        for name in names:del rows[name]
+        p.atomic(str(ROOT/'users.json'),rows);disconnect_names(names)
+
+def clean(rows,now):
+    removed=[]
+    for name,record in list(rows.items()):
+        valid=expires(record)>now
+        if valid:
+            try:valid=binding(instance(record['unit'])[0])==record['binding']
+            except (OSError,KeyError,ValueError):valid=False
+        if not valid:removed.append(name);del rows[name]
+    return removed
+
+def settings():
+    config=read(ROOT/'settings.json',None)
+    if not config:raise ValueError('FTP setup required')
+    if type(config.get('port')) is not int or not 1<=config['port']<=65535 or not 1024<=config['passive_min']<=config['passive_max']<=65535:raise ValueError('Invalid FTP ports')
+    return config
+
+def process_ready():
+    state=read(RUN/'processes.json',{})
+    return p.runtime.alive(state.get('server'),0) and p.runtime.alive(state.get('auth'),0) and (RUN/'auth.sock').is_socket()
+
+def start():
+    config=settings();state=read(RUN/'processes.json',{})
+    if process_ready():return
+    if not LOG.exists():descriptor=os.open(LOG,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600);os.close(descriptor)
+    p.secure(str(LOG))
+    if not p.runtime.alive(state.get('auth'),0):
+        (RUN/'auth.sock').unlink(missing_ok=True)
+        with open(LOG,'ab') as output:child=subprocess.Popen(['/usr/sbin/pure-authd','-s',str(RUN/'auth.sock'),'-r',SELF],stdin=subprocess.DEVNULL,stdout=output,stderr=output,start_new_session=True,env=p.runtime.environment())
+        state['auth']=p.runtime.identity(child.pid)
+        for _ in range(40):
+            if (RUN/'auth.sock').is_socket():break
+            if child.poll() is not None:raise ValueError('FTP authentication service failed')
+            time.sleep(.05)
+        else:raise ValueError('FTP authentication socket missing')
+        os.chmod(RUN/'auth.sock',0o600);p.atomic(str(RUN/'processes.json'),state)
+    if not p.runtime.alive(state.get('server'),0):
+        command=['/usr/sbin/pure-ftpd','-S',','+str(config['port']),'-l','extauth:'+str(RUN/'auth.sock'),'-A','-E','-H','-Y','3','-2',str(ROOT/'server.pem'),'-p',str(config['passive_min'])+':'+str(config['passive_max']),'-I','15','-m',str(max(4,(os.cpu_count() or 1)*4)),'-c','32','-C','8','-y','3:0','-u','100','-U','077:077','-g',str(RUN/'server.pid'),'-k','98']
+        if config.get('public_host'):command.extend(['-P',config['public_host']])
+        with open(LOG,'ab') as output:child=subprocess.Popen(command,stdin=subprocess.DEVNULL,stdout=output,stderr=output,start_new_session=True,env=p.runtime.environment())
+        time.sleep(.2)
+        if child.poll() is not None:raise ValueError('Pure-FTPd failed; check FTP service log and required capabilities')
+        state['server']=p.runtime.identity(child.pid);p.atomic(str(RUN/'processes.json'),state)
+
+def maintain():
+    if not (ROOT/'settings.json').exists():return
+    with locked():
+        rows=read(ROOT/'users.json',{});removed=clean(rows,int(time.time()));p.atomic(str(ROOT/'users.json'),rows);disconnect_names(removed);start()
+
+def certificate_fingerprint():
+    text=(ROOT/'server.pem').read_text();match=re.search(r'-----BEGIN CERTIFICATE-----.*?-----END CERTIFICATE-----',text,re.S)
+    if not match:raise ValueError('FTP certificate missing')
+    return ':'.join(re.findall('..',hashlib.sha256(ssl.PEM_cert_to_DER_cert(match[0])).hexdigest().upper()))
+
+def install(public_host=None):
+    prepare()
+    for binary in ('/usr/sbin/pure-ftpd','/usr/sbin/pure-authd','/usr/sbin/pure-ftpwho','/usr/bin/openssl'):
+        if not Path(binary).is_file():raise ValueError('Pure-FTPd and OpenSSL packages required')
+    if public_host and (len(public_host)>253 or not re.fullmatch(r'[A-Za-z0-9_.:-]+',public_host)):raise ValueError('Invalid FTP public host')
+    current=read(ROOT/'settings.json',{'port':2121,'passive_min':50000,'passive_max':50100,'public_host':''})
+    if public_host:current['public_host']=public_host
+    cert=ROOT/'server.pem'
+    if not cert.exists():
+        host=public_host or socket.getfqdn();san=['DNS:localhost','IP:127.0.0.1']
+        try:ipaddress.ip_address(host);san.append('IP:'+host)
+        except ValueError:
+            if not re.fullmatch('[A-Za-z0-9_.-]+',host):raise ValueError('Invalid certificate host')
+            san.append('DNS:'+host)
+        with tempfile.TemporaryDirectory(prefix='.cert-',dir=ROOT) as temporary:
+            key=Path(temporary)/'key.pem';certificate=Path(temporary)/'cert.pem'
+            subprocess.run(['/usr/bin/openssl','req','-newkey','rsa:3072','-x509','-nodes','-sha256','-days','365','-subj','/CN='+host,'-addext','subjectAltName='+','.join(san),'-keyout',str(key),'-out',str(certificate)],check=True,capture_output=True)
+            descriptor=os.open(cert,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600)
+            with os.fdopen(descriptor,'wb') as stream:stream.write(key.read_bytes()+certificate.read_bytes())
+    p.secure(str(cert));p.atomic(str(ROOT/'settings.json'),current)
+    # Restart only our tracked dedicated instance when configuration was refreshed.
+    with locked():
+        state=read(RUN/'processes.json',{})
+        disconnect_names(list(read(ROOT/'users.json',{})))
+        for record in state.values():
+            if isinstance(record,dict):p.runtime.send(record,0,signal.SIGTERM)
+        for _ in range(40):
+            if not any(p.runtime.alive(record,0) for record in state.values() if isinstance(record,dict)):break
+            time.sleep(.05)
+        start()
+
+def listing(unit):
+    instance(unit)
+    if not (ROOT/'settings.json').exists():return {'configured':False,'ready':False,'account':None}
+    maintain()
+    with locked():
+        row=next((row for row in read(ROOT/'users.json',{}).values() if row['unit']==unit),None);config=settings()
+        account={key:row[key] for key in ('username','created_at','last_login')} if row else None
+        if account:account['expires_at']=expires(row)
+        return {'configured':True,'ready':bool(process_ready()),'account':account,'port':config['port'],'fingerprint':certificate_fingerprint()}
+
+def create(unit,data):
+    server,account,target=instance(unit);name=data.get('username','');password=data.get('password','')
+    if not isinstance(name,str) or not re.fullmatch('[a-z][a-z0-9_.-]{2,31}',name) or name in ('anonymous','ftp','root'):raise ValueError('Invalid FTP username')
+    if not isinstance(password,str) or not 12<=len(password.encode())<=128 or any(ord(c)<32 or ord(c)==127 for c in password):raise ValueError('Invalid FTP password')
+    maintain();settings()
+    salt=os.urandom(16);hashed=hashlib.scrypt(password.encode(),salt=salt,n=16384,r=8,p=1,dklen=32)
+    with locked():
+        rows=read(ROOT/'users.json',{});removed=clean(rows,int(time.time()))
+        if name in rows and rows[name]['unit']!=unit:raise ValueError('FTP username already in use')
+        old=[key for key,row in rows.items() if row['unit']==unit]
+        for key in old:del rows[key]
+        rows[name]={'username':name,'unit':unit,'binding':binding(server),'salt':salt.hex(),'hash':hashed.hex(),'created_at':int(time.time()),'last_login':None}
+        p.atomic(str(ROOT/'users.json'),rows);disconnect_names(removed+old)
+    return listing(unit)
+
+def authenticate(environment):
+    name=environment.get('AUTHD_ACCOUNT','');password=environment.get('AUTHD_PASSWORD','')
+    if environment.get('AUTHD_ENCRYPTED')!='1' or not isinstance(name,str) or not re.fullmatch('[a-z][a-z0-9_.-]{2,31}',name) or len(password.encode())>128:return None
+    with locked():snapshot=read(ROOT/'users.json',{}).get(name)
+    if not snapshot:return None
+    hashed=hashlib.scrypt(password.encode(),salt=bytes.fromhex(snapshot['salt']),n=16384,r=8,p=1,dklen=32)
+    if not hmac.compare_digest(hashed.hex(),snapshot['hash']):return None
+    with locked():
+        rows=read(ROOT/'users.json',{});removed=clean(rows,int(time.time()));record=rows.get(name)
+        if removed:p.atomic(str(ROOT/'users.json'),rows);disconnect_names(removed)
+        if not record or record['hash']!=snapshot['hash']:return None
+        server,account,target=instance(record['unit'])
+        control=CONTROL;control.mkdir(mode=0o700,exist_ok=True);p.secure(str(control),True)
+        with open(control/(record['unit']+'.lock'),'a') as handle:
+            try:fcntl.flock(handle,fcntl.LOCK_EX|fcntl.LOCK_NB)
+            except BlockingIOError:return None
+            if busy(record['unit']):return None
+            record['last_login']=int(time.time());p.atomic(str(ROOT/'users.json'),rows)
+            return {'uid':account.pw_uid,'gid':account.pw_gid,'dir':str(target)+'/./'}
+
+if __name__=='__main__':
+    os.umask(0o077)
+    try:
+        if os.geteuid()!=0:raise ValueError('Root helper required')
+        action=sys.argv[1] if len(sys.argv)>1 else 'auth'
+        if action=='auth':
+            result=authenticate(os.environ)
+            if result:print('auth_ok:1\nuid:'+str(result['uid'])+'\ngid:'+str(result['gid'])+'\ndir:'+result['dir']+'\nper_user_max:3\nend')
+            else:print('auth_ok:-1\nend')
+        elif action=='maintain' and len(sys.argv)==2:maintain()
+        elif action in ('list','create','delete') and len(sys.argv)==3:
+            unit=unit_name(sys.argv[2])
+            if action=='create':
+                payload=sys.stdin.buffer.read(4097)
+                if len(payload)>4096:raise ValueError('FTP payload too large')
+                result=create(unit,json.loads(payload))
+            elif action=='delete':remove_unit(unit);result=listing(unit)
+            else:result=listing(unit)
+            print(json.dumps(result,ensure_ascii=False))
+        else:raise ValueError('Invalid FTP operation')
+    except Exception as error:
+        if len(sys.argv)==1 or (len(sys.argv)>1 and sys.argv[1]=='auth'):print('auth_ok:-1\nend')
+        else:print(str(error) if isinstance(error,ValueError) else 'FTP helper failed: '+type(error).__name__,file=sys.stderr);sys.exit(1)

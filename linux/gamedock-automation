@@ -209,6 +209,7 @@ def worker(unit,key):
             if operation in ('start','restart','backup') and s.get('template_key') and s.get('template_key')!=panel.get('template_key'):raise ValueError('Template changed; recreate the schedule')
             if operation in ('start','stop','restart'):power(unit,operation,panel)
             else:
+                ftp=load('gamedock-ftp');ftp.disconnect_unit(unit)
                 stage=Path(tempfile.mkdtemp(prefix='.gamedock-maintenance-',dir=target.parent));os.chown(stage,account.pw_uid,account.pw_gid)
                 if operation=='backup':
                     resume=bool(running(unit,account))
@@ -306,7 +307,7 @@ def api(unit,action,payload):
     if action=='clear_schedules':
         with v.unit_lock(unit,False),schedule_lock(unit):
             if read(folder(unit)/'job.json',{}).get('state') in ('queued','running'):raise ValueError('Another automation job is running')
-            p.atomic(str(folder(unit)/'schedules.json'),[])
+            p.atomic(str(folder(unit)/'schedules.json'),[]);load('gamedock-ftp').remove_unit(unit)
         return {'accepted':True}
     if action=='list':return view(unit)
     if action=='ack_restore':

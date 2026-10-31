@@ -429,3 +429,40 @@ if(automation){
     window.addEventListener('hashchange',reveal);reveal();
     setInterval(()=>{if(!document.hidden && (pending() || sections.some(s=>!s.hidden))){notice='';refresh();}},5000);
 }
+
+const ftpPanel=document.getElementById('ftp-access');
+if(ftpPanel){
+    const form=ftpPanel.querySelector('[data-ftp-form]'),fields=form.querySelector('fieldset'),save=ftpPanel.querySelector('[data-ftp-create]'),remove=ftpPanel.querySelector('[data-ftp-delete]'),message=ftpPanel.querySelector('[data-ftp-message]');
+    let data=null,loading=false,writing=false;
+    const date=value=>value ? new Intl.DateTimeFormat('hu-HU',{dateStyle:'short',timeStyle:'short',timeZone:'Europe/Budapest'}).format(new Date(value*1000)) : 'Még nem lépett be';
+    function render(){
+        fields.disabled=writing || !data?.ready;remove.hidden=!data?.account;
+        save.textContent=data?.account ? 'Hozzáférés módosítása' : 'FTP-hozzáférés létrehozása';
+        ftpPanel.querySelector('[data-ftp-connection]').hidden=!data?.configured;
+        const values={host:data?.host || '',port:data?.port || '',username:data?.account?.username || 'Nincs létrehozott hozzáférés','last-login':date(data?.account?.last_login),expires:data?.account ? date(data.account.expires_at) : '—',fingerprint:data?.fingerprint || ''};
+        for(const [key,value] of Object.entries(values))ftpPanel.querySelector(`[data-ftp-${key}]`).textContent=value;
+        if(data?.account && !form.elements.ftp_username.value)form.elements.ftp_username.value=data.account.username;
+    }
+    async function refresh(){
+        if(loading || writing)return;loading=true;
+        try{data=await queryServer(ftpPanel.dataset.serverId,'ftp');render();message.textContent=!data.configured ? 'A Pure-FTPd még nincs beállítva ezen a gépen. Az admin futtassa az Automatikus Linux-telepítést bekapcsolt csomagtelepítéssel.' : !data.ready ? 'Az FTP-szolgáltatás jelenleg nem érhető el.' : '';}
+        catch(error){message.textContent=error.message;fields.disabled=true;}
+        finally{loading=false;}
+    }
+    async function write(action){
+        if(writing)return;
+        if(action==='ftp_create' && form.elements.ftp_password.value!==form.elements.ftp_password_confirm.value){message.textContent='A két FTP-jelszó nem egyezik.';return;}
+        const body=new FormData(form);body.set('action',action);body.set('server_id',ftpPanel.dataset.serverId);body.set('csrf',ftpPanel.dataset.csrf);
+        if(action==='ftp_delete'){body.delete('ftp_password');body.delete('ftp_password_confirm');}
+        writing=true;render();message.textContent='A kérés feldolgozása folyamatban van.';
+        try{
+            const response=await fetch('/api.php',{method:'POST',credentials:'same-origin',body}),result=await response.json();if(!response.ok)throw Error(result.error);
+            data=result;if(action==='ftp_delete')form.reset();message.textContent=action==='ftp_delete' ? 'Az FTP-hozzáférést töröltük. A szerverfájlok megmaradtak.' : 'Az FTP-hozzáférést elmentettük. A jelszót nem jelenítjük meg újra.';
+        }catch(error){message.textContent=error.message;}
+        finally{form.elements.ftp_password.value='';form.elements.ftp_password_confirm.value='';writing=false;render();}
+    }
+    form.addEventListener('submit',event=>{event.preventDefault();if(!fields.disabled && form.reportValidity())write('ftp_create');});
+    remove.addEventListener('click',()=>{if(!writing && window.confirm('Biztosan törlöd az FTP-hozzáférést? A szerverfájlok megmaradnak.'))write('ftp_delete');});
+    function reveal(){ftpPanel.hidden=location.hash!=='#ftp-access';if(!ftpPanel.hidden)refresh();}
+    window.addEventListener('hashchange',reveal);reveal();setInterval(()=>{if(!document.hidden && !ftpPanel.hidden)refresh();},30000);
+}

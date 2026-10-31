@@ -40,3 +40,18 @@ docker run --rm --entrypoint /bin/sh -v "$PWD/tests:/tests:ro" gamedock-direct-f
 ```
 
 This fixture test uses only its own server directory and may wait up to 75 seconds for the next cron minute. It verifies offline/confirmation enforcement, snapshot/resume, gzip output, exact restore, corruption rejection, scoped retention, crash recovery and cleanup. Never run it on a real game host.
+
+Pure-FTPd UI fixture:
+
+```sh
+php tests/fixtures/ftp.php > /tmp/gamedock-ftp.html
+node tests/browser_ftp.cjs /tmp/gamedock-ftp.html
+```
+
+For the real FTP fixture, install the official `pure-ftpd` and `openssl` Debian packages in a derivative of the disposable SSH image, then copy/install the current Linux helpers (without `--setup-ftp` during the Docker build). At runtime the test configures its dedicated Pure-FTPd instance and trusts its exact generated certificate; TLS verification remains enabled. The package requires two extra capabilities inside Docker:
+
+```sh
+docker run --rm --cap-add SYS_NICE --cap-add DAC_READ_SEARCH --entrypoint /usr/bin/python3 -v "$PWD/tests:/tests:ro" gamedock-ftp-test /tests/fixtures/ftp_integration.py
+```
+
+No ports need to be published. The test may wait up to 75 seconds for the actual cron expiry pass. It checks TLS upload/download, chroot isolation, unique usernames, hashed secrets, success-only login timestamps, maintenance session termination, actual 15-day cron expiry and repeatable setup. `ftp_ssh_setup.py` plus `ftp_ssh.php` additionally exercise the actual phpseclib SSH stdin transport using a disposable key volume shared only by the two test containers; remove the containers and key volume after this test.
