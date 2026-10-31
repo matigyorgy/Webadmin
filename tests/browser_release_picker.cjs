@@ -39,6 +39,15 @@ const {chromium}=require('playwright');
   const type=page.locator('#release-type'),version=page.locator('#release-version'),button=page.locator('[data-release-install]');
   assert(await version.isDisabled());assert(await button.isDisabled());
   assert(!(await type.isVisible()));assert(!(await page.locator('[data-custom-template]').isVisible()));
+  // Controls in separate columns must still submit the same policy form.
+  const policy=page.locator('tr').filter({has:page.locator('[name=minimum_memory_mb]')});
+  assert.equal(await policy.locator('td').count(),5);
+  await policy.locator('[name=minimum_memory_mb]').fill('3072');await policy.locator('[name=requires_reinstall]').uncheck();
+  await Promise.all([page.waitForNavigation(),policy.getByRole('button',{name:'Mentés',exact:true}).click()]);
+  assert.equal(posts.length,1);assert.equal(posts[0].get('action'),'save_policy');assert.equal(posts[0].get('minimum_memory_mb'),'3072');assert.equal(posts[0].get('requires_reinstall'),null);assert.equal(posts[0].get('template_key'),'paper:1.2:1');assert.equal(posts[0].get('csrf'),'release-picker-test');
+  posts.length=0;await page.goto(url);
+  await Promise.all([page.waitForNavigation(),policy.getByRole('button',{name:'Mentés',exact:true}).click()]);assert.equal(posts[0].get('requires_reinstall'),'1');
+  posts.length=0;await page.goto(url);
   await page.selectOption('#template-game','cs2');
   assert(await page.locator('[data-custom-template]').isVisible());assert(!(await type.isVisible()));
   assert.equal(await page.locator('[name=template_game]').inputValue(),'cs2');
