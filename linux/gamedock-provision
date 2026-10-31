@@ -3,6 +3,7 @@
 import base64
 import fcntl
 import hashlib
+import importlib.machinery
 import importlib.util
 from pathlib import Path
 import json
@@ -22,6 +23,11 @@ CONFIG='/etc/gamedock/servers.json'
 JOBS='/var/lib/gamedock/provision/jobs'
 SELF='/usr/local/sbin/gamedock-provision'
 GAMES=('minecraft','cs16','cs2','fivem','css')
+
+def storage_module():
+    path=Path(__file__).resolve().parent/'gamedock-storage'
+    if not path.is_file():path=Path('/usr/local/sbin/gamedock-storage')
+    loader=importlib.machinery.SourceFileLoader('provision_storage',str(path));spec=importlib.util.spec_from_loader(loader.name,loader);module=importlib.util.module_from_spec(spec);loader.exec_module(module);return module
 
 def secure(path, directory=False):
     info=os.lstat(path)
@@ -61,6 +67,8 @@ def public(job):return {name:job[name] for name in ('state','message')}
 
 def validate(payload,cfg):
     job_path(payload['job'])
+    limit=payload.get('disk_limit_mb',0)
+    if type(limit) is not int or not 0<=limit<=1073741824:raise ValueError('Invalid disk limit')
     unit=payload['unit'];game=payload['game'];folder=payload['folder'];source=payload['source']
     if not isinstance(unit,str) or not re.fullmatch(r'[A-Za-z0-9_][A-Za-z0-9_-]*(?:\.service)?',unit):raise ValueError('Invalid unit')
     if not isinstance(game,str) or not re.fullmatch(r'[a-z][a-z0-9_-]{0,31}',game) or not isinstance(folder,str) or not re.fullmatch(r'[a-zA-Z0-9_-]{1,120}',folder):raise ValueError('Invalid game/folder')
@@ -100,7 +108,7 @@ def create(payload):
         path=job_path(payload['job'])
         if os.path.exists(path):
             old=read_job(payload['job'])
-            if any(old['request'].get(k)!=payload.get(k) for k in ('job','unit','game','source','folder','port','minecraft_type')):raise ValueError('Job request mismatch')
+            if any(old['request'].get(k,0 if k=='disk_limit_mb' else None)!=payload.get(k,0 if k=='disk_limit_mb' else None) for k in ('job','unit','game','source','folder','port','minecraft_type','disk_limit_mb')):raise ValueError('Job request mismatch')
             return public(old)
         cfg=config()
         game=payload.get('game','')
@@ -192,6 +200,7 @@ def worker(job_id):
         job['state']='running';job['message']='A szerverfájlok másolása folyamatban van.';atomic(path,job)
         stage=os.path.dirname(data['target'])+'/.gamedock-copy-'+job_id
         os.mkdir(stage,0o700);os.chown(stage,data['uid'],data['gid'])
+        if data.get('disk_limit_mb',0):storage_module().attach(data['unit'],stage,data['disk_limit_mb'])
         # No shell and no root copy: template symlinks cannot expose root-only files.
         subprocess.run(['/usr/bin/python3','-I',SELF,'copy',data['source'],stage,base64.b64encode(json.dumps({'game':data['game'],'port':data['port'],'minecraft':bool(data.get('minecraft_type')),'eula':bool(data.get('eula_accepted'))}).encode()).decode()],check=True,timeout=3600,capture_output=True,start_new_session=True,preexec_fn=runtime.drop(pwd.getpwnam(data['user'])),env=runtime.environment(pwd.getpwnam(data['user'])))
         lock=locked()
@@ -201,7 +210,7 @@ def worker(job_id):
             if cfg.get('_copy_jobs',{}).get(data['unit'])!=job_id:raise ValueError('Reservation changed')
             os.chmod(stage,0o700)
             os.rename(stage,data['target'])
-            cfg[data['unit']]={'launch':True,'user':data['user'],'directory':data['target'],'provision_job':job_id,'port':data['port'],'game':data['game'],'minecraft_type':data.get('minecraft_type'),'template_key':data.get('template_key'),'template_version':data.get('template_version')}
+            cfg[data['unit']]={'launch':True,'user':data['user'],'directory':data['target'],'provision_job':job_id,'port':data['port'],'game':data['game'],'disk_limit_mb':data.get('disk_limit_mb',0),'minecraft_type':data.get('minecraft_type'),'template_key':data.get('template_key'),'template_version':data.get('template_version')}
             cfg['_copy_jobs'].pop(data['unit'],None);atomic(CONFIG,cfg)
             job['state']='ready';job['message']='A fájlmásolás kész. A szerver indítható.';atomic(path,job)
         finally:fcntl.flock(lock,fcntl.LOCK_UN);lock.close()

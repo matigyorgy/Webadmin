@@ -47,7 +47,7 @@ final class PanelController
                     if (isset($_GET['server'])) {
                         $s=$service->find($user,Validation::id($_GET['server']));
                         $host=$s['public_host'] ?: $s['ssh_host'];
-                        $selected=['minecraft_type'=>$s['minecraft_type'] ?? '', 'minecraft_version'=>$s['minecraft_version'] ?? '', 'address'=>str_contains($host,':') ? '['.$host.']' : $host,'memory_limit_mb'=>$s['memory_limit_mb'] ?? 0,'cpu_limit_percent'=>$s['cpu_limit_percent'] ?? 0,'id'=>$s['id'],'name'=>$s['name'],'game_name'=>$gameNames[$s['game']] ?? $s['game'],'node_name'=>$s['node_name'],'port'=>$s['port'] ?? null,'provision_state'=>$s['provision_state'] ?? 'ready'];
+                        $selected=['minecraft_type'=>$s['minecraft_type'] ?? '', 'minecraft_version'=>$s['minecraft_version'] ?? '', 'address'=>str_contains($host,':') ? '['.$host.']' : $host,'disk_limit_mb'=>$s['disk_limit_mb'] ?? 0,'memory_limit_mb'=>$s['memory_limit_mb'] ?? 0,'cpu_limit_percent'=>$s['cpu_limit_percent'] ?? 0,'id'=>$s['id'],'name'=>$s['name'],'game_name'=>$gameNames[$s['game']] ?? $s['game'],'node_name'=>$s['node_name'],'port'=>$s['port'] ?? null,'provision_state'=>$s['provision_state'] ?? 'ready'];
                         if (($s['provision_state'] ?? 'ready')==='ready') $console=['id'=>$s['id'],'name'=>$s['name'],'logs'=>$flash['logs'] ?? 'A napló a Frissítés gombbal kérdezhető le.'];
                         $history=$service->audit($user,(int)$s['id']);
                     } elseif ($page==='history') $history=$service->audit($user);

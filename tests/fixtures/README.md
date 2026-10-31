@@ -55,3 +55,13 @@ docker run --rm --cap-add SYS_NICE --cap-add DAC_READ_SEARCH --entrypoint /usr/b
 ```
 
 No ports need to be published. The test may wait up to 75 seconds for the actual cron expiry pass. It checks TLS upload/download, chroot isolation, unique usernames, hashed secrets, success-only login timestamps, maintenance session termination, actual 15-day cron expiry and repeatable setup. `ftp_ssh_setup.py` plus `ftp_ssh.php` additionally exercise the actual phpseclib SSH stdin transport using a disposable key volume shared only by the two test containers; remove the containers and key volume after this test.
+
+Storage tests:
+
+```sh
+python3 -m unittest discover -s tests -p 'test_storage.py'
+php tests/fixtures/storage.php > /tmp/gamedock-storage.html
+node tests/browser_storage.cjs /tmp/gamedock-storage.html
+```
+
+The Linux integration check runs against the disposable SSH image and measures a real directory with `du`. Its container uses overlay storage, so it also verifies that a positive quota is refused without changing server configuration or files when project quotas are unavailable. It cannot prove kernel enforcement: that requires a dedicated ext4/XFS test volume mounted with project quotas enabled. Never test by changing quotas on production game directories.

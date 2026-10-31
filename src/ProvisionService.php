@@ -15,7 +15,7 @@ final class ProvisionService
     public function enqueue(array $actor,int $id): array
     {
         $s=$this->server($actor,$id);
-        try { $result=$this->ssh->provision($s,'create',['job'=>$s['provision_job'],'unit'=>$s['unit_name'],'game'=>$s['game'], 'source'=>$s['install_source'],'folder'=>$s['install_folder'],'port'=>(int)$s['port'],'template_key'=>$s['template_key'] ?? null,'template_version'=>$s['template_version'] ?? null,'minecraft_type'=>$s['minecraft_type'] ?? null,'eula_accepted'=>!empty($s['minecraft_type'])]); }
+        try { $result=$this->ssh->provision($s,'create',['job'=>$s['provision_job'],'unit'=>$s['unit_name'],'game'=>$s['game'], 'source'=>$s['install_source'],'folder'=>$s['install_folder'],'disk_limit_mb'=>(int)($s['disk_limit_mb'] ?? 0),'port'=>(int)$s['port'],'template_key'=>$s['template_key'] ?? null,'template_version'=>$s['template_version'] ?? null,'minecraft_type'=>$s['minecraft_type'] ?? null,'eula_accepted'=>!empty($s['minecraft_type'])]); }
         catch (RuntimeException $e) {
             if ($e->getCode()!==422) throw $e;
             $result=['state'=>'failed','message'=>$e->getMessage()];

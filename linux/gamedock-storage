@@ -1,0 +1,235 @@
+#!/usr/bin/python3 -I
+"""Per-directory ext4/XFS project quotas and asynchronous allocated-space measurements."""
+import contextlib,ctypes,errno,fcntl,importlib.machinery,importlib.util,json,os,pwd,secrets,stat,struct,subprocess,sys,time
+from pathlib import Path
+path=Path(__file__).resolve().parent/'gamedock-provision'
+if not path.is_file():path=Path('/usr/local/sbin/gamedock-provision')
+loader=importlib.machinery.SourceFileLoader('storage_provision',str(path));spec=importlib.util.spec_from_loader(loader.name,loader);p=importlib.util.module_from_spec(spec);loader.exec_module(p)
+ROOT=Path('/var/lib/gamedock/storage');CONTROL=Path('/run/gamedock-control');SELF='/usr/local/sbin/gamedock-storage';MAX_MB=1073741824
+GET_ATTR=0x801c581f;SET_ATTR=0x401c5820;INHERIT=0x200
+
+class Quota(ctypes.Structure):
+    _fields_=[(key,ctypes.c_uint64) for key in ('hard','soft','space','ihard','isoft','inodes','btime','itime')]+[('valid',ctypes.c_uint32)]
+class Info(ctypes.Structure):
+    _fields_=[('bgrace',ctypes.c_uint64),('igrace',ctypes.c_uint64),('flags',ctypes.c_uint32),('valid',ctypes.c_uint32)]
+
+def validate_mb(value):
+    if type(value) is not int or not 0<=value<=MAX_MB:raise ValueError('Invalid disk limit')
+    return value
+
+def unit_name(unit):
+    import re
+    if not isinstance(unit,str) or not re.fullmatch(r'[A-Za-z0-9_][A-Za-z0-9_-]*(?:\.service)?',unit):raise ValueError('Invalid server')
+    return unit
+
+def prepare():
+    for directory in (ROOT,ROOT/'usage',CONTROL):directory.mkdir(mode=0o700,parents=True,exist_ok=True);p.secure(str(directory),True)
+
+@contextlib.contextmanager
+def unit_lock(unit):
+    prepare();unit_name(unit)
+    with open(CONTROL/(unit+'.lock'),'a') as handle:fcntl.flock(handle,fcntl.LOCK_EX|fcntl.LOCK_NB);yield
+
+@contextlib.contextmanager
+def registry_lock():
+    prepare()
+    with open(ROOT/'projects.lock','a') as handle:fcntl.flock(handle,fcntl.LOCK_EX);yield
+
+def read(path,default):
+    try:p.secure(str(path));return json.loads(path.read_text())
+    except FileNotFoundError:return default
+
+def instance(unit):
+    unit_name(unit);cfg=p.config();server=cfg[unit];target=Path(server['directory']);account=pwd.getpwnam(server['user']);base=Path(cfg['_provision']['target_root'])
+    if not server.get('launch') or account.pw_uid==0 or target.parent!=base or target.is_symlink() or target.resolve()!=target or not target.is_dir():raise ValueError('Unsafe storage instance')
+    p.secure(str(base),True);return cfg,server,account,target
+
+def module(name):
+    path=Path(__file__).resolve().parent/name
+    if not path.is_file():path=Path('/usr/local/sbin')/name
+    loader=importlib.machinery.SourceFileLoader('storage_'+name.replace('-','_'),str(path));spec=importlib.util.spec_from_loader(loader.name,loader);value=importlib.util.module_from_spec(spec);loader.exec_module(value);return value
+
+def mount_info(path):
+    result=subprocess.run(['/usr/bin/findmnt','-J','-T',str(path),'-o','TARGET,SOURCE,FSTYPE,OPTIONS'],check=True,capture_output=True,text=True,timeout=5)
+    values=json.loads(result.stdout)['filesystems']
+    if len(values)!=1:raise ValueError('Storage mount not found')
+    mount=values[0]
+    if mount['fstype'] not in ('ext4','xfs') or not ({'prjquota','pquota'} & set(mount['options'].split(','))):raise ValueError('Project quota support required on the server filesystem')
+    return mount
+
+def quota_call(mount,command,project,data):
+    libc=ctypes.CDLL(None,use_errno=True);cmd=((command<<8)|2)&0xffffffff
+    if hasattr(libc,'quotactl_fd'):
+        descriptor=os.open(mount['target'],os.O_RDONLY|os.O_DIRECTORY)
+        try:
+            method=libc.quotactl_fd;method.argtypes=[ctypes.c_int,ctypes.c_uint,ctypes.c_int,ctypes.c_void_p];method.restype=ctypes.c_int
+            result=method(descriptor,cmd,project,ctypes.byref(data))
+        finally:os.close(descriptor)
+    else:
+        source=mount['source'].split('[',1)[0]
+        if not source.startswith('/dev/'):raise ValueError('A block-device project quota filesystem is required')
+        method=libc.quotactl;method.argtypes=[ctypes.c_int,ctypes.c_char_p,ctypes.c_int,ctypes.c_void_p];method.restype=ctypes.c_int
+        result=method(cmd,os.fsencode(source),project,ctypes.byref(data))
+    if result!=0:
+        number=ctypes.get_errno();raise OSError(number,os.strerror(number))
+    return data
+
+def quota_info(mount):return quota_call(mount,0x800005,0,Info())
+def get_quota(mount,project):return quota_call(mount,0x800007,project,Quota())
+def set_quota(mount,project,limit):
+    value=Quota();value.hard=limit*1024;value.valid=1;quota_call(mount,0x800008,project,value)
+
+def attrs(fd):
+    buffer=bytearray(28);fcntl.ioctl(fd,GET_ATTR,buffer,True);return list(struct.unpack('=IIIII8s',buffer))
+def set_attrs(fd,project,directory):
+    value=attrs(fd);value[3]=project
+    if directory:value[0]|=INHERIT
+    fcntl.ioctl(fd,SET_ATTR,struct.pack('=IIIII8s',*value))
+def project_id(path):
+    descriptor=os.open(path,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW)
+    try:return attrs(descriptor)[3]
+    finally:os.close(descriptor)
+
+def owner_key(path,project):return str(os.stat(path).st_dev)+':'+str(project)
+def owned(path,project,unit,registry=None):
+    entry=(registry if registry is not None else read(ROOT/'projects.json',{})).get(owner_key(path,project))
+    return bool(entry and entry['unit']==unit)
+
+def allocate(path,unit,mount):
+    with registry_lock():
+        registry=read(ROOT/'projects.json',{})
+        for _ in range(100):
+            project=1000000000+secrets.randbelow(1000000000);key=owner_key(path,project)
+            if key in registry:continue
+            try:value=get_quota(mount,project)
+            except OSError as error:
+                if error.errno!=errno.ESRCH:raise
+                value=Quota()
+            if any((value.hard,value.soft,value.space,value.ihard,value.isoft,value.inodes)):continue
+            # Avoid identifiers explicitly reserved by other XFS/ext4 administrators.
+            reserved=False
+            for mapping in ('/etc/projects','/etc/projid'):
+                try:
+                    for line in Path(mapping).read_text().splitlines():
+                        if not line.startswith('#') and str(project) in line.split(':'):reserved=True;break
+                except FileNotFoundError:pass
+            if reserved:continue
+            registry[key]={'unit':unit,'created_at':int(time.time()),'initialized':False};p.atomic(str(ROOT/'projects.json'),registry);return project
+        raise ValueError('No free storage project identifier')
+
+def tag_tree(path,project,unit):
+    device=os.stat(path).st_dev;registry=read(ROOT/'projects.json',{})
+    # Validate the whole tree first. Never follow symlinks, cross mounts, or replace foreign projects.
+    for apply in (False,True):
+        for directory,dirs,files,fd in os.fwalk(path,follow_symlinks=False):
+            if os.fstat(fd).st_dev!=device:raise ValueError('Nested filesystems cannot be assigned a server quota')
+            current=attrs(fd)[3]
+            if current and not owned(path,current,unit,registry):raise ValueError('Foreign storage project detected')
+            if apply:set_attrs(fd,project,True)
+            for name in dirs+files:
+                mode=os.stat(name,dir_fd=fd,follow_symlinks=False).st_mode
+                if not(stat.S_ISDIR(mode) or stat.S_ISREG(mode)):raise ValueError('Storage quota requires ordinary files and directories')
+            for name in files:
+                descriptor=os.open(name,os.O_RDONLY|os.O_NOFOLLOW|os.O_NONBLOCK,dir_fd=fd)
+                try:
+                    if os.fstat(descriptor).st_dev!=device:raise ValueError('Nested filesystem file')
+                    current=attrs(descriptor)[3]
+                    if current and not owned(path,current,unit,registry):raise ValueError('Foreign storage project detected')
+                    if apply:set_attrs(descriptor,project,False)
+                finally:os.close(descriptor)
+
+def initialized(path,project):
+    return bool(read(ROOT/'projects.json',{}).get(owner_key(path,project),{}).get('initialized'))
+
+def mark_initialized(path,project):
+    with registry_lock():
+        registry=read(ROOT/'projects.json',{});registry[owner_key(path,project)]['initialized']=True;p.atomic(str(ROOT/'projects.json'),registry)
+
+def attach(unit,path,limit):
+    validate_mb(limit);unit_name(unit)
+    if limit==0:return None
+    prepare();mount=mount_info(path);quota_info(mount);project=allocate(path,unit,mount)
+    # Existing snapshots are first accounted without a limit; a too-large snapshot is rejected before publish.
+    set_quota(mount,project,0);tag_tree(path,project,unit)
+    value=get_quota(mount,project)
+    if value.space>limit*1024**2:raise ValueError('Disk limit is smaller than occupied storage')
+    set_quota(mount,project,limit);mark_initialized(path,project);return project
+
+def apply_limit(unit,limit):
+    validate_mb(limit)
+    with unit_lock(unit):
+        cfg,server,account,target=instance(unit)
+        launch=module('gamedock-launch')
+        metadata=launch.metadata(unit);metadata['_name']=unit
+        if launch.active(metadata,account):raise ValueError('Stop the server before changing its disk limit')
+        job=read(Path('/var/lib/gamedock/automation/units')/unit/'job.json',{})
+        if job.get('state') in ('queued','running'):raise ValueError('A backup or restore is running')
+        version=cfg.get('_version_jobs',{}).get(unit)
+        if version and p.read_job(version).get('state') in ('queued','running'):raise ValueError('Version change is running')
+        module('gamedock-ftp').disconnect_unit(unit)
+        current=0
+        try:current=project_id(target)
+        except OSError:
+            if limit:raise ValueError('Project quota support required on the server filesystem')
+        if current and owned(target,current,unit):
+            mount=mount_info(target);quota_info(mount)
+            if limit and not initialized(target,current):tag_tree(target,current,unit)
+            value=get_quota(mount,current)
+            if limit and value.space>limit*1024**2:raise ValueError('Disk limit is smaller than occupied storage')
+            set_quota(mount,current,limit)
+            if limit:mark_initialized(target,current)
+        elif limit:
+            attach(unit,target,limit)
+        with p.locked():
+            cfg=p.config();cfg[unit]['disk_limit_mb']=limit;p.atomic(p.CONFIG,cfg)
+        (ROOT/'usage'/(unit+'.json')).unlink(missing_ok=True)
+        return {'disk_limit_mb':limit,'enforced':bool(limit)}
+
+def usage_worker(unit):
+    prepare();path=ROOT/'usage'/(unit_name(unit)+'.json')
+    # The spawning request holds this lock until its worker identity is persisted.
+    with open(ROOT/'usage'/(unit+'.lock'),'a') as handle:
+        fcntl.flock(handle,fcntl.LOCK_EX)
+        cfg,server,account,target=instance(unit);inode=os.stat(target).st_ino
+        try:
+            result=subprocess.run(['/usr/bin/du','-x','-s','-B1','--',str(target)],capture_output=True,text=True,timeout=300,preexec_fn=p.runtime.drop(account),env=p.runtime.environment(account),check=True)
+            size=int(result.stdout.split()[0]);value={'bytes':size,'measured_at':int(time.time()),'state':'ready','inode':inode}
+        except Exception:value={'bytes':None,'measured_at':int(time.time()),'state':'failed','inode':inode}
+        if os.stat(target).st_ino!=inode:value={'bytes':None,'measured_at':0,'state':'measuring','inode':os.stat(target).st_ino}
+        p.atomic(str(path),value)
+
+def metrics(unit):
+    prepare();cfg,server,account,target=instance(unit);limit=server.get('disk_limit_mb',0);path=ROOT/'usage'/(unit+'.json');value=read(path,{})
+    enforced=False;error=''
+    try:
+        project=project_id(target)
+        if project and owned(target,project,unit):
+            mount=mount_info(target);quota_info(mount);quota=get_quota(mount,project)
+            return {'disk_bytes':int(quota.space),'disk_limit_mb':int(quota.hard//1024),'disk_enforced':bool(quota.hard),'disk_state':'ready'}
+        if limit:error='Project quota is not active'
+    except (OSError,ValueError,subprocess.SubprocessError,KeyError):
+        if limit:error='Project quota is not active'
+    if value.get('inode')!=os.stat(target).st_ino:value={}
+    running=p.runtime.alive(value.get('worker'),0)
+    if not running and time.time()-value.get('measured_at',0)>=30:
+        with open(ROOT/'usage'/(unit+'.lock'),'a') as handle:
+            try:fcntl.flock(handle,fcntl.LOCK_EX|fcntl.LOCK_NB)
+            except BlockingIOError:pass
+            else:
+                latest=read(path,{})
+                if not p.runtime.alive(latest.get('worker'),0):
+                    with open(ROOT/'usage'/(unit+'.log'),'ab') as output:child=subprocess.Popen(['/usr/bin/python3','-I',SELF,'usage-worker',unit],stdin=subprocess.DEVNULL,stdout=output,stderr=output,start_new_session=True,env=p.runtime.environment())
+                    latest.update(worker=p.runtime.identity(child.pid),inode=os.stat(target).st_ino);p.atomic(str(path),latest)
+    return {'disk_bytes':value.get('bytes'),'disk_limit_mb':limit,'disk_enforced':enforced,'disk_state':'unsupported' if error else value.get('state','measuring')}
+
+if __name__=='__main__':
+    os.umask(0o077)
+    try:
+        if os.geteuid()!=0:raise ValueError('Root helper required')
+        action=sys.argv[1];unit=unit_name(sys.argv[2])
+        if action=='set' and len(sys.argv)==4:result=apply_limit(unit,int(sys.argv[3]))
+        elif action=='metrics' and len(sys.argv)==3:result=metrics(unit)
+        elif action=='usage-worker' and len(sys.argv)==3:usage_worker(unit);result=None
+        else:raise ValueError('Invalid storage operation')
+        if result is not None:print(json.dumps(result))
+    except Exception as error:print(str(error) if isinstance(error,ValueError) else 'Storage helper failed: '+type(error).__name__,file=sys.stderr);sys.exit(1)

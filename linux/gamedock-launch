@@ -1,5 +1,6 @@
 #!/usr/bin/python3
 """Run the admin command directly as the pinned game user. No service manager."""
+import importlib.machinery
 import contextlib
 import base64
 import fcntl
@@ -145,11 +146,15 @@ def execute(argv,lock_held=False):
                 if version['state'] in ('queued','running'):raise ValueError('Version change is running; startup is locked')
         if action=='status':print('active' if active(data,account) else 'inactive');return
         if action=='metrics':
+            storage_path=Path(__file__).resolve().parent/'gamedock-storage'
+            if not storage_path.is_file():storage_path=Path('/usr/local/sbin/gamedock-storage')
+            storage_loader=importlib.machinery.SourceFileLoader('launch_storage',str(storage_path));storage_spec=importlib.util.spec_from_loader(storage_loader.name,storage_loader);storage=importlib.util.module_from_spec(storage_spec);storage_loader.exec_module(storage)
+            disk=storage.metrics(name)
             running=active(data,account)
-            if not running:print(json.dumps({'state':'inactive','cpu_percent':0,'memory_bytes':0,'limits_enforced':False}));return
+            if not running:print(json.dumps(dict(disk,state='inactive',cpu_percent=0,memory_bytes=0,limits_enforced=False)));return
             records=descendants(data,account);before=runtime.usage_snapshot(name,records,data.get('cgroup',False));stamp=time.monotonic();time.sleep(.2)
             after=runtime.usage_snapshot(name,descendants(data,account),data.get('cgroup',False));elapsed=time.monotonic()-stamp
-            print(json.dumps({'state':'active','cpu_percent':round(max(0,after[0]-before[0])/elapsed*100,1),'memory_bytes':after[1],'limits_enforced':after[2]}));return
+            print(json.dumps(dict(disk,state='active',cpu_percent=round(max(0,after[0]-before[0])/elapsed*100,1),memory_bytes=after[1],limits_enforced=after[2])));return
         if action=='logs':
             secure_directory(LOGS,0o700)
             try:

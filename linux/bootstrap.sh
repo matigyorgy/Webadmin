@@ -17,7 +17,7 @@ if [ "$3" = "1" ]; then
   STEP='APT csomaglista frissitese';apt-get update
   FTP_PREEXISTED=0
   if dpkg-query -W -f='${Status}' pure-ftpd 2>/dev/null | grep -q '^install ok installed$'; then FTP_PREEXISTED=1; fi
-  STEP='Alapcsomagok telepitese';apt-get install -y python3 sudo passwd git default-jdk-headless ca-certificates tar unzip cron tzdata pure-ftpd openssl
+  STEP='Alapcsomagok telepitese';apt-get install -y python3 sudo passwd git default-jdk-headless ca-certificates tar unzip cron tzdata pure-ftpd openssl util-linux
   if [ "$FTP_PREEXISTED" = "0" ]; then
    service pure-ftpd stop
    update-rc.d pure-ftpd disable

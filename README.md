@@ -100,6 +100,14 @@ Mentéskor az indítóparancsba az `export GAMEDOCK_MEMORY_MB=… GAMEDOCK_CPU_P
 
 A segédprogram indításkor automatikusan beállítja a saját root-tulajdonú **cgroup v2** csoportját és a CPU/memory vezérlőket. A runner és minden gyermekfolyamata ebbe kerül még a játékfelhasználóra váltás előtt; systemd-szolgáltatás nem kell. A játék nem írhatja felül a limitjeit. A memória-limit mellett a swap limitje 0. Korlátozás kérésekor írhatatlan/hiányzó cgroup v2 vezérlő esetén az indítás hibával leáll: korlátozás nélkül nem indul el. Konténeres/VPS tárhelyen ezt a gazdagépnek is támogatnia kell. Korlátlan futtatás cgroup nélkül is működik; ilyenkor a folyamatfa CPU-idejéből és RSS memóriájából számítjuk a használatot, ami becslés (megosztott lapok többször számíthatnak).
 
+### Tárhelyhasználat és tárhelykorlát
+
+A kliens **Szerver áttekintés** oldalán a foglalt tárhely látható. Adminisztráció → **Játékszerverek** alatt szerverenként megadható a maximális méret MiB-ban; **0 = korlátlan**. A mérés az aktív szervermappa lemezfoglalását mutatja, ezért nem a fájlok logikai méretét méri. A leállított szerverre vonatkozó mérés legfeljebb 30 másodpercenként frissül. A tömörített mentések és a template-ek a korláton kívül maradnak.
+
+A valódi kemény korláthoz a Linux-gép szerverkönyvtárát tartalmazó ext4 vagy XFS fájlrendszert projektkvótákkal kell csatolni (`prjquota`/`pquota`). Ezt a rendszergazdának kell előzetesen beállítania és ellenőriznie; a GameDock nem csatol újra fájlrendszert és nem változtat rendszerindítási beállítást. Kvótatámogatás nélkül a panel továbbra is megjeleníti a mért használatot, de jelzi, hogy a pozitív korlát nem érvényesíthető, és elutasítja annak beállítását. Kvótán kívüli vagy nem megfelelő fájlrendszeren a korlátozás tényleges betartása nem garantálható.
+
+A korlát módosításakor állítsd le a szervert. A beállítás nem lehet kisebb a már használt tárhelynél; FTP-kapcsolatok a módosítás idejére megszakadnak. Újratelepítés, verzióváltás és mentés-visszaállítás külön átmeneti korlátot kap, hogy fájlcserekor se lehessen a beállított méretet megkerülni. A feladatnapló és a biztonsági mentések a játékmappán kívül vannak. Linux-segédprogram frissítéséhez futtasd újra az admin **Automatikus Linux-telepítés** műveletét; az adatbázis oszlopát az **Új szerverfunkciók engedélyezése** művelet frissíti.
+
 Új szervernél a **szerver neve automatikusan a kiválasztott játék neve**, a **Szerverazonosító** pedig automatikusan generált, egyedi, nyolc számjegyű belső Linux-azonosító. A korábban létrehozott azonosítókat megőrizzük. A célmappa továbbra is az adatbázisbeli számazonosítót használja.
 
 ## Minecraft-template törlése és verzióváltás

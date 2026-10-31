@@ -82,7 +82,7 @@ final class AdminService
                 $startupEnabled=(new SchemaUpdater($this->db))->startupEnabled();
                 if ($startup!=='' && !$startupEnabled) throw new RuntimeException('Először kattints az Indítóparancsok engedélyezése adatbázisfrissítő gombra.');
                 $game=Validation::text($data,'game'); $unit=$id ? Validation::text($data,'unit_name') : (string)random_int(10000000,99999999);
-                $limits=ResourceLimits::validate($data);
+                $limits=ResourceLimits::validate($data);$disk=StorageService::limit($data['disk_limit_mb'] ?? 0);
                 $requestedPort=trim((string)($data['port'] ?? ''));
                 if ($requestedPort!=='' && !preg_match('/\A25[0-9]{3}\z/',$requestedPort)) throw new RuntimeException('A játékport 25000–25999 közötti egész szám legyen.');
                 $profile=(new GameRegistry($this->db))->get($game);
@@ -92,6 +92,9 @@ final class AdminService
                 if (!preg_match('/\A[a-zA-Z0-9_][a-zA-Z0-9_-]*(?:\.service)?\z/',$unit)) throw new RuntimeException('Érvénytelen játéktípus vagy szerverazonosító.');
                 if (!$id && !(new SchemaUpdater($this->db))->provisionEnabled()) throw new RuntimeException('Először engedélyezd az új szerverfunkciókat az adatbázisfrissítő gombbal.');
                 $existing=$id ? $this->find($actor,'servers',$id) : null;
+                if($existing && !array_key_exists('disk_limit_mb',$data))$disk=StorageService::limit($existing['disk_limit_mb'] ?? 0);
+                if($existing && (int)($existing['disk_limit_mb'] ?? 0)!==$disk && in_array($existing['provision_state'] ?? '',['queued','running'],true))throw new RuntimeException('Folyamatban lévő fájlmásolás alatt a tárhelylimit nem módosítható.');
+                if($disk && !(new SchemaUpdater($this->db))->storageEnabled())throw new RuntimeException('Először engedélyezd az új szerverfunkciókat a tárhelylimit adatbázisfrissítéséhez.');
                 if ($id && (new SchemaUpdater($this->db))->versionsEnabled() && in_array($this->db->query('SELECT state FROM server_version_jobs WHERE server_id=?',[$id])->fetchColumn(),['queued','running'],true)) throw new RuntimeException('A verzióváltás befejezéséig a szerver nem módosítható.');
                 if ((!$id || !empty($existing['provision_job'])) && $startup==='') $startup=$profile['startup_command'];
                 if ($existing && !empty($existing['install_folder']) && ($existing['unit_name']!==$unit || (int)$existing['node_id']!==(int)($data['node_id'] ?? 0))) throw new RuntimeException('Másolt szervernél a Linux-gép és az unitnév nem módosítható. Költöztetéshez hozz létre új példányt.');
@@ -109,6 +112,7 @@ final class AdminService
                 $serverId=$id ?? (int)$this->db->lastInsertId();
                 if ((new SchemaUpdater($this->db))->provisionEnabled()) $this->db->query('UPDATE servers SET memory_limit_mb=?,cpu_limit_percent=? WHERE id=?',[$limits['memory_limit_mb'],$limits['cpu_limit_percent'],$serverId]);
                 elseif ($limits['memory_limit_mb'] || $limits['cpu_limit_percent']) throw new RuntimeException('Először engedélyezd az új szerverfunkciókat az adatbázisfrissítő gombbal.');
+                if((new SchemaUpdater($this->db))->storageEnabled())$this->db->query('UPDATE servers SET disk_limit_mb=? WHERE id=?',[$disk,$serverId]);
                 if ($startupEnabled) $this->db->query('UPDATE servers SET startup_command=? WHERE id=?',[$startup==='' ? null : $startup,$serverId]);
                 if (!$id || (($existing['provision_state'] ?? '')==='failed' && !empty($existing['provision_job']))) {
                     $source=trim((string)($data['install_source'] ?? '')) ?: $profile['template_path'];

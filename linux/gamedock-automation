@@ -211,6 +211,7 @@ def worker(unit,key):
             else:
                 ftp=load('gamedock-ftp');ftp.disconnect_unit(unit)
                 stage=Path(tempfile.mkdtemp(prefix='.gamedock-maintenance-',dir=target.parent));os.chown(stage,account.pw_uid,account.pw_gid)
+                if operation=='restore' and s.get('disk_limit_mb',0):p.storage_module().attach(unit,stage,s['disk_limit_mb'])
                 if operation=='backup':
                     resume=bool(running(unit,account))
                     if resume:power(unit,'stop',panel)

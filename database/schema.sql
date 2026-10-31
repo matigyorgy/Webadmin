@@ -31,6 +31,7 @@ CREATE TABLE servers (
  minecraft_version VARCHAR(32) NULL,
  template_key VARCHAR(200) NULL,
  template_version VARCHAR(64) NULL,
+ disk_limit_mb INT UNSIGNED NOT NULL DEFAULT 0,
  memory_limit_mb INT UNSIGNED NOT NULL DEFAULT 0,
  cpu_limit_percent INT UNSIGNED NOT NULL DEFAULT 0,
  unit_name VARCHAR(120) NOT NULL,

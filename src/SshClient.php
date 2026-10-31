@@ -58,6 +58,19 @@ PYTHON;
         $ssh=$this->connect($node);$ssh->enableQuietMode();if($action==='releases')$ssh->setTimeout(60);$output=$ssh->exec('/usr/bin/sudo -n /usr/local/sbin/gamedock-templates '.$action.(in_array($action,['delete','custom-save','releases','install','steam-install'],true) ? ' '.escapeshellarg($key) : ''));
         return TemplateCommandResult::parse($output,$ssh->getExitStatus(),(string)$ssh->getStdError(),$ssh->isTimeout());
     }
+    public function storage(array $server,int $limit): array
+    {
+        StorageService::limit($limit);
+        if(!preg_match('/\A[A-Za-z0-9_][A-Za-z0-9_-]*(?:\.service)?\z/',$server['unit_name']))throw new RuntimeException('Érvénytelen szerverazonosító.');
+        $ssh=$this->connect($server);$ssh->enableQuietMode();$ssh->setTimeout(90);
+        $output=$ssh->exec('/usr/bin/sudo -n /usr/local/sbin/gamedock-storage set '.escapeshellarg($server['unit_name']).' '.(string)$limit);
+        if($output===false || $ssh->isTimeout() || $ssh->getExitStatus()!==0){
+            $error=(string)$ssh->getStdError();
+            foreach(['Project quota support required'=>'A tárhelylimithez ext4/XFS fájlrendszer és bekapcsolt projektkvóta szükséges a Linux-gépen (prjquota). A korlát nem lett beállítva.','Stop the server'=>'A tárhelylimit módosítása előtt állítsd le a szervert.','smaller than occupied storage'=>'A megadott maximum kisebb a jelenlegi foglalt tárhelynél. Előbb szabadíts fel helyet.','Foreign storage project'=>'A szervermappa másik projektkvótához tartozik. A meglévő kvótát nem írjuk felül.','backup or restore is running'=>'Mentés vagy visszaállítás közben a tárhelylimit nem módosítható.'] as $needle=>$message)if(str_contains($error,$needle))throw new RuntimeException($message);
+            throw new RuntimeException('A tárhelylimit Linux-oldali beállítása nem igazolt. Ellenőrizd a segédprogram frissítését és a projektkvóta támogatását.');
+        }
+        return json_decode($output,true,512,JSON_THROW_ON_ERROR);
+    }
     public function ftp(array $server,string $action,array $payload=[]): array
     {
         if(!in_array($action,['list','create','delete'],true) || !preg_match('/\A[A-Za-z0-9_][A-Za-z0-9_-]*(?:\.service)?\z/',$server['unit_name']))throw new RuntimeException('Érvénytelen FTP-művelet.');

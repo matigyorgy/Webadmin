@@ -39,11 +39,12 @@ final class AdminController
                 $action=(string)($_POST['action'] ?? '');
                 if ($action==='upgrade_startup' && $section==='servers') {
                     (new SchemaUpdater($this->db))->enableStartup($user);
-                    $_SESSION['admin_notice']='Az új szerverfunkciók, az időzítő és a biztonsági mentés adatbázisfrissítése elkészült. A meglévő szerverek és adatok megmaradtak. Az érintett gépeken frissítsd a Linux-segédprogramokat az Automatikus Linux-telepítéssel.';
+                    $_SESSION['admin_notice']='Az új szerverfunkciók, az időzítő, a biztonsági mentés és a tárhelylimit adatbázisfrissítése elkészült. A meglévő szerverek és adatok megmaradtak. Az érintett gépeken frissítsd a Linux-segédprogramokat az Automatikus Linux-telepítéssel.';
                 } elseif ($action==='save') {
                     $created=$section==='servers' && empty($_POST['id']);
                     $previousServer=$section==='servers' && !empty($_POST['id']) ? $service->find($user,'servers',Validation::id($_POST['id'])) : null;
                     $savedId=$service->save($user,$section,$_POST,function(int $id)use($section,$previousServer,$user){
+                        if($section==='servers' && $previousServer!==null && array_key_exists('disk_limit_mb',$_POST) && (int)($previousServer['disk_limit_mb'] ?? 0)!==StorageService::limit($_POST['disk_limit_mb'] ?? 0))(new StorageService($this->db,$this->ssh))->apply($user,$id,StorageService::limit($_POST['disk_limit_mb'] ?? 0));
                         if($section==='servers' && $previousServer!==null && ($previousServer['provision_state'] ?? 'ready')==='ready' && (int)$previousServer['user_id']!==(int)($_POST['user_id'] ?? 0))(new FtpService($this->db,$this->ssh))->perform($user,$id,'ftp_delete');
                     }); $_SESSION['admin_notice']='A bejegyzést elmentettük.';
                     $savedServer=$section==='servers' ? $service->find($user,'servers',$savedId) : null;
@@ -84,7 +85,7 @@ final class AdminController
             $error=$e instanceof RuntimeException && !$e instanceof PDOException ? $e->getMessage() : 'A mentés nem sikerült. Az e-mail már foglalt lehet, vagy a bejegyzésre más adat hivatkozik.';
             if (($_POST['action'] ?? '')==='save') {
                 $record=[];
-                foreach (['id','email','is_admin','name','ssh_host','public_host','ssh_port','ssh_user','ssh_fingerprint','user_id','node_id','game','unit_name','startup_command','install_source','install_folder','slug','existing_slug','template_path','provider','minecraft_template','memory_limit_mb','cpu_limit_percent','port','custom_template'] as $field) $record[$field]=is_scalar($_POST[$field] ?? null) ? (string)$_POST[$field] : '';
+                foreach (['id','email','is_admin','name','ssh_host','public_host','ssh_port','ssh_user','ssh_fingerprint','user_id','node_id','game','unit_name','startup_command','install_source','install_folder','slug','existing_slug','template_path','provider','minecraft_template','memory_limit_mb','cpu_limit_percent','disk_limit_mb','port','custom_template'] as $field) $record[$field]=is_scalar($_POST[$field] ?? null) ? (string)$_POST[$field] : '';
             }
         }
         try {
@@ -98,8 +99,8 @@ final class AdminController
             if ($record===null && isset($_GET['edit'])) $record=$service->find($user,$section,Validation::id($_GET['edit']));
             if ($record===null && isset($_GET['new'])) $record=[];
         } catch (Throwable $e) { $error=$e instanceof RuntimeException && !$e instanceof PDOException ? $e->getMessage() : 'Az adminlista nem tölthető be.'; }
-        $defaults=['custom_template'=>'','public_host'=>'','memory_limit_mb'=>0,'cpu_limit_percent'=>0,'id'=>'','email'=>'','is_admin'=>'0','name'=>'','ssh_host'=>'','ssh_port'=>'22','ssh_user'=>'gamedock','ssh_fingerprint'=>'','user_id'=>'','node_id'=>'','game'=>'minecraft','unit_name'=>'','startup_command'=>'','install_source'=>'','install_folder'=>'','provision_job'=>'','provision_state'=>'ready','provision_message'=>'','slug'=>'','existing_slug'=>'','template_path'=>'','provider'=>'folder','minecraft_template'=>'','port'=>null];
+        $defaults=['disk_limit_mb'=>0,'custom_template'=>'','public_host'=>'','memory_limit_mb'=>0,'cpu_limit_percent'=>0,'id'=>'','email'=>'','is_admin'=>'0','name'=>'','ssh_host'=>'','ssh_port'=>'22','ssh_user'=>'gamedock','ssh_fingerprint'=>'','user_id'=>'','node_id'=>'','game'=>'minecraft','unit_name'=>'','startup_command'=>'','install_source'=>'','install_folder'=>'','provision_job'=>'','provision_state'=>'ready','provision_message'=>'','slug'=>'','existing_slug'=>'','template_path'=>'','provider'=>'folder','minecraft_template'=>'','port'=>null];
         $this->view->render('admin.tpl',['user'=>$user,'navigation_groups'=>(new ServerService($this->db,$this->ssh))->navigation($user),'csrf'=>$_SESSION['csrf'],'section'=>$section,'error'=>$error,'notice'=>$notice,'rows'=>$rows,
-            'record'=>$record===null ? null : array_replace($defaults,$record),'users'=>$users,'nodes'=>$nodes,'public_key'=>$key,'catalog'=>$catalog,'selected_node'=>$selectedNode,'profiles'=>(new GameRegistry($this->db))->all(),'startup_supported'=>(new SchemaUpdater($this->db))->startupEnabled(),'provision_supported'=>(new SchemaUpdater($this->db))->provisionEnabled(),'automation_supported'=>(new SchemaUpdater($this->db))->automationEnabled(),'games'=>(new GameRegistry($this->db))->names()]);
+            'record'=>$record===null ? null : array_replace($defaults,$record),'users'=>$users,'nodes'=>$nodes,'public_key'=>$key,'catalog'=>$catalog,'selected_node'=>$selectedNode,'profiles'=>(new GameRegistry($this->db))->all(),'startup_supported'=>(new SchemaUpdater($this->db))->startupEnabled(),'provision_supported'=>(new SchemaUpdater($this->db))->provisionEnabled(),'automation_supported'=>(new SchemaUpdater($this->db))->automationEnabled(),'storage_supported'=>(new SchemaUpdater($this->db))->storageEnabled(),'games'=>(new GameRegistry($this->db))->names()]);
     }
 }

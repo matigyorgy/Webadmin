@@ -108,7 +108,8 @@ def worker(job_id):
         with open(p.job_path(job_id)) as stream:job=json.load(stream)
         job.update(state='running',message='Szerveradatok másolása és az új verzió előkészítése.');p.atomic(p.job_path(job_id),job)
     try:
-        account=pwd.getpwnam(job['user'])
+        account=pwd.getpwnam(job['user']);limit=p.config()[job['unit']].get('disk_limit_mb',0)
+        if limit:p.storage_module().attach(job['unit'],job['stage'],limit)
         subprocess.run(['/usr/bin/python3','-I',SELF,'copy',job['source'],job['target'],job['stage'],base64.b64encode(json.dumps({'reinstall':job.get('reinstall',False),'settings':job.get('settings')}).encode()).decode()],check=True,timeout=7200,capture_output=True,preexec_fn=p.runtime.drop(account),env=p.runtime.environment(account))
         with unit_lock(job['unit']),p.locked():
             cfg=p.config()

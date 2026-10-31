@@ -173,7 +173,16 @@ if (resources) {
             const memoryMiB = Number(result.memory_bytes) / 1048576;
             const memoryLimit = Number(resources.dataset.memoryLimit || 0);
             resources.querySelector('[data-memory]').textContent = `${memoryMiB.toFixed(1)} MiB`;
-            for (const [selector, value] of [['[data-cpu-progress]', Number(result.cpu_percent)], ['[data-memory-progress]', memoryLimit > 0 ? memoryMiB / memoryLimit * 100 : 0]]) {
+            const diskLimit=Number(result.disk_limit_mb ?? resources.dataset.diskLimit ?? 0);
+            const diskKnown=typeof result.disk_bytes==='number' && Number.isFinite(result.disk_bytes) && result.disk_bytes>=0;
+            const diskState=result.disk_state || 'missing';
+            const formatStorage=bytes=>bytes>=1073741824 ? (bytes/1073741824).toFixed(2)+' GiB' : bytes>=1048576 ? (bytes/1048576).toFixed(1)+' MiB' : bytes>=1024 ? (bytes/1024).toFixed(1)+' KiB' : bytes+' B';
+            const maximum=diskLimit>0 ? formatStorage(diskLimit*1048576) : 'Korlátlan';
+            resources.querySelector('[data-disk]').textContent=(diskKnown ? formatStorage(result.disk_bytes) : diskState==='measuring' ? 'Mérés folyamatban…' : 'Nem érhető el')+' / '+maximum;
+            resources.querySelector('[data-disk-limit]').textContent=maximum;
+            resources.querySelector('[data-disk-message]').classList.toggle('text-danger',diskState==='unsupported');
+            resources.querySelector('[data-disk-message]').textContent=diskState==='unsupported' ? 'A megadott Linux-tárhelykorlát nem érvényesül. Az admin ellenőrizze a projektkvótát.' : diskState==='missing' ? 'A tárhelyméréshez frissítsd a Linux-segédprogramokat.' : diskState==='failed' ? 'A tárhely nem mérhető; ellenőrizd a szervermappa jogosultságait.' : '';
+            for (const [selector, value] of [['[data-cpu-progress]', Number(result.cpu_percent)], ['[data-memory-progress]', memoryLimit > 0 ? memoryMiB / memoryLimit * 100 : 0], ['[data-disk-progress]', diskKnown && diskLimit>0 ? result.disk_bytes/(diskLimit*1048576)*100 : 0]]) {
                 const progress = resources.querySelector(selector);
                 if (progress) {
                     const percent = Math.max(0, Math.min(100, value));
@@ -186,6 +195,7 @@ if (resources) {
         } catch (error) {
             resources.querySelector('[data-cpu]').textContent = '—';
             resources.querySelector('[data-memory]').textContent = '—';
+            resources.querySelector('[data-disk]').textContent = 'Nem érhető el';
             for (const progress of resources.querySelectorAll('[role=progressbar]')) {progress.setAttribute('aria-valuenow', '0');progress.querySelector('.progress-bar').style.width='0%';}
             resources.querySelector('[data-resource-message]').textContent = 'A használati adatok nem érhetők el. Ellenőrizd a Linux-telepítést és az SSH-kapcsolatot.';
         } finally { readingResources = false; }
