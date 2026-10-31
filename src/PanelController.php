@@ -43,7 +43,13 @@ final class PanelController
                     $navigation=$service->navigation($user);
                     $servers=$service->listing($user,mb_substr(trim((string)($_GET['q'] ?? '')),0,100));
                     $gameNames=(new GameRegistry($this->database))->names();
-                    foreach ($servers as &$server) { $server['game_name']=$gameNames[$server['game']] ?? $server['game']; $server['state']='nincs lekérdezve'; } unset($server);
+                    foreach ($servers as &$server) {
+                        $server['game_name']=$gameNames[$server['game']] ?? $server['game'];
+                        $host=$server['public_host'] ?: $server['ssh_host'];
+                        $server['address']=str_contains($host,':') ? '['.$host.']' : $host;
+                        $server['provision_state']=$server['provision_state'] ?? 'ready';
+                        $server['state']=$server['provision_state']==='ready' ? 'ellenőrzés…' : 'telepítés';
+                    } unset($server);
                     if (isset($_GET['server'])) {
                         $s=$service->find($user,Validation::id($_GET['server']));
                         $host=$s['public_host'] ?: $s['ssh_host'];

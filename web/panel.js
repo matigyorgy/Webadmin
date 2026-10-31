@@ -15,15 +15,34 @@ function showState(element, state) {
     element.textContent = state === 'active' ? 'online' : state === 'inactive' ? 'offline' : state;
     element.className = `badge ${state === 'active' ? 'text-bg-success' : 'text-bg-secondary'}`;
 }
-document.querySelectorAll('[data-status-id]').forEach(button => {
-    button.addEventListener('click', async () => {
-        button.disabled = true;
-        const target = document.getElementById(`state-${button.dataset.statusId}`);
-        try { showState(target, (await queryServer(button.dataset.statusId, 'status')).state); }
-        catch (error) { showState(target, 'nem elérhető'); target.title = error.message; }
-        finally { button.disabled = false; }
-    });
-});
+const serverStates = [...document.querySelectorAll('[data-status-id]')];
+if (serverStates.length) {
+    let refreshing = false;
+    async function refreshServerStates() {
+        if (refreshing || document.hidden) return;
+        refreshing = true;
+        let next = 0;
+        async function worker() {
+            while (next < serverStates.length) {
+                const target = serverStates[next++], id = target.dataset.statusId;
+                if (target.dataset.provisionState !== 'ready') continue;
+                try {
+                    const result = await queryServer(id, 'status');
+                    showState(target, result.state);
+                    target.removeAttribute('title');
+                } catch (error) {
+                    showState(target, 'nem elérhető');
+                    target.title = error.message;
+                }
+            }
+        }
+        try { await Promise.all(Array.from({length: Math.min(3, serverStates.length)}, worker)); }
+        finally { refreshing = false; }
+    }
+    refreshServerStates();
+    setInterval(refreshServerStates, 30000);
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshServerStates(); });
+}
 const consolePanel = document.getElementById('console');
 if (consolePanel) {
     const id = consolePanel.dataset.serverId;

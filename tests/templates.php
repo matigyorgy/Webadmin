@@ -16,9 +16,10 @@ check(str_contains($html, 'autocomplete="current-password"'), 'Login form missin
 check(str_contains($html, 'value="test-token"'), 'CSRF field missing');
 $html = renderCase($view, array_replace($base, ['user'=>['email'=>'test@example.com','is_admin'=>0]]));
 check(str_contains($html, 'Még nincs hozzárendelt szerver.'), 'Empty state missing');
-$server = ['id'=>1,'name'=>'<script>alert(1)</script>','node_name'=>'Linux','game_name'=>'Minecraft','state'=>'active'];
+$server = ['id'=>1,'name'=>'<script>alert(1)</script>','node_name'=>'Linux','address'=>'games.example.test','port'=>25555,'game_name'=>'Minecraft','state'=>'ellenőrzés…','provision_state'=>'ready'];
 $html = renderCase($view, array_replace($base, ['user'=>['email'=>'admin@example.com','is_admin'=>1], 'servers'=>[$server], 'server_count'=>1]));
 check(str_contains($html, 'Összes szerver'), 'Admin heading missing');
+check(str_contains($html,'games.example.test:25555') && str_contains($html,'Kezelés') && !str_contains($html,'Kezelés és konzol') && str_contains($html,'data-status-id="1"'), 'Server list address, management button or automatic state marker missing');
 check(!str_contains($html, '<script>') && str_contains($html, '&lt;script&gt;'), 'HTML escaping failed');
 $html = renderCase($view, array_replace($base, ['user'=>['email'=>'admin@example.com','is_admin'=>1], 'selected'=>['id'=>1,'name'=>'Survival','game_name'=>'Minecraft','node_name'=>'Linux']]));
 check(str_contains($html, 'value="restart"'), 'Server actions missing');

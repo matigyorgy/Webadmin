@@ -65,3 +65,12 @@ node tests/browser_storage.cjs /tmp/gamedock-storage.html
 ```
 
 The Linux integration check runs against the disposable SSH image and measures a real directory with `du`. Its container uses overlay storage, so it also verifies that a positive quota is refused without changing server configuration or files when project quotas are unavailable. It cannot prove kernel enforcement: that requires a dedicated ext4/XFS test volume mounted with project quotas enabled. Never test by changing quotas on production game directories.
+
+Server list UI (PHP/Smarty render and Chromium required):
+
+```sh
+php tests/fixtures/server_list.php > /tmp/gamedock-server-list.html
+node tests/browser_server_list.cjs /tmp/gamedock-server-list.html
+```
+
+This verifies host/port display (including IPv6), automatic online/offline polling, skipped provisioning servers, and the single management action.
