@@ -75,7 +75,7 @@ PYTHON;
     {
         if(!in_array($action,['list','create','delete'],true) || !preg_match('/\A[A-Za-z0-9_][A-Za-z0-9_-]*(?:\.service)?\z/',$server['unit_name']))throw new RuntimeException('Érvénytelen FTP-művelet.');
         $ssh=$this->connect($server);$ssh->enableQuietMode();$ssh->setTimeout(20);
-        // No PTY and no password in process arguments, shell history or sudo command logs.
+        // No PTY; the secret travels only through the SSH channel's stdin, never process arguments.
         if(!$ssh->exec('/usr/bin/sudo -n /usr/local/sbin/gamedock-ftp '.$action.' '.escapeshellarg($server['unit_name']),false))throw new RuntimeException('Az FTP-segédprogram nem indult el.');
         if($action==='create')$ssh->write(json_encode($payload,JSON_THROW_ON_ERROR),SSH2::CHANNEL_EXEC);
         $ssh->sendEOF(SSH2::CHANNEL_EXEC);$output='';

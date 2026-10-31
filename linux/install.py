@@ -30,6 +30,10 @@ def save(path,data,mode):
     finally:
         if os.path.exists(temporary):os.unlink(temporary)
 
+def ftp_sudo_input_tag(version_output):
+    # sudo-rs rejects NOLOG_INPUT. It has no sudo-compatible I/O logging tag.
+    return '' if 'sudo-rs' in version_output.lower() else 'NOLOG_INPUT: '
+
 def ensure_user(name,game=False):
     if not re.fullmatch(r'[a-z_][a-z0-9_-]{0,31}',name) or name=='root':raise ValueError('Non-root Linux username required')
     try:account=pwd.getpwnam(name)
@@ -103,9 +107,12 @@ def install(args):
         descriptor=os.open(log,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600);os.close(descriptor)
     subprocess.run(['/usr/sbin/service',Path(cron).name,'start'],check=True,capture_output=True,timeout=20)
     # Broad helper access is confined by immutable root policy; no shell/systemctl sudo is granted.
+    sudo_info=subprocess.run(['sudo','--version'],capture_output=True,text=True,check=False)
+    sudo_version=(sudo_info.stdout or '')+' '+(sudo_info.stderr or '')
+    ftp_tag=ftp_sudo_input_tag(sudo_version)
     sudoers=(args.ssh_user+' ALL=(root) NOPASSWD: /usr/local/sbin/gamedock-versions create *\n'+args.ssh_user+' ALL=(root) NOPASSWD: /usr/local/sbin/gamedock-versions status *\n'+args.ssh_user+' ALL=(root) NOPASSWD: /usr/local/sbin/gamedock-provision create *\n'+
              args.ssh_user+' ALL=(root) NOPASSWD: /usr/local/sbin/gamedock-provision status *\n'+
-             args.ssh_user+' ALL=(root) NOPASSWD: /usr/local/sbin/gamedock-storage set *\n'+args.ssh_user+' ALL=(root) NOPASSWD: NOLOG_INPUT: /usr/local/sbin/gamedock-ftp list *, /usr/local/sbin/gamedock-ftp create *, /usr/local/sbin/gamedock-ftp delete *\n'+args.ssh_user+' ALL=(root) NOPASSWD: /usr/local/sbin/gamedock-automation list *, /usr/local/sbin/gamedock-automation schedule_add *, /usr/local/sbin/gamedock-automation schedule_delete *, /usr/local/sbin/gamedock-automation backup *, /usr/local/sbin/gamedock-automation restore *, /usr/local/sbin/gamedock-automation backup_delete *, /usr/local/sbin/gamedock-automation ack_restore *, /usr/local/sbin/gamedock-automation policy *, /usr/local/sbin/gamedock-automation clear_schedules *\n'+args.ssh_user+' ALL=(root) NOPASSWD: /usr/local/sbin/gamedock-launch *\n'+args.ssh_user+' ALL=(root) NOPASSWD: /usr/local/sbin/gamedock-templates catalog\n'+args.ssh_user+' ALL=(root) NOPASSWD: /usr/local/sbin/gamedock-templates sync\n'+args.ssh_user+' ALL=(root) NOPASSWD: /usr/local/sbin/gamedock-templates delete *, /usr/local/sbin/gamedock-templates releases *, /usr/local/sbin/gamedock-templates install *, /usr/local/sbin/gamedock-templates custom-save *, /usr/local/sbin/gamedock-templates steam-install cs2, /usr/local/sbin/gamedock-templates steam-install css, /usr/local/sbin/gamedock-templates steam-install cs16\n')
+             args.ssh_user+' ALL=(root) NOPASSWD: '+ftp_tag+'/usr/local/sbin/gamedock-ftp list *, /usr/local/sbin/gamedock-ftp create *, /usr/local/sbin/gamedock-ftp delete *\n'+args.ssh_user+' ALL=(root) NOPASSWD: /usr/local/sbin/gamedock-automation list *, /usr/local/sbin/gamedock-automation schedule_add *, /usr/local/sbin/gamedock-automation schedule_delete *, /usr/local/sbin/gamedock-automation backup *, /usr/local/sbin/gamedock-automation restore *, /usr/local/sbin/gamedock-automation backup_delete *, /usr/local/sbin/gamedock-automation ack_restore *, /usr/local/sbin/gamedock-automation policy *, /usr/local/sbin/gamedock-automation clear_schedules *\n'+args.ssh_user+' ALL=(root) NOPASSWD: /usr/local/sbin/gamedock-launch *\n'+args.ssh_user+' ALL=(root) NOPASSWD: /usr/local/sbin/gamedock-templates catalog\n'+args.ssh_user+' ALL=(root) NOPASSWD: /usr/local/sbin/gamedock-templates sync\n'+args.ssh_user+' ALL=(root) NOPASSWD: /usr/local/sbin/gamedock-templates delete *, /usr/local/sbin/gamedock-templates releases *, /usr/local/sbin/gamedock-templates install *, /usr/local/sbin/gamedock-templates custom-save *, /usr/local/sbin/gamedock-templates steam-install cs2, /usr/local/sbin/gamedock-templates steam-install css, /usr/local/sbin/gamedock-templates steam-install cs16\n')
     folder=Path('/etc/sudoers.d');folder.mkdir(exist_ok=True);safe(folder)
     descriptor,temporary=tempfile.mkstemp(dir=folder,prefix='gamedock-check-')
     try:
