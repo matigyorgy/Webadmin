@@ -61,12 +61,23 @@ final class ProvisionApiService
             if(!$nodes)throw new RuntimeException($order['premium']?'Nincs prémiumként megjelölt Linux-gép.':'Nincs normál Linux-gép.',409);
             $node=$nodes[0];$templateKey=null;
             if($order['game']==='minecraft'){
-                $node=null;
+                $node=null;$catalogsRead=0;$matchingStates=[];
+                [$wantedType,$wantedVersion]=explode(':',$order['template'],2);
                 foreach($nodes as $candidateNode){
-                    try{$catalog=(new TemplateService($this->db,$this->ssh))->catalog($actor,(int)$candidateNode['id']);}catch(\Throwable){continue;}
-                    foreach($catalog['templates']??[] as $candidate)if(($candidate['type']??'').':'.($candidate['version']??'')===$order['template']&&($candidate['state']??'')==='ready'&&($candidate['provider']??'')!=='folder'){$node=$candidateNode;$templateKey=$candidate['key'];break 2;}
+                    try{$catalog=(new TemplateService($this->db,$this->ssh))->catalog($actor,(int)$candidateNode['id']);$catalogsRead++;}catch(\Throwable){continue;}
+                    foreach($catalog['templates']??[] as $candidate){
+                        if(($candidate['type']??'')!==$wantedType||($candidate['version']??'')!==$wantedVersion||($candidate['provider']??'')==='folder')continue;
+                        $matchingStates[]=(string)($candidate['state']??'unknown');
+                        if(($candidate['state']??'')==='ready'&&!empty($candidate['key'])){$node=$candidateNode;$templateKey=$candidate['key'];break 2;}
+                    }
                 }
-                if(!$node)throw new RuntimeException('A kért Minecraft template egyik megfelelő Linux-gépen sem érhető el.',409);
+                if(!$node){
+                    if($catalogsRead===0)throw new RuntimeException('A Minecraft-katalógus egyik megfelelő Linux-gépről sem olvasható. Frissítsd az érintett gépen az Automatikus Linux-telepítést, és ellenőrizd az SSH-kapcsolatot.',409);
+                    if(in_array('building',$matchingStates,true)||in_array('pending',$matchingStates,true))throw new RuntimeException('A kért Minecraft template telepítése még folyamatban van. Várd meg a „Telepített templatek és szabályok” résznél a kész állapotot, majd ismételd meg ugyanazt a rendelést.',409);
+                    if(in_array('failed',$matchingStates,true))throw new RuntimeException('A kért Minecraft template telepítése az egyik megfelelő Linux-gépen sikertelen. Ellenőrizd a „Telepített templatek és szabályok” részt, és telepítsd újra a sablont.',409);
+                    $class=$order['premium']?'prémiumként megjelölt':'normál';
+                    throw new RuntimeException('A kért Minecraft template ('.$wantedType.' '.$wantedVersion.') nincs telepítve egyetlen '.$class.' Linux-gépre sem. Az Admin → Játékszerver-templatek oldalon telepítsd ezt a pontos sablont egy megfelelő gépre, majd ismételd meg a rendelést.',409);
+                }
             }
         $ownerId=$this->db->transaction(function()use($order){
             $owner=$this->db->query('SELECT * FROM users WHERE email=? FOR UPDATE',[$order['email']])->fetch();
