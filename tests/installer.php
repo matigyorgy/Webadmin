@@ -52,7 +52,7 @@ try {
     ensure((int)$user['is_admin']===1 && password_verify($valid['admin_password'],$user['password_hash']),'Admin creation failed');
     ensure((int)$admin->query('SELECT COUNT(*) FROM nodes')->fetchColumn()===1,'First node missing');
     ensure((int)$admin->query('SELECT COUNT(*) FROM servers')->fetchColumn()===0,'Installer should leave server creation to admin');
-    ensure((int)$admin->query('SELECT COUNT(*) FROM game_types')->fetchColumn()===4,'Default game profiles missing');
+    ensure((int)$admin->query('SELECT COUNT(*) FROM game_types')->fetchColumn()===count(GameDock\Validation::GAMES),'Default game profiles missing');
     rejected(fn()=>$test->install($valid),'Reinstallation allowed');
     ensure((int)$admin->query('SELECT COUNT(*) FROM users')->fetchColumn()===1,'Reinstallation changed users');
     // Remove only fixture config to test nonempty database guard.

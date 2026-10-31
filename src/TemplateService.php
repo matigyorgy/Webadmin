@@ -29,7 +29,7 @@ final class TemplateService
     public function installSteam(array $actor,int $id,array $data): array
     {
         $game=Validation::text($data,'steam_game',32);
-        if(!in_array($game,['cs2','css'],true))throw new RuntimeException('Ehhez a játékhoz nincs automatikus SteamCMD-letöltés.');
+        if(!in_array($game,['cs16','cs2','css'],true))throw new RuntimeException('Ehhez a játékhoz nincs automatikus SteamCMD-letöltés.');
         $profile=(new GameRegistry($this->db))->get($game);
         if($profile['provider']!=='folder')throw new RuntimeException('Ehhez a játéktípushoz nem használható a SteamCMD-letöltés.');
         return $this->ssh->templates($this->node($actor,$id),'steam-install',$game);

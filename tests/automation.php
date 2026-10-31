@@ -22,5 +22,7 @@ try{
  $db->query('UPDATE servers SET startup_command=? WHERE id=42',['admin-changed']);$service->reconcile($owner,42,$job);checkAutomation($db->query('SELECT startup_command FROM servers WHERE id=42')->fetchColumn()==='admin-changed','Old restore reapplied on subsequent poll');
  $denied=false;try{$service->reconcile($other,42,['id'=>str_repeat('b',32),'restored_panel'=>$panel]);}catch(RuntimeException $e){$denied=true;}checkAutomation($denied,'Other owner could reconcile restore');
  $db->query('ALTER TABLE servers DROP COLUMN last_restore_job');$updater=new GameDock\SchemaUpdater($db);$updater->enableStartup(['id'=>1,'is_admin'=>1]);$updater->enableStartup(['id'=>1,'is_admin'=>1]);checkAutomation((bool)$db->query("SHOW COLUMNS FROM servers LIKE 'last_restore_job'")->fetch(),'Automation migration missing');
+ $profile=$db->query("SELECT * FROM game_types WHERE slug='cs16'")->fetch();checkAutomation($profile && $profile['provider']==='folder' && str_contains($profile['startup_command'],'hlds_run'),'CS1.6 migration missing');
+ $db->query("UPDATE game_types SET name='Custom CS 1.6' WHERE slug='cs16'");$updater->enableStartup(['id'=>1,'is_admin'=>1]);checkAutomation($db->query("SELECT name FROM game_types WHERE slug='cs16'")->fetchColumn()==='Custom CS 1.6','CS1.6 migration overwrote custom profile');
  echo "Automation MySQL passed: ownership before SSH, restore metadata and current limits, idempotent reconciliation, migration repeatability.\n";
 }finally{$root->exec('DROP DATABASE `'.$name.'`');}

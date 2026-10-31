@@ -315,6 +315,7 @@ def worker():
 
 
 STEAM_GAMES={
+    'cs16':{'app':90,'mod':'cstrike','name':'Counter-Strike 1.6','binary':'hlds_run','required':['hlds_linux','cstrike/liblist.gam','cstrike/dlls/cs.so'],'startup':'./hlds_run -game cstrike -console -port {port} +map de_dust2 +maxplayers 16'},
     'cs2':{'app':730,'name':'Counter-Strike 2','binary':'game/bin/linuxsteamrt64/cs2','startup':'./game/bin/linuxsteamrt64/cs2 -dedicated -console -usercon -port {port} +map de_dust2'},
     'css':{'app':232330,'name':'Counter-Strike: Source','binary':'srcds_run','startup':'./srcds_run -game cstrike -console +map de_dust2 -port {port}'},
 }
@@ -360,11 +361,24 @@ def steam_build(game,stage):
     download({'url':'https://steamcdn-a.akamaihd.net/client/installer/steamcmd_linux.tar.gz','algorithm':None,'digest':None},str(archive))
     steam_extract(archive,tools);archive.unlink()
     target=stage/'template';target.mkdir(mode=0o755)
-    command=[str(tools/'steamcmd.sh'),'+@ShutdownOnFailedCommand','1','+@NoPromptForPassword','1','+force_install_dir',str(target),'+login','anonymous','+app_update',str(profile['app']),'validate','+quit']
+    command=[str(tools/'steamcmd.sh'),'+@ShutdownOnFailedCommand','1','+@NoPromptForPassword','1','+force_install_dir',str(target),'+login','anonymous']
+    if profile.get('mod'):command.extend(['+app_set_config',str(profile['app']),'mod',profile['mod']])
+    command.extend(['+app_update',str(profile['app']),'validate','+quit'])
     env=rt.environment();env['HOME']=str(stage);env.update({k:v for k,v in os.environ.items() if k.lower() in ('http_proxy','https_proxy','no_proxy','ssl_cert_file')})
-    build_command(command,str(tools),21600,env)
     binary=target/profile['binary']
-    if not binary.is_file() or binary.is_symlink() or not os.access(binary,os.X_OK):raise ValueError('Steam server executable missing')
+    def complete():
+        return binary.is_file() and not binary.is_symlink() and os.access(binary,os.X_OK) and all((target/path).is_file() and not (target/path).is_symlink() for path in profile.get('required',[]))
+    # HLDS app 90 can require multiple validated updates before the mod is complete.
+    for attempt in range(3 if profile['app']==90 else 1):
+        build_command(command,str(tools),7000 if profile['app']==90 else 21600,env)
+        if complete():break
+    if not complete():raise ValueError('Steam server executable missing or game files incomplete')
+    if game=='cs16':
+        # Instance HOME points at the copied server directory; keep a real SDK file,
+        # never a symlink into the temporary SteamCMD installation.
+        client=next((file for file in (target/'steamclient.so',tools/'linux32'/'steamclient.so') if file.is_file() and not file.is_symlink()),None)
+        if client is None:raise ValueError('SteamCMD 32-bit Steam client missing')
+        sdk=target/'.steam'/'sdk32';sdk.mkdir(parents=True,exist_ok=True);shutil.copy2(client,sdk/'steamclient.so')
     manifest=target/'steamapps'/('appmanifest_'+str(profile['app'])+'.acf')
     build=re.search(r'"buildid"\s+"([0-9]+)"',manifest.read_text())
     if not build:raise ValueError('Steam build ID missing')

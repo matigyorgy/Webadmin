@@ -56,6 +56,8 @@ final class SchemaUpdater
         catch (Throwable $e) {
             if (!$this->provisionEnabled() || !$this->db->query("SHOW COLUMNS FROM servers LIKE 'last_restore_job'")->fetch()) throw new RuntimeException('Az új szerverfunkciókhoz ALTER TABLE jogosultság szükséges. Engedélyezd a panel adatbázis-felhasználójának, majd próbáld újra.');
         }
+        $cs16=GameRegistry::defaults()['cs16'];
+        $this->db->query('INSERT IGNORE INTO game_types(slug,name,template_path,startup_command,provider) VALUES(?,?,?,?,?)',array_values($cs16));
         foreach (['game_types'=>['template_path','startup_command'],'servers'=>['install_source','startup_command']] as $table=>$fields) foreach($fields as $field) $this->db->query("UPDATE $table SET $field=REPLACE($field,?,?) WHERE $field LIKE ?",['/srv/gamedock/templates','/home/gamedock/templates','%/srv/gamedock/templates%']);
     }
 }

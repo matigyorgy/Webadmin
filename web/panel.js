@@ -359,7 +359,7 @@ if(templateGame){
         const selected=templateGame.selectedOptions[0],minecraft=selected?.dataset.provider==='minecraft',folder=selected?.dataset.provider==='folder';
         releaseCatalog.hidden=!minecraft;releaseFields.disabled=!minecraft;
         custom.hidden=!folder;customFields.disabled=!folder;
-        steam.hidden=!(folder && ['cs2','css'].includes(templateGame.value));steamFields.disabled=steam.hidden;
+        steam.hidden=!(folder && ['cs16','cs2','css'].includes(templateGame.value));steamFields.disabled=steam.hidden;
         steam.querySelector('[name=steam_game]').value=steam.hidden ? '' : templateGame.value;updateSteam();
         custom.querySelector('form').reset();
         custom.querySelector('[name=template_name]').value=folder ? selected.textContent : '';

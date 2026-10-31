@@ -33,18 +33,33 @@ class SteamTests(unittest.TestCase):
      member=tarfile.TarInfo(name);member.type=kind;stream.addfile(member)
     with self.assertRaisesRegex(ValueError,'Unsafe'):mc.steam_extract(archive,Path(folder)/'out')
  def test_anonymous_app_download_and_validation(self):
-  for game,app in [('cs2',730),('css',232330)]:
+  for game,app in [('cs16',90),('cs2',730),('css',232330)]:
    with self.subTest(game=game),tempfile.TemporaryDirectory() as folder:
     stage=Path(folder)
     def download(row,path):
      self.assertEqual(row['url'],'https://steamcdn-a.akamaihd.net/client/installer/steamcmd_linux.tar.gz');Path(path).touch()
     def build(command,cwd,timeout,env):
+     if app==90:
+      self.assertEqual(command[command.index('+app_set_config')+1:command.index('+app_set_config')+4],['90','mod','cstrike'])
+      sdk=Path(cwd)/'linux32';sdk.mkdir(exist_ok=True);(sdk/'steamclient.so').write_text('fixture-sdk')
      self.assertIn('+app_update',command);self.assertIn(str(app),command);self.assertIn('validate',command)
      self.assertEqual(command[command.index('+login')+1],'anonymous');self.assertEqual(env['HOME'],folder)
      target=stage/'template';binary=target/mc.STEAM_GAMES[game]['binary'];binary.parent.mkdir(parents=True,exist_ok=True);binary.write_text('fixture');binary.chmod(0o755)
+     for name in mc.STEAM_GAMES[game].get('required',[]):
+      file=target/name;file.parent.mkdir(parents=True,exist_ok=True);file.write_text('fixture')
      (target/'steamapps').mkdir();(target/'steamapps'/f'appmanifest_{app}.acf').write_text('"buildid" "123456"')
     with patch.object(mc.os,'geteuid',return_value=1000),patch.object(mc,'download',side_effect=download),patch.object(mc,'steam_extract'),patch.object(mc,'build_command',side_effect=build):mc.steam_build(game,folder)
     self.assertEqual(json.loads((stage/'result.json').read_text())['build'],'123456')
+    if game=='cs16':self.assertEqual((stage/'template/.steam/sdk32/steamclient.so').read_text(),'fixture-sdk')
+ def test_hlds_incomplete_mod_retries_then_fails(self):
+  with tempfile.TemporaryDirectory() as folder:
+   stage=Path(folder)
+   def partial(*args):
+    binary=stage/'template/hlds_run';binary.write_text('fixture');binary.chmod(0o755)
+   with patch.object(mc.os,'geteuid',return_value=1000),patch.object(mc,'download',side_effect=lambda row,path:Path(path).touch()),patch.object(mc,'steam_extract'),patch.object(mc,'build_command',side_effect=partial) as update:
+    with self.assertRaisesRegex(ValueError,'files incomplete'):mc.steam_build('cs16',folder)
+    self.assertEqual(update.call_count,3)
+   self.assertFalse((stage/'result.json').exists())
  def test_missing_server_is_not_success(self):
   with tempfile.TemporaryDirectory() as folder:
    with patch.object(mc.os,'geteuid',return_value=1000),patch.object(mc,'download',side_effect=lambda row,path:Path(path).touch()),patch.object(mc,'steam_extract'),patch.object(mc,'build_command'):

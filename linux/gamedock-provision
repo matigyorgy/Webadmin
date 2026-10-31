@@ -21,7 +21,7 @@ spec=importlib.util.spec_from_file_location('gamedock_runtime',library);runtime=
 CONFIG='/etc/gamedock/servers.json'
 JOBS='/var/lib/gamedock/provision/jobs'
 SELF='/usr/local/sbin/gamedock-provision'
-GAMES=('minecraft','cs2','fivem','css')
+GAMES=('minecraft','cs16','cs2','fivem','css')
 
 def secure(path, directory=False):
     info=os.lstat(path)

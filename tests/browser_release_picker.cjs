@@ -50,7 +50,7 @@ const {chromium}=require('playwright');
   assert.equal(posts[0].get('template_game'),'cs2');assert.equal(posts[0].get('template_version'),'2026.10');
   assert.equal(posts[0].get('template_path'),'/home/gamedock/templates/cs2/2026.10');
   posts.length=0;
-  for(const game of ['cs2','css']){
+  for(const game of ['cs16','cs2','css']){
    await page.goto(url);await page.selectOption('#template-game',game);
    assert(await page.locator('[data-steam-template]').isVisible());
    assert.equal(await page.locator('[name=steam_game]').inputValue(),game);
