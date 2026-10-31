@@ -43,15 +43,24 @@ final class AutomationService
             $this->db->query('DELETE FROM server_version_jobs WHERE server_id=?',[$id]);
         });
     }
+    public static function nextScheduleTime(string $time,string $repeat,?\DateTimeImmutable $now=null): string
+    {
+        if(!preg_match('/\A(?:[01][0-9]|2[0-3]):[0-5][0-9]\z/',$time))throw new RuntimeException('Adj meg érvényes időpontot óra:perc formában.');
+        $zone=new \DateTimeZone('Europe/Budapest');$now=($now ?? new \DateTimeImmutable('now',$zone))->setTimezone($zone);$step=$repeat==='weekly' ? 7 : 1;
+        for($attempt=0;$attempt<3;$attempt++){
+            $local=$now->modify('+'.($attempt*$step).' days')->format('Y-m-d').'T'.$time;
+            $candidate=\DateTimeImmutable::createFromFormat('!Y-m-d\TH:i',$local,$zone);
+            if($candidate && $candidate->format('Y-m-d\TH:i')===$local && $candidate>$now)return $local;
+        }
+        throw new RuntimeException('Ehhez az időponthoz nem található következő futás.');
+    }
     public function perform(array $user,int $id,string $action,array $input): array
     {
         $this->listing($user,$id);$s=$this->server($user,$id);$data=[];
         if($action==='schedule_add') {
             $operation=(string)($input['operation'] ?? '');$repeat=(string)($input['repeat'] ?? 'once');
             if(!in_array($operation,['start','stop','restart','backup'],true) || !in_array($repeat,['once','daily','weekly'],true))throw new RuntimeException('Válassz érvényes műveletet és ismétlést.');
-            $zone=Validation::text($input,'timezone',100);try{$timezone=new \DateTimeZone($zone);}catch(\Exception){throw new RuntimeException('Érvénytelen időzóna.');}
-            $local=Validation::text($input,'local_time',16);$date=\DateTimeImmutable::createFromFormat('!Y-m-d\TH:i',$local,$timezone);
-            if(!$date || $date->format('Y-m-d\TH:i')!==$local || $date->getTimestamp()<=time())throw new RuntimeException('Válassz jövőbeli, érvényes dátumot és időt.');
+            $zone='Europe/Budapest';$local=self::nextScheduleTime(Validation::text($input,'time_of_day',5),$repeat);
             $keep=filter_var($input['keep'] ?? 7,FILTER_VALIDATE_INT);if($keep===false || $keep<1 || $keep>100)throw new RuntimeException('A megőrzött mentések száma 1–100 lehet.');
             $data=['operation'=>$operation,'repeat'=>$repeat,'timezone'=>$zone,'local_time'=>$local,'keep'=>$keep];
         } elseif(in_array($action,['schedule_delete','backup_delete'],true))$data=['id'=>Validation::text($input,'id',32)];

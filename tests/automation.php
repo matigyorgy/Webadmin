@@ -2,6 +2,13 @@
 declare(strict_types=1);
 require dirname(__DIR__).'/autoload.php';
 function checkAutomation(bool $ok,string $message): void {if(!$ok)throw new RuntimeException($message);}
+$now=new DateTimeImmutable('2026-10-31T12:00:00+01:00');
+checkAutomation(GameDock\AutomationService::nextScheduleTime('13:00','daily',$now)==='2026-10-31T13:00','Future time not scheduled today');
+checkAutomation(GameDock\AutomationService::nextScheduleTime('10:00','daily',$now)==='2026-11-01T10:00','Past daily time not scheduled tomorrow');
+checkAutomation(GameDock\AutomationService::nextScheduleTime('10:00','weekly',$now)==='2026-11-07T10:00','Weekly time changed weekday');
+$dst=new DateTimeImmutable('2027-03-28T00:00:00+01:00');
+checkAutomation(GameDock\AutomationService::nextScheduleTime('02:30','daily',$dst)==='2027-03-29T02:30','Nonexistent DST time not skipped');
+$invalid=false;try{GameDock\AutomationService::nextScheduleTime('25:00','daily',$now);}catch(RuntimeException){$invalid=true;}checkAutomation($invalid,'Invalid clock time accepted');
 if(!getenv('TEST_MYSQL_HOST')){echo "Automation MySQL checks not run: TEST_MYSQL_HOST required.\n";exit;}
 $root=new PDO('mysql:host='.getenv('TEST_MYSQL_HOST').';charset=utf8mb4','root',getenv('TEST_MYSQL_PASSWORD'),[PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION]);
 $name='gamedock_automation_'.bin2hex(random_bytes(5));$root->exec('CREATE DATABASE `'.$name.'`');

@@ -13,7 +13,7 @@ const {chromium}=require('playwright');
   await page.route('**/api.php*',async route=>{
    const request=route.request();if(request.method()==='POST'){
     const data=new URLSearchParams();for(const match of request.postData().matchAll(/name="([^"]+)"\r\n\r\n([\s\S]*?)\r\n--/g))data.set(match[1],match[2]);posts.push(data);assert.equal(data.get('csrf'),'automation-test');assert.equal(data.get('server_id'),'42');
-    if(data.get('action')==='schedule_add')state.schedules=[{id:'b'.repeat(32),operation:data.get('operation'),repeat:data.get('repeat'),timezone:data.get('timezone'),next_run:2000000000,last_result:'Még nem futott.'}];
+    if(data.get('action')==='schedule_add')state.schedules=[{id:'b'.repeat(32),operation:data.get('operation'),repeat:data.get('repeat'),timezone:'Europe/Budapest',next_run:2000000000,last_result:'Még nem futott.'}];
     if(data.get('action')==='schedule_delete')state.schedules=[];
     if(['backup','restore'].includes(data.get('action')))state.job={state:'running',operation:data.get('action'),message:'A művelet folyamatban van.'};
    }
@@ -30,9 +30,9 @@ const {chromium}=require('playwright');
   state.job={state:'ready',operation:'restore',message:'Elkészült.'};await page.clock.runFor(5000);await page.waitForFunction(()=>!document.querySelector('[data-backup-create]').disabled);
   await page.getByRole('button',{name:'Mentés készítése',exact:true}).click();await page.waitForFunction(()=>document.querySelector('[data-backup-create]').disabled);assert.equal(posts.at(-1).get('action'),'backup');
   state.job={state:'ready',message:'Elkészült.'};await page.clock.runFor(5000);await page.waitForFunction(()=>!document.querySelector('[data-backup-create]').disabled);
-  await page.goto(url+'/#scheduler');await page.locator('[name=operation]').selectOption('backup');await page.locator('[name=local_time]').fill('2050-01-01T03:30');await page.locator('[name=repeat]').selectOption('daily');await page.locator('[name=keep]').fill('5');
+  await page.goto(url+'/#scheduler');await page.locator('[name=operation]').selectOption('backup');assert.equal(await page.locator('[name=local_time], [name=timezone]').count(),0);await page.locator('[name=time_of_day]').fill('03:30');await page.locator('[name=repeat]').selectOption('daily');await page.locator('[name=keep]').fill('5');
   await page.getByRole('button',{name:'Időzítés mentése'}).click();await page.locator('[data-schedule-rows] button').waitFor();
-  assert.equal(posts.at(-1).get('action'),'schedule_add');assert.equal(posts.at(-1).get('operation'),'backup');assert.equal(posts.at(-1).get('timezone'),'Europe/Budapest');assert.equal(posts.at(-1).get('keep'),'5');
+  assert.equal(posts.at(-1).get('action'),'schedule_add');assert.equal(posts.at(-1).get('operation'),'backup');assert.equal(posts.at(-1).get('time_of_day'),'03:30');assert.equal(posts.at(-1).get('timezone'),null);assert.equal(posts.at(-1).get('local_time'),null);assert.equal(posts.at(-1).get('keep'),'5');
   await page.locator('[data-schedule-rows] button').click();await page.waitForFunction(()=>!document.querySelector('[data-schedule-rows] button'));assert.equal(posts.at(-1).get('action'),'schedule_delete');
   assert.deepEqual(errors,[]);console.log('Automation browser passed: offline + confirmation gating, exact restore/backup requests, pending-operation locks, daily backup scheduling, timezone/retention and deletion.');
  }finally{if(browser)await browser.close();await new Promise(resolve=>server.close(resolve));}

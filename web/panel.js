@@ -384,7 +384,7 @@ if(automation){
         const rows=automation.querySelector('[data-schedule-rows]');rows.replaceChildren();
         for(const task of data?.schedules || []){
             const row=document.createElement('tr');textCell(row,names[task.operation]);
-            textCell(row,task.next_run ? new Intl.DateTimeFormat('hu-HU',{dateStyle:'short',timeStyle:'short',timeZone:task.timezone}).format(new Date(task.next_run*1000))+' ('+task.timezone+')' : 'Nincs további futás');
+            textCell(row,task.next_run ? new Intl.DateTimeFormat('hu-HU',{dateStyle:'short',timeStyle:'short',timeZone:'Europe/Budapest'}).format(new Date(task.next_run*1000)) : 'Nincs további futás');
             textCell(row,{once:'Egyszer',daily:'Naponta',weekly:'Hetente'}[task.repeat]);textCell(row,task.last_result);
             const remove=button('Törlés',()=>write('schedule_delete',{id:task.id}));remove.disabled=pending();textCell(row,'').append(remove);rows.append(row);
         }
@@ -416,7 +416,7 @@ if(automation){
             const response=await fetch('/api.php',{method:'POST',body,credentials:'same-origin'}),result=await response.json();if(!response.ok)throw Error(result.error);
             if(result.job || result.schedules)data=result;else if(result.state)data={...data,job:result};
             notice=result.message || 'A beállítást elmentettük.';
-            if(action==='schedule_add')scheduleForm.querySelector('[name=local_time]').value='';
+            if(action==='schedule_add')scheduleForm.querySelector('[name=time_of_day]').value='';
         }catch(error){notice=error.message;}
         finally{writing=false;render();await refresh();document.dispatchEvent(new Event('server-operation-complete'));}
     }
