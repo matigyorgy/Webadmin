@@ -136,7 +136,7 @@ final class ProvisionApiService
             if($server['provision_state']==='queued' && $action==='create')$result=$provision->enqueue($actor,$id);
             else $result=$provision->poll($actor,$id);
             if($result['state']==='ready')return ['status'=>201,'text'=>self::success($server)];
-            if($result['state']==='failed')return ['status'=>422,'json'=>['state'=>'failed','message'=>'A Linux-oldali szerverlétrehozás nem sikerült. Ellenőrizd az adminfelületen; azonos kulccsal nem hozunk létre új szervert.']];
+            if($result['state']==='failed')return ['status'=>422,'json'=>['state'=>'failed','message'=>($result['message'] ?: 'A Linux-oldali szerverlétrehozás nem sikerült.').' Azonos rendelésazonosítóval nem hozunk létre új szervert.','server_id'=>$id,'job_id'=>$server['provision_job'],'log'=>'/var/lib/gamedock/provision/jobs/'.$server['provision_job'].'.log']];
             return ['status'=>202,'json'=>['state'=>$result['state'],'message'=>'A szerver létrehozása folyamatban. Azonos Idempotency-Key fejléccel kérdezd le az állapotot.']];
         }finally{$this->db->query('SELECT RELEASE_LOCK(?)',[$lock]);}
     }

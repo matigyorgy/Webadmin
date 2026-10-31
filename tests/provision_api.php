@@ -53,7 +53,7 @@ try{
     apiReject(fn()=>$service->run($actor,$key,array_replace($input,['user_id'=>1])),409);
     apiReject(fn()=>$service->run($actor,'unknown-order-123',['action'=>'status']),404);
     $db->query("UPDATE servers SET provision_state='failed' WHERE id=1");
-    apiCheck($service->run($actor,$key,['action'=>'status'])['status']===422,'Hibás másolás sikert jelez.');
+    $failed=$service->run($actor,$key,['action'=>'status']);apiCheck($failed['status']===422 && $failed['json']['server_id']===1 && $failed['json']['job_id']===str_repeat('a',32) && str_contains($failed['json']['log'],str_repeat('a',32).'.log'),'Hibás másolás sikert jelez vagy hiányzik a hibadiagnosztika.');
     $db->query('DELETE FROM servers WHERE id=1');apiReject(fn()=>$service->run($actor,$key,$input),410);
     apiCheck((int)$db->query('SELECT COUNT(*) FROM servers')->fetchColumn()===0,'A törölt példány újra létrejött.');
     (new GameDock\GameRegistry($db))->seed();

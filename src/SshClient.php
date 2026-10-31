@@ -123,7 +123,10 @@ PYTHON;
         $ssh=$this->connect($node);
         $output=$ssh->exec('/usr/bin/sudo -n /usr/local/sbin/gamedock-provision '.$action.' '.escapeshellarg($argument));
         $exit=$ssh->getExitStatus();
-        if ($output!==false && is_int($exit) && $exit!==0) throw new RuntimeException('A Linux-gép elutasította a másolást. Ellenőrizd a forrásmappát, a célmappát, az engedélylistát és a segédprogram telepítését.',422);
+        if ($output!==false && is_int($exit) && $exit!==0) {
+            $detail=trim((string)$ssh->getStdError());
+            throw new RuntimeException('A Linux-gép elutasította a másolást.'.($detail!=='' ? ' Részlet: '.mb_substr($detail,0,350) : ' Ellenőrizd a forrásmappát, a célmappát, az engedélylistát és a segédprogram telepítését.'),422);
+        }
         if ($output===false || $exit!==0) throw new RuntimeException('A másolási segédprogram válasza nem igazolt. Ellenőrizd az SSH-kapcsolatot.');
         return json_decode($output,true,512,JSON_THROW_ON_ERROR);
     }

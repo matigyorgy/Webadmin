@@ -23,6 +23,9 @@ class ProvisionTests(unittest.TestCase):
     def test_valid_paths(self):
         data=provision.validate(self.payload,self.policy)
         self.assertEqual(data['target'],str(self.target/'survival'));self.assertEqual(data['uid'],1001)
+    def test_failed_copy_keeps_child_diagnostic(self):
+        error=provision.subprocess.CalledProcessError(1,['copy'],stderr=b'ValueError: EULA acceptance required\n')
+        self.assertEqual(provision.failure_detail(error),'ValueError: EULA acceptance required')
     def test_player_slots_and_expiry_are_validated(self):
         data=provision.validate(dict(self.payload,slot_limit=10,expires_at=1796122800),self.policy)
         self.assertEqual(data['slot_limit'],10);self.assertEqual(data['expires_at'],1796122800)

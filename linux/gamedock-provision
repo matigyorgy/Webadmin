@@ -65,6 +65,14 @@ def read_job(job):
 
 def public(job):return {name:job[name] for name in ('state','message')}
 
+def failure_detail(error):
+    detail=''
+    if isinstance(error,subprocess.CalledProcessError):
+        detail=error.stderr or error.stdout or ''
+        if isinstance(detail,bytes):detail=detail.decode('utf-8','replace')
+    if not detail:detail=str(error)
+    return ' '.join(str(detail).replace('\x00',' ').split())[:400] or type(error).__name__
+
 def validate(payload,cfg):
     job_path(payload['job'])
     limit=payload.get('disk_limit_mb',0)
@@ -225,8 +233,9 @@ def worker(job_id):
             job['state']='ready';job['message']='A fájlmásolás kész. A szerver indítható.';atomic(path,job)
         finally:fcntl.flock(lock,fcntl.LOCK_UN);lock.close()
     except (ValueError,KeyError,OSError,subprocess.SubprocessError) as error:
-        print('Copy failed: '+type(error).__name__+': '+str(error),file=sys.stderr)
-        job['state']='failed';job['message']='A másolás nem sikerült. Ellenőrizd, hogy a sablon nem üres, olvasható, van szabad hely, és helyes a Linux engedélylistája. Meglévő célmappát nem írunk felül.';atomic(path,job)
+        detail=failure_detail(error)
+        print('Copy failed: '+type(error).__name__+': '+detail,file=sys.stderr)
+        job['state']='failed';job['message']='A másolás nem sikerült: '+detail;atomic(path,job)
 
 if __name__=='__main__':
     try:
@@ -244,5 +253,5 @@ if __name__=='__main__':
             payload=json.loads(base64.b64decode(sys.argv[2],validate=True).decode('utf-8'))
             print(json.dumps(create(payload),ensure_ascii=False))
         else:raise ValueError('Invalid operation')
-    except (ValueError,KeyError,IndexError,OSError,subprocess.SubprocessError):
-        print('Provisioning failed: check root policy, template path, unit and destination',file=sys.stderr);sys.exit(1)
+    except (ValueError,KeyError,IndexError,OSError,subprocess.SubprocessError) as error:
+        print('Provisioning failed: '+type(error).__name__+': '+failure_detail(error),file=sys.stderr);sys.exit(1)
