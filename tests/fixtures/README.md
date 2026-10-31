@@ -24,4 +24,4 @@ php tests/fixtures/releases.php > /tmp/gamedock-releases.html
 node tests/browser_release_picker.cjs /tmp/gamedock-releases.html
 ```
 
-This checks game selection, the custom-game version/path POST payload, all seven Minecraft types, the ten-version limit, selection resets, late responses, catalog errors/retry, empty catalogs, and that only the install button submits the selected key with CSRF and node ID.
+This checks game selection, the custom-game version/path POST payload, CS2/CS:S download-button POST payloads, all seven Minecraft types, the ten-version limit, selection resets, late responses, catalog errors/retry, empty catalogs, and that only the install button submits the selected key with CSRF and node ID.

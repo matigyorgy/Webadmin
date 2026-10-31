@@ -13,6 +13,8 @@ final class TemplateCommandResult
             $repair=' Az adott gép szerkesztésénél indítsd a Linux beállítása automatikusan műveletet a friss panelből.';
             $known=[
                 'unknown operation'=>'A Linux-gépen régebbi Minecraft-helper fut, amely még nem támogatja ezt a műveletet.'.$repair,
+                'steamcmd requires x86_64 linux'=>'A Counter-Strike SteamCMD-letöltés x86_64 Linux-gépet igényel.',
+                'steamcmd 32-bit runtime missing'=>'A SteamCMD 32 bites futtatókönyvtárai hiányoznak. Futtasd a friss panel automatikus Linux-telepítését bekapcsolt csomagtelepítéssel (lib32gcc-s1, lib32stdc++6).',
                 'another template installation is running'=>'Ezen a Linux-gépen már egy másik template telepítése fut. Várd meg a befejezését; az állapot a Telepített templatek és szabályok résznél követhető.',
                 'template synchronization is running'=>'A Minecraft-katalógus szinkronizálása még fut. A törlést a letöltés/fordítás befejezése után próbáld újra.',
                 'template is in use by an active copy job'=>'Erről a template-ről éppen szervermásolás vagy verzióváltás fut. Várd meg a befejezését, majd töröld a sablont.',

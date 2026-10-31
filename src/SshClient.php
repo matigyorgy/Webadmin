@@ -54,8 +54,8 @@ PYTHON;
     }
     public function templates(array $node,string $action,string $key=''): array
     {
-        if(!in_array($action,['catalog','sync','delete','custom-save','releases','install'],true))throw new RuntimeException('Ismeretlen katalógusművelet.');
-        $ssh=$this->connect($node);$ssh->enableQuietMode();if($action==='releases')$ssh->setTimeout(60);$output=$ssh->exec('/usr/bin/sudo -n /usr/local/sbin/gamedock-templates '.$action.(in_array($action,['delete','custom-save','releases','install'],true) ? ' '.escapeshellarg($key) : ''));
+        if(!in_array($action,['catalog','sync','delete','custom-save','releases','install','steam-install'],true))throw new RuntimeException('Ismeretlen katalógusművelet.');
+        $ssh=$this->connect($node);$ssh->enableQuietMode();if($action==='releases')$ssh->setTimeout(60);$output=$ssh->exec('/usr/bin/sudo -n /usr/local/sbin/gamedock-templates '.$action.(in_array($action,['delete','custom-save','releases','install','steam-install'],true) ? ' '.escapeshellarg($key) : ''));
         return TemplateCommandResult::parse($output,$ssh->getExitStatus(),(string)$ssh->getStdError(),$ssh->isTimeout());
     }
     public function versions(array $server,string $action,array $payload): array

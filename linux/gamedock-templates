@@ -33,7 +33,7 @@ def cfg():
 
 def allowed(url):
     parts=urllib.parse.urlsplit(url);host=parts.hostname or ''
-    domains=('mojang.com','minecraft.net','papermc.io','minecraftforge.net','spigotmc.org','adoptium.net','github.com','githubusercontent.com','purpurmc.org','fabricmc.net')
+    domains=('mojang.com','minecraft.net','papermc.io','minecraftforge.net','spigotmc.org','adoptium.net','github.com','githubusercontent.com','purpurmc.org','fabricmc.net','steamcdn-a.akamaihd.net')
     if parts.scheme!='https' or parts.username or parts.password or parts.port not in (None,443) or not any(host==d or host.endswith('.'+d) for d in domains):raise ValueError('Untrusted download destination')
     return url
 class Redirect(urllib.request.HTTPRedirectHandler):
@@ -161,9 +161,9 @@ def java_for(row,settings):
     if not match or int(match.group(1))!=required:return install_jdk(required,settings)
     return '/usr/bin/java'
 
-def build_command(arguments,cwd,timeout):
+def build_command(arguments,cwd,timeout,env=None):
     if os.geteuid()==0:raise ValueError('Build command must be unprivileged')
-    process=subprocess.Popen(arguments,cwd=cwd,start_new_session=True)
+    process=subprocess.Popen(arguments,cwd=cwd,start_new_session=True,env=env)
     try:
         code=process.wait(timeout=timeout)
         if code:raise subprocess.CalledProcessError(code,arguments)
@@ -313,12 +313,102 @@ def worker():
             atomic(CACHE+'/catalog.json',value)
     value.update(state='partial' if errors or any(r['state']!='ready' for r in rows) else 'ready',message='; '.join(errors) or 'A katalógus frissítése befejeződött. Csak az elkészült sablonok választhatók.',updated_at=int(time.time()));atomic(CACHE+'/catalog.json',value)
 
+
+STEAM_GAMES={
+    'cs2':{'app':730,'name':'Counter-Strike 2','binary':'game/bin/linuxsteamrt64/cs2','startup':'./game/bin/linuxsteamrt64/cs2 -dedicated -console -usercon -port {port} +map de_dust2'},
+    'css':{'app':232330,'name':'Counter-Strike: Source','binary':'srcds_run','startup':'./srcds_run -game cstrike -console +map de_dust2 -port {port}'},
+}
+
+def steam_start(game):
+    if game not in STEAM_GAMES:raise ValueError('Unsupported Steam game')
+    if platform.machine()!='x86_64':raise ValueError('SteamCMD requires x86_64 Linux')
+    if not Path('/lib/ld-linux.so.2').exists():raise ValueError('SteamCMD 32-bit runtime missing')
+    settings=cfg();account=pwd.getpwnam(settings['_provision']['users'][game])
+    if account.pw_uid==0:raise ValueError('Non-root Steam builder required')
+    os.makedirs(CACHE,mode=0o700,exist_ok=True)
+    with open(CACHE+'/lock','a') as lock:
+        fcntl.flock(lock,fcntl.LOCK_EX);value=catalog()
+        if value.get('state')=='running':raise ValueError('Another template installation is running')
+        token=os.urandom(12).hex();value.update(state='running',selection='steam:'+game+':'+token,message=STEAM_GAMES[game]['name']+' szerverfájlok letöltése SteamCMD-vel. Ez hosszabb ideig is tarthat.')
+        atomic(CACHE+'/catalog.json',value)
+        try:
+            with open(CACHE+'/steam.log','ab') as log:
+                env=rt.environment();env.update({k:v for k,v in os.environ.items() if k.lower() in ('http_proxy','https_proxy','no_proxy','ssl_cert_file')})
+                child=subprocess.Popen(['/usr/bin/python3','-I',SELF,'steam-worker',game,token],stdin=subprocess.DEVNULL,stdout=log,stderr=subprocess.STDOUT,start_new_session=True,env=env)
+            value['worker']=rt.identity(child.pid)
+        except Exception:
+            value.update(state='failed',message='A SteamCMD letöltési feladat nem indult el.');atomic(CACHE+'/catalog.json',value);raise
+        atomic(CACHE+'/catalog.json',value)
+    return all_catalog()
+
+def steam_extract(archive,destination):
+    with tarfile.open(archive) as source:
+        members=source.getmembers()
+        if sum(max(0,m.size) for m in members)>512*1024**2:raise ValueError('SteamCMD archive too large')
+        for member in members:
+            normal=posixpath.normpath(member.name)
+            if member.name.startswith('/') or normal=='..' or normal.startswith('../') or not(member.isfile() or member.isdir()):raise ValueError('Unsafe SteamCMD archive')
+        for member in members:
+            member.mode &= 0o777
+            if hasattr(tarfile,'data_filter'):source.extract(member,destination,filter='data')
+            else:source.extract(member,destination)
+
+def steam_build(game,stage):
+    if os.geteuid()==0:raise ValueError('SteamCMD must run as non-root')
+    profile=STEAM_GAMES[game];stage=Path(stage);tools=stage/'steamcmd';tools.mkdir(mode=0o700)
+    archive=stage/'steamcmd.tar.gz'
+    download({'url':'https://steamcdn-a.akamaihd.net/client/installer/steamcmd_linux.tar.gz','algorithm':None,'digest':None},str(archive))
+    steam_extract(archive,tools);archive.unlink()
+    target=stage/'template';target.mkdir(mode=0o755)
+    command=[str(tools/'steamcmd.sh'),'+@ShutdownOnFailedCommand','1','+@NoPromptForPassword','1','+force_install_dir',str(target),'+login','anonymous','+app_update',str(profile['app']),'validate','+quit']
+    env=rt.environment();env['HOME']=str(stage);env.update({k:v for k,v in os.environ.items() if k.lower() in ('http_proxy','https_proxy','no_proxy','ssl_cert_file')})
+    build_command(command,str(tools),21600,env)
+    binary=target/profile['binary']
+    if not binary.is_file() or binary.is_symlink() or not os.access(binary,os.X_OK):raise ValueError('Steam server executable missing')
+    manifest=target/'steamapps'/('appmanifest_'+str(profile['app'])+'.acf')
+    build=re.search(r'"buildid"\s+"([0-9]+)"',manifest.read_text())
+    if not build:raise ValueError('Steam build ID missing')
+    (stage/'result.json').write_text(json.dumps({'build':build[1]}))
+
+def steam_worker(game,token):
+    if game not in STEAM_GAMES or not re.fullmatch('[a-f0-9]{24}',token):raise ValueError('Invalid Steam job')
+    # Wait until the parent has published the worker identity and released the lock.
+    with open(CACHE+'/lock','a') as lock:fcntl.flock(lock,fcntl.LOCK_EX);value=catalog()
+    settings=cfg();root=Path(settings['_provision']['source_root']);account=pwd.getpwnam(settings['_provision']['users'][game])
+    stage=None
+    try:
+        if account.pw_uid==0:raise ValueError('Non-root Steam builder required')
+        public_directory(root/game)
+        stage=Path(tempfile.mkdtemp(prefix='.steam-build-',dir=root/game));os.chown(stage,account.pw_uid,account.pw_gid)
+        env=rt.environment(account);env.update({k:v for k,v in os.environ.items() if k.lower() in ('http_proxy','https_proxy','no_proxy','ssl_cert_file')})
+        subprocess.run(['/usr/bin/python3','-I',SELF,'steam-build',game,str(stage)],preexec_fn=rt.drop(account),env=env,check=True,timeout=22000)
+        build=json.loads((stage/'result.json').read_text())['build']
+        if not isinstance(build,str) or not re.fullmatch('[0-9]{1,30}',build):raise ValueError('Invalid Steam build ID')
+        # Publish only regular files/directories; never expose a partial download.
+        for directory,dirs,files in os.walk(stage/'template',followlinks=False):
+            for name in dirs+files:
+                mode=os.lstat(Path(directory)/name).st_mode
+                if not(stat.S_ISREG(mode) or stat.S_ISDIR(mode)):raise ValueError('Unsafe Steam template file')
+        final=root/game/('steam-'+build+'-'+token)
+        if final.exists() or final.is_symlink():raise ValueError('Existing template not overwritten')
+        os.rename(stage/'template',final);os.chmod(final,0o755)
+        profile=STEAM_GAMES[game]
+        save_custom({'key':'custom:'+token,'game':game,'name':profile['name'],'version':'Steam build '+build,'path':str(final),'startup':profile['startup'],'minimum_memory_mb':0})
+        value.update(state='ready',message=profile['name']+' template elkészült. Steam build: '+build+'. Mappa: '+str(final))
+    except Exception as error:
+        print(type(error).__name__+': '+str(error),file=sys.stderr)
+        value.update(state='failed',message='A Counter-Strike letöltése sikertelen. Ellenőrizd a szabad helyet, a Steam elérését és a Linux-gép /var/lib/gamedock/minecraft/steam.log naplóját. Csak a kész template használható.')
+    finally:
+        if stage is not None and shutil.rmtree.avoids_symlink_attacks:shutil.rmtree(stage)
+        with open(CACHE+'/lock','a') as lock:fcntl.flock(lock,fcntl.LOCK_EX);atomic(CACHE+'/catalog.json',value)
+
 if __name__=='__main__':
     try:
         action=sys.argv[1]
         if action=='jdk' and len(sys.argv)==4:
             if os.geteuid()==0:raise ValueError('JDK builder must be non-root')
             row=json.loads(base64.b64decode(sys.argv[2],validate=True));folder=sys.argv[3];archive=os.path.join(folder,'jdk.tar.gz');download(row,archive);extract_jdk(archive,folder);os.unlink(archive)
+        elif action=='steam-build' and len(sys.argv)==4:steam_build(sys.argv[2],sys.argv[3])
         elif action=='build' and len(sys.argv)==5:build(json.loads(base64.b64decode(sys.argv[2],validate=True)),sys.argv[3],sys.argv[4])
         elif os.geteuid()!=0:raise ValueError('Root helper required')
         elif action=='catalog':print(json.dumps(all_catalog(),ensure_ascii=False))
@@ -329,6 +419,8 @@ if __name__=='__main__':
             if len(sys.argv[2])>200 or not re.fullmatch(r'(vanilla|paper|forge|bukkit|spigot|purpur|fabric):[0-9A-Za-z._:-]+',sys.argv[2]):raise ValueError('Invalid release')
             sync(sys.argv[2]);print(json.dumps(all_catalog(),ensure_ascii=False))
         elif action=='custom-save' and len(sys.argv)==3 and len(sys.argv[2])<12288:print(json.dumps(save_custom(json.loads(base64.b64decode(sys.argv[2],validate=True))),ensure_ascii=False))
+        elif action=='steam-install' and len(sys.argv)==3:print(json.dumps(steam_start(sys.argv[2]),ensure_ascii=False))
+        elif action=='steam-worker' and len(sys.argv)==4:steam_worker(sys.argv[2],sys.argv[3])
         elif action=='worker':worker()
         else:raise ValueError('Unknown operation')
     except Exception as error:

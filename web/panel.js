@@ -342,11 +342,25 @@ if(releaseCatalog){
 
 if(templateGame){
     const custom=document.querySelector('[data-custom-template]'),customFields=custom.querySelector('[data-custom-template-fields]');
+    const steam=document.querySelector('[data-steam-template]'),steamFields=steam.querySelector('[data-steam-fields]'),steamButton=steam.querySelector('[data-steam-install]');
+    let steamPending=false;
+    function updateSteam(){
+        const state=templatePanel?.dataset.templateState,blocked=['running','unknown'].includes(state);
+        steamButton.disabled=steamPending || steam.hidden || blocked;
+        steam.querySelector('[data-steam-message]').textContent=state==='running' ? 'Már fut egy template telepítése ezen a Linux-gépen. Várd meg a befejezését.' : state==='unknown' ? 'A telepítés állapota jelenleg nem érhető el.' : '';
+    }
+    document.addEventListener('template-state-updated',updateSteam);
+    steam.querySelector('form').addEventListener('submit',event=>{
+        if(steamButton.disabled || event.submitter!==steamButton){event.preventDefault();return;}
+        steamPending=true;setTimeout(updateSteam,0);
+    });
     const releaseFields=releaseCatalog.querySelector('[data-release-fields]'),type=releaseCatalog.querySelector('#release-type');
     function selectGame(){
         const selected=templateGame.selectedOptions[0],minecraft=selected?.dataset.provider==='minecraft',folder=selected?.dataset.provider==='folder';
         releaseCatalog.hidden=!minecraft;releaseFields.disabled=!minecraft;
         custom.hidden=!folder;customFields.disabled=!folder;
+        steam.hidden=!(folder && ['cs2','css'].includes(templateGame.value));steamFields.disabled=steam.hidden;
+        steam.querySelector('[name=steam_game]').value=steam.hidden ? '' : templateGame.value;updateSteam();
         custom.querySelector('form').reset();
         custom.querySelector('[name=template_name]').value=folder ? selected.textContent : '';
         custom.querySelector('[name=template_game]').value=folder ? templateGame.value : '';

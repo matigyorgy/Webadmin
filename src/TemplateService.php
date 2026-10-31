@@ -26,6 +26,14 @@ final class TemplateService
         $payload=['key'=>'custom:'.bin2hex(random_bytes(12)),'game'=>$profile['slug'],'name'=>Validation::text($data,'template_name'),'version'=>Validation::text($data,'template_version',64),'path'=>$path,'startup'=>$startup,'minimum_memory_mb'=>$minimum['memory_limit_mb']];
         return $this->ssh->templates($node,'custom-save',base64_encode(json_encode($payload,JSON_THROW_ON_ERROR)));
     }
+    public function installSteam(array $actor,int $id,array $data): array
+    {
+        $game=Validation::text($data,'steam_game',32);
+        if(!in_array($game,['cs2','css'],true))throw new RuntimeException('Ehhez a játékhoz nincs automatikus SteamCMD-letöltés.');
+        $profile=(new GameRegistry($this->db))->get($game);
+        if($profile['provider']!=='folder')throw new RuntimeException('Ehhez a játéktípushoz nem használható a SteamCMD-letöltés.');
+        return $this->ssh->templates($this->node($actor,$id),'steam-install',$game);
+    }
     public function releases(array $actor,int $id,string $type): array {if(!array_key_exists($type,TemplatePolicy::TYPES))throw new RuntimeException('Ismeretlen Minecraft-típus.');return $this->ssh->templates($this->node($actor,$id),'releases',$type);}
     public function sync(array $actor,int $id): array { return $this->ssh->templates($this->node($actor,$id),'sync'); }
 }

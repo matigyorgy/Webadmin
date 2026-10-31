@@ -95,7 +95,7 @@ def install(args):
     # Broad helper access is confined by immutable root policy; no shell/systemctl sudo is granted.
     sudoers=(args.ssh_user+' ALL=(root) NOPASSWD: /usr/local/sbin/gamedock-versions create *\n'+args.ssh_user+' ALL=(root) NOPASSWD: /usr/local/sbin/gamedock-versions status *\n'+args.ssh_user+' ALL=(root) NOPASSWD: /usr/local/sbin/gamedock-provision create *\n'+
              args.ssh_user+' ALL=(root) NOPASSWD: /usr/local/sbin/gamedock-provision status *\n'+
-             args.ssh_user+' ALL=(root) NOPASSWD: /usr/local/sbin/gamedock-launch *\n'+args.ssh_user+' ALL=(root) NOPASSWD: /usr/local/sbin/gamedock-templates catalog\n'+args.ssh_user+' ALL=(root) NOPASSWD: /usr/local/sbin/gamedock-templates sync\n'+args.ssh_user+' ALL=(root) NOPASSWD: /usr/local/sbin/gamedock-templates delete *, /usr/local/sbin/gamedock-templates releases *, /usr/local/sbin/gamedock-templates install *, /usr/local/sbin/gamedock-templates custom-save *\n')
+             args.ssh_user+' ALL=(root) NOPASSWD: /usr/local/sbin/gamedock-launch *\n'+args.ssh_user+' ALL=(root) NOPASSWD: /usr/local/sbin/gamedock-templates catalog\n'+args.ssh_user+' ALL=(root) NOPASSWD: /usr/local/sbin/gamedock-templates sync\n'+args.ssh_user+' ALL=(root) NOPASSWD: /usr/local/sbin/gamedock-templates delete *, /usr/local/sbin/gamedock-templates releases *, /usr/local/sbin/gamedock-templates install *, /usr/local/sbin/gamedock-templates custom-save *, /usr/local/sbin/gamedock-templates steam-install cs2, /usr/local/sbin/gamedock-templates steam-install css\n')
     folder=Path('/etc/sudoers.d');folder.mkdir(exist_ok=True);safe(folder)
     descriptor,temporary=tempfile.mkstemp(dir=folder,prefix='gamedock-check-')
     try:

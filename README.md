@@ -51,7 +51,19 @@ Az admin **Játéktípusok** menüjében létrehozhatsz, szerkeszthetsz és tör
 
 A négy induló típus csak kezdőbeállítás. Nem korlátozza a panelt Minecraft/CS2/FiveM/CS:Source játékokra. Használatban lévő típus nem törölhető. Saját mappás típusnál az indítóparancs használja a `{port}` helyőrzőt, például `./server -port {port}`, vagy `PORT={port} ./start.sh`. A FiveM alapkonfigurációját a panel közvetlenül írja.
 
-Counter-Strike vagy más saját mappás játéknál a típus alap template útvonala és az új szerver forrásmappája szabadon megadható, de a Linuxon engedélyezett forrásgyökér alatt maradjon. A szükséges játékfájloknak már ebben a template-ben kell lenniük; a panel ezekből készít másolatot, nem használ SteamCMD-t.
+Counter-Strike vagy más saját mappás játéknál a típus alap template útvonala és az új szerver forrásmappája szabadon megadható, de a Linuxon engedélyezett forrásgyökér alatt maradjon. Saját mappás felvételnél a szükséges játékfájloknak már a template-ben kell lenniük; a panel ezekből készít másolatot. Counter-Strike 2 és Counter-Strike: Source esetén a szerverfájlok automatikusan is letölthetők az alábbi módon.
+
+## Counter-Strike template automatikus letöltése
+
+A **Játékszerver-templatek** oldalon válassz Linux-gépet, majd **Counter-Strike 2** vagy **Counter-Strike: Source** játéktípust. A **Szerverfájlok letöltése** gomb a kiválasztott gépen háttérben indítja a SteamCMD-t, névtelen belépéssel, az adott játék legfrissebb stabil szerverkiadásához (CS2: app 730, CS:S: app 232330). Nem indít játékszervert, és nem kér Steam-jelszót. Régebbi, kézzel választott kiadáshoz továbbra is a saját mappás template-felvétel használható.
+
+A SteamCMD bootstrap a Valve hivatalos HTTPS-címéről érkezik (`steamcdn-a.akamaihd.net/client/installer/steamcmd_linux.tar.gz`), a SteamCMD `app_update … validate` ellenőrzi a szerverfájlokat. A letöltés és kibontás nem rootként fut. A gép x86_64 Linux legyen, és érje el a Steam hitelesítési, tartalom- és frissítési szolgáltatásait. Elegendő szabad hely kell a teljes letöltéshez; a már elkészült template-ek megmaradnak.
+
+A kész template a `/home/gamedock/templates/cs2/steam-<build>-<azonosító>/` vagy `/home/gamedock/templates/css/steam-<build>-<azonosító>/` mappába kerül. A panel automatikusan felveszi, megjeleníti a buildszámot és útvonalat; ezután szerverhez választható. A meglévő template-et nem frissíti és nem írja felül. Egyszerre egy Minecraft- vagy Steam-letöltési feladat futhat gépenként. Részleges/hibás letöltés nem kerül a választható template-ek közé. Állapot a panelen, részletes hibanapló a Linux-gépen: `/var/lib/gamedock/minecraft/steam.log`.
+
+**Meglévő gépnél szükséges frissítés:** töltsd fel a friss panelt, majd a kiválasztott gépnél futtasd újra az **Automatikus Linux-telepítés** műveletet, bekapcsolt csomagtelepítéssel. Ez telepíti a friss segédprogramot és sudo-jogokat, továbbá Debian/Ubuntu x86_64 alatt a `lib32gcc-s1` és `lib32stdc++6` SteamCMD-függőségeket. Kikapcsolt csomagtelepítésnél ezeket a gépen előre kell biztosítani.
+
+A folyamat fake SteamCMD-vel és böngészős teszttel ellenőrizhető (`tests/test_steam.py`, `tests/browser_release_picker.cjs`). Ezek nem töltenek le valódi játékfájlokat; a teljes Steam-letöltés sikerét a célgép kész állapota igazolja.
 
 ## Minecraft-típusok és az utolsó 10 verzió
 

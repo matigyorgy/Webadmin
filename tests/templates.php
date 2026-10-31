@@ -125,6 +125,7 @@ echo "Startup command limit checks passed.\n";
 
 foreach ([
  "sudo: I'm sorry gamedock. I'm afraid I can't do that"=>'sudo elutasította',
+ 'ValueError: SteamCMD 32-bit runtime missing'=>'32 bites futtatókönyvtárai hiányoznak',
  'ValueError: Another template installation is running'=>'másik template telepítése fut',
  'ValueError: Unknown operation'=>'régebbi Minecraft-helper',
  'ValueError: Template synchronization is running'=>'szinkronizálása még fut',

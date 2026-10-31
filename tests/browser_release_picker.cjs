@@ -49,7 +49,15 @@ const {chromium}=require('playwright');
   assert.equal(posts.length,1);assert.equal(posts[0].get('action'),'save_custom_template');
   assert.equal(posts[0].get('template_game'),'cs2');assert.equal(posts[0].get('template_version'),'2026.10');
   assert.equal(posts[0].get('template_path'),'/home/gamedock/templates/cs2/2026.10');
-  posts.length=0;await page.goto(url);await page.selectOption('#template-game','minecraft');
+  posts.length=0;
+  for(const game of ['cs2','css']){
+   await page.goto(url);await page.selectOption('#template-game',game);
+   assert(await page.locator('[data-steam-template]').isVisible());
+   assert.equal(await page.locator('[name=steam_game]').inputValue(),game);
+   await Promise.all([page.waitForNavigation(),page.getByRole('button',{name:'Szerverfájlok letöltése',exact:true}).click()]);
+   assert.equal(posts.length,1);assert.equal(posts[0].get('action'),'install_steam_template');assert.equal(posts[0].get('steam_game'),game);assert.equal(posts[0].get('node_id'),'1');assert.equal(posts[0].get('csrf'),'release-picker-test');posts.length=0;
+  }
+  await page.goto(url);await page.selectOption('#template-game','minecraft');assert(!(await page.locator('[data-steam-template]').isVisible()));
   assert(await type.isVisible());assert(!(await page.locator('[data-custom-template]').isVisible()));
   for(const name of ['vanilla','bukkit','spigot','paper','forge','purpur','fabric']){
    await type.selectOption(name);
@@ -63,6 +71,7 @@ const {chromium}=require('playwright');
   assert(await button.isDisabled());assert.equal(await page.locator('[name=template_game]').inputValue(),'custom');
   assert.equal(await page.locator('[name=template_path]').inputValue(),'');
   assert.equal(await page.locator('[name=template_name]').inputValue(),'Custom game');
+  assert(!(await page.locator('[data-steam-template]').isVisible()));
   await page.selectOption('#template-game','minecraft');assert.equal(await type.inputValue(),'');assert(await button.isDisabled());
   // A late response must not populate another type's version picker.
   await type.selectOption('paper');await type.selectOption('forge');
@@ -79,6 +88,8 @@ const {chromium}=require('playwright');
   await version.selectOption('vanilla:1.21.11:build');
   catalogState='running';await page.waitForFunction(()=>document.querySelector('[data-template-node]').dataset.templateState==='running');
   assert(await button.isDisabled());assert((await page.locator('[data-install-state]').textContent()).includes('telepítése fut'));
+  await page.selectOption('#template-game','cs2');assert(await page.locator('[data-steam-install]').isDisabled());
+  await page.selectOption('#template-game','minecraft');await type.selectOption('vanilla');await page.waitForFunction(()=>!document.querySelector('#release-version').disabled);await version.selectOption('vanilla:1.21.11:build');assert(await button.isDisabled());
   catalogFail=true;await page.waitForFunction(()=>document.querySelector('[data-template-node]').dataset.templateState==='unknown');assert(await button.isDisabled());
   catalogFail=false;catalogState='ready';await page.waitForFunction(()=>document.querySelector('[data-template-node]').dataset.templateState==='ready');assert(!(await button.isDisabled()));
   assert.equal(posts.length,0);

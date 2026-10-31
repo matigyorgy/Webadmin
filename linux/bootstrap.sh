@@ -16,6 +16,9 @@ if [ "$3" = "1" ]; then
   export DEBIAN_FRONTEND=noninteractive
   STEP='APT csomaglista frissitese';apt-get update
   STEP='Alapcsomagok telepitese';apt-get install -y python3 sudo passwd git default-jdk-headless ca-certificates tar unzip
+  if [ "$(uname -m)" = "x86_64" ]; then
+   STEP='SteamCMD futtatokonyvtarak telepitese';apt-get install -y lib32gcc-s1 lib32stdc++6
+  fi
   STEP='JDK csomagok telepitese'
   for major in 17 21 25; do if apt-cache show "openjdk-$major-jdk-headless" >/dev/null 2>&1; then apt-get install -y "openjdk-$major-jdk-headless"; fi; done
  else
