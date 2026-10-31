@@ -77,7 +77,7 @@ PYTHON;
         $ssh=$this->connect($server);$ssh->enableQuietMode();$ssh->setTimeout(20);
         // No PTY; the secret travels only through the SSH channel's stdin, never process arguments.
         if(!$ssh->exec('/usr/bin/sudo -n /usr/local/sbin/gamedock-ftp '.$action.' '.escapeshellarg($server['unit_name']),false))throw new RuntimeException('Az FTP-segédprogram nem indult el.');
-        if($action==='create')$ssh->write(json_encode($payload,JSON_THROW_ON_ERROR),SSH2::CHANNEL_EXEC);
+        if(in_array($action,['create','delete'],true))$ssh->write(json_encode($payload,JSON_THROW_ON_ERROR),SSH2::CHANNEL_EXEC);
         $ssh->sendEOF(SSH2::CHANNEL_EXEC);$output='';
         while(true){
             $chunk=$ssh->read('',SSH2::READ_NEXT,SSH2::CHANNEL_EXEC);

@@ -17,13 +17,13 @@ class FtpTests(unittest.TestCase):
  def test_instance_replacement_revokes_old_access(self):
   rows={'server_user':self.record()}
   with patch.object(f,'instance',return_value=({'user':'different','directory':'/home/gamedock/2','provision_job':'new'},None,None)):self.assertEqual(f.clean(rows,1001),['server_user'])
- def test_successful_tls_auth_only_updates_last_login(self):
+ def test_plain_and_tls_auth_only_updates_last_login(self):
   with tempfile.TemporaryDirectory() as folder:
    rows={'server_user':self.record()};server=rows['server_user']['binding'];account=SimpleNamespace(pw_uid=1001,pw_gid=1001)
    env={'AUTHD_ACCOUNT':'server_user','AUTHD_PASSWORD':'Fixture-FTP-password-123','AUTHD_ENCRYPTED':'1'}
    with patch.object(f,'CONTROL',Path(folder)),patch.object(f,'locked',return_value=contextlib.nullcontext()),patch.object(f,'read',side_effect=lambda path,default:rows),patch.object(f,'instance',return_value=(server,account,Path(server['directory']))),patch.object(f,'busy',return_value=False),patch.object(f.p,'secure'),patch.object(f.p,'atomic'),patch.object(f.time,'time',return_value=2000):
     self.assertIsNone(f.authenticate(dict(env,AUTHD_PASSWORD='incorrect')));self.assertIsNone(rows['server_user']['last_login'])
-    self.assertIsNone(f.authenticate(dict(env,AUTHD_ENCRYPTED='0')));self.assertIsNone(rows['server_user']['last_login'])
+    self.assertEqual(f.authenticate(dict(env,AUTHD_ENCRYPTED='0'))['uid'],1001);self.assertEqual(rows['server_user']['last_login'],2000)
     result=f.authenticate(env);self.assertEqual(result['uid'],1001);self.assertEqual(result['dir'],'/home/gamedock/1/./');self.assertEqual(rows['server_user']['last_login'],2000)
  def test_expired_password_cannot_revive_account(self):
   record=self.record();rows={'server_user':record}

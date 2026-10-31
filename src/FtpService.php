@@ -28,7 +28,7 @@ final class FtpService
     {
         $server=$this->server($user,$id);
         if(!in_array($action,['ftp_create','ftp_delete'],true))throw new RuntimeException('Ismeretlen FTP-művelet.');
-        $payload=$action==='ftp_create' ? self::credentials($input) : [];
+        $payload=$action==='ftp_create' ? self::credentials($input) : ['username'=>isset($input['ftp_username']) ? Validation::text($input,'ftp_username',32) : ''];
         $result=$this->ssh->ftp($server,$action==='ftp_create' ? 'create' : 'delete',$payload);
         $this->db->query('INSERT INTO audit_log(user_id,server_id,action,outcome) VALUES(?,?,?,?)',[$user['id'],$id,$action,'accepted']);
         $result['host']=$server['public_host'] ?: $server['ssh_host'];return $result;

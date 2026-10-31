@@ -39,7 +39,7 @@ STEP='UFW jatekportok beallitasa'
 if [ "${4:-0}" = "1" ] && command -v ufw >/dev/null 2>&1 && ufw status | grep -q '^Status: active'; then
  ufw allow 25000:25999/tcp
  ufw allow 25000:25999/udp
- ufw allow 2121/tcp
+ ufw allow 21/tcp
  ufw allow 50000:50100/tcp
 fi
 printf '{"state":"ready","message":"A Linux-segédprogramok, kulcsok és jogosultságok beállítása elkészült."}\n' > setup-state.json
