@@ -51,6 +51,7 @@ final class ServerService
         }
         $server=$this->find($user,$id);
         if (($server['provision_state'] ?? 'ready')!=='ready') throw new RuntimeException('A szerver csak sikeres fájlmásolás után vezérelhető.');
+        if(in_array($action,['start','restart'],true)&&!empty($server['expires_at'])&&(int)$server['expires_at']<=time())throw new RuntimeException('A szerver előfizetése lejárt; indítás előtt hosszabbítsd meg.');
         (new ServerCommand())->build($server['unit_name'],$action,$command,(string)($server['startup_command'] ?? ''));
         $this->db->query('INSERT INTO audit_log(user_id,server_id,action,outcome) VALUES(?,?,?,?)',[$user['id'],$id,$action,'requested']);
         $audit=$this->db->lastInsertId();

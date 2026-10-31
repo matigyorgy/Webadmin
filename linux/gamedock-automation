@@ -278,12 +278,19 @@ def delete_backup(unit,key):
 
 def tick(now=None):
     now=int(time.time()) if now is None else now
-    if not (ROOT/'units').exists():return
-    for directory in (ROOT/'units').iterdir():
-        if not directory.is_dir() or directory.is_symlink():continue
-        unit=unit_name(directory.name)
+    config=p.config()
+    units=[unit_name(name) for name,value in config.items() if not name.startswith('_') and isinstance(value,dict) and value.get('launch')]
+    for unit in units:
         try:
-            recover(unit);server(unit)
+            recover(unit);cfg,instance,account,_=server(unit)
+            expiry=int(instance.get('expires_at') or 0)
+            if expiry and expiry<=now:
+                with v.unit_lock(unit,False):
+                    cfg,instance,account,_=server(unit)
+                    if running(unit,account):power(unit,'stop',read(folder(unit)/'policy.json',{}))
+                continue
+            directory=ROOT/'units'/unit
+            if not directory.is_dir() or directory.is_symlink():continue
             with schedule_lock(unit):
                 path=folder(unit)/'schedules.json';tasks=read(path,[])
                 for task in tasks:

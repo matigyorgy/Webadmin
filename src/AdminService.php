@@ -15,7 +15,7 @@ final class AdminService
         $this->admin($actor);
         return match($section) {
             'games'=>array_values((new GameRegistry($this->db))->all()),
-            'users'=>$this->db->query('SELECT u.id,u.email,u.is_admin,COUNT(s.id) AS server_count FROM users u LEFT JOIN servers s ON s.user_id=u.id GROUP BY u.id ORDER BY u.email')->fetchAll(),
+            'users'=>$this->db->query('SELECT u.id,u.email,'.((bool)$this->db->query("SHOW COLUMNS FROM users LIKE 'username'")->fetch()?'u.username':'NULL AS username').',u.is_admin,COUNT(s.id) AS server_count FROM users u LEFT JOIN servers s ON s.user_id=u.id GROUP BY u.id ORDER BY u.email')->fetchAll(),
             'nodes'=>$this->db->query('SELECT n.*,COUNT(s.id) AS server_count FROM nodes n LEFT JOIN servers s ON s.node_id=n.id GROUP BY n.id ORDER BY n.name')->fetchAll(),
             'servers'=>$this->db->query('SELECT s.*,u.email AS owner_email,n.name AS node_name FROM servers s JOIN users u ON u.id=s.user_id JOIN nodes n ON n.id=s.node_id ORDER BY s.name')->fetchAll(),
             'audit'=>AuditText::rows($this->db->query('SELECT a.*,u.email,s.name AS server_name FROM audit_log a LEFT JOIN users u ON u.id=a.user_id LEFT JOIN servers s ON s.id=a.server_id ORDER BY a.id DESC LIMIT 200')->fetchAll()),
@@ -26,7 +26,7 @@ final class AdminService
     {
         $this->admin($actor);
         $table=match($section){'users'=>'users','nodes'=>'nodes','servers'=>'servers',default=>throw new RuntimeException('Ismeretlen lista.')};
-        $fields=$table==='users' ? 'id,email,is_admin' : '*';
+        $fields=$table==='users' ? 'id,email,'.((bool)$this->db->query("SHOW COLUMNS FROM users LIKE 'username'")->fetch()?'username':'NULL AS username').',is_admin' : '*';
         $record=$this->db->query("SELECT $fields FROM $table WHERE id=?",[$id])->fetch();
         if (!$record) throw new RuntimeException('A bejegyzés nem található.');
         return $record;
@@ -55,15 +55,22 @@ final class AdminService
             } elseif ($section==='users') {
                 $admins=$this->db->query('SELECT id FROM users WHERE is_admin=1 ORDER BY id FOR UPDATE')->fetchAll();
                 $email=Validation::email($data); $isAdmin=(string)($data['is_admin'] ?? '')==='1' ? 1 : 0;
+                $usernameEnabled=(bool)$this->db->query("SHOW COLUMNS FROM users LIKE 'username'")->fetch();
+                $username=trim((string)($data['username'] ?? ''));
+                if($username!=='')$username=Validation::username($data);
+                if(!$usernameEnabled&&$username!=='')throw new RuntimeException('A felhasználónévhez először engedélyezd az új szerverfunkciókat.');
                 $existing=$id ? $this->find($actor,'users',$id) : null;
                 if ($existing && $existing['is_admin'] && !$isAdmin && count($admins)<2) throw new RuntimeException('Az utolsó admin jogosultsága nem vonható vissza.');
                 if ($id===(int)$actor['id'] && !$isAdmin) throw new RuntimeException('A saját adminjogodat itt nem vonhatod vissza.');
                 $password=(string)($data['password'] ?? '');
                 if (!$id) {
-                    $this->db->query('INSERT INTO users(email,password_hash,is_admin) VALUES(?,?,?)',[$email,Validation::password($password),$isAdmin]);
+                    if($usernameEnabled)$this->db->query('INSERT INTO users(email,username,password_hash,is_admin) VALUES(?,?,?,?)',[$email,$username?:null,Validation::password($password),$isAdmin]);
+                    else $this->db->query('INSERT INTO users(email,password_hash,is_admin) VALUES(?,?,?)',[$email,Validation::password($password),$isAdmin]);
                 } else {
+                    if($username===''&&isset($existing['username']))$username=(string)$existing['username'];
                     if ($id===(int)$actor['id'] && $password!=='') throw new RuntimeException('A saját jelszavadat a Saját fiók oldalon módosítsd.');
-                    $this->db->query('UPDATE users SET email=?,is_admin=? WHERE id=?',[$email,$isAdmin,$id]);
+                    if($usernameEnabled)$this->db->query('UPDATE users SET email=?,username=?,is_admin=? WHERE id=?',[$email,$username?:null,$isAdmin,$id]);
+                    else $this->db->query('UPDATE users SET email=?,is_admin=? WHERE id=?',[$email,$isAdmin,$id]);
                     if ($password!=='') $this->db->query('UPDATE users SET password_hash=? WHERE id=?',[Validation::password($password),$id]);
                 }
             } elseif ($section==='nodes') {
@@ -76,6 +83,8 @@ final class AdminService
                 if ($public!=='' && (strlen($public)>255 || !preg_match('/\A(?:[a-zA-Z0-9_.-]+|[a-fA-F0-9:]+)\z/',$public))) throw new RuntimeException('Érvénytelen nyilvános játékcím.');
                 if ((new SchemaUpdater($this->db))->publicHostEnabled()) $this->db->query('UPDATE nodes SET public_host=? WHERE id=?',[$public?:null,$nodeId]);
                 elseif ($public!=='') throw new RuntimeException('A nyilvános címhez először engedélyezd az új szerverfunkciókat.');
+                $premiumEnabled=(bool)$this->db->query("SHOW COLUMNS FROM nodes LIKE 'premium'")->fetch();
+                if($premiumEnabled)$this->db->query('UPDATE nodes SET premium=? WHERE id=?',[$node['premium'],$nodeId]);elseif($node['premium'])throw new RuntimeException('Először engedélyezd az új szerverfunkciókat a prémium Linux-gép jelöléséhez.');
                 $id=$nodeId;
             } elseif ($section==='servers') {
                 $startup=Validation::startup((string)($data['startup_command'] ?? ''));$explicitStartup=$startup!=='';
@@ -83,6 +92,11 @@ final class AdminService
                 if ($startup!=='' && !$startupEnabled) throw new RuntimeException('Először kattints az Indítóparancsok engedélyezése adatbázisfrissítő gombra.');
                 $game=Validation::text($data,'game'); $unit=$id ? Validation::text($data,'unit_name') : (string)random_int(10000000,99999999);
                 $limits=ResourceLimits::validate($data);$disk=StorageService::limit($data['disk_limit_mb'] ?? 0);
+                $slotRaw=$data['slot_limit'] ?? ($id ? ($this->find($actor,'servers',$id)['slot_limit'] ?? 0) : 0);
+                if($slotRaw==='' )$slotRaw=0;if((!is_int($slotRaw)&&!is_string($slotRaw))||!preg_match('/\A[0-9]{1,4}\z/',(string)$slotRaw)||(int)$slotRaw>1000)throw new RuntimeException('A férőhelykorlát 0–1000 egész szám legyen.');$slots=(int)$slotRaw;
+                $expiryRaw=$data['expires_at'] ?? ($id ? ($this->find($actor,'servers',$id)['expires_at'] ?? '') : '');
+                if($expiryRaw===''||$expiryRaw===null)$expiry=0;elseif((is_int($expiryRaw)||is_string($expiryRaw))&&preg_match('/\A[0-9]{1,12}\z/',(string)$expiryRaw)&&(int)$expiryRaw>0)$expiry=(int)$expiryRaw;else throw new RuntimeException('Érvénytelen Unix lejárati idő.');
+                if(($slots||$expiry)&&!(new SchemaUpdater($this->db))->orderFieldsEnabled())throw new RuntimeException('Először engedélyezd az új szerverfunkciókat az admin adatbázisfrissítőjével.');
                 $requestedPort=trim((string)($data['port'] ?? ''));
                 if ($requestedPort!=='' && !preg_match('/\A25[0-9]{3}\z/',$requestedPort)) throw new RuntimeException('A játékport 25000–25999 közötti egész szám legyen.');
                 $profile=(new GameRegistry($this->db))->get($game);
@@ -113,6 +127,7 @@ final class AdminService
                 if ((new SchemaUpdater($this->db))->provisionEnabled()) $this->db->query('UPDATE servers SET memory_limit_mb=?,cpu_limit_percent=? WHERE id=?',[$limits['memory_limit_mb'],$limits['cpu_limit_percent'],$serverId]);
                 elseif ($limits['memory_limit_mb'] || $limits['cpu_limit_percent']) throw new RuntimeException('Először engedélyezd az új szerverfunkciókat az adatbázisfrissítő gombbal.');
                 if((new SchemaUpdater($this->db))->storageEnabled())$this->db->query('UPDATE servers SET disk_limit_mb=? WHERE id=?',[$disk,$serverId]);
+                if((new SchemaUpdater($this->db))->orderFieldsEnabled())$this->db->query('UPDATE servers SET slot_limit=?,expires_at=? WHERE id=?',[$slots,$expiry?:null,$serverId]);
                 if ($startupEnabled) $this->db->query('UPDATE servers SET startup_command=? WHERE id=?',[$startup==='' ? null : $startup,$serverId]);
                 if (!$id || (($existing['provision_state'] ?? '')==='failed' && !empty($existing['provision_job']))) {
                     $source=trim((string)($data['install_source'] ?? '')) ?: $profile['template_path'];
@@ -136,6 +151,13 @@ final class AdminService
                     if (!str_starts_with($source,'/') || strlen($source)>255 || preg_match('/[\x00-\x1f\x7f]/',$source) || !preg_match('/\A[a-zA-Z0-9_-]{1,120}\z/',$folder)) throw new RuntimeException('Abszolút forrásmappa és egyszerű célmappanév szükséges.');
                     if ($this->db->query('SELECT id FROM servers WHERE node_id=? AND install_folder=? AND id<>?',[$node,$folder,$id ?? 0])->fetch()) throw new RuntimeException('Ez a célmappanév ezen a gépen már foglalt.');
                     $this->db->query('UPDATE servers SET startup_command=?,install_source=?,install_folder=?,provision_job=?,provision_state=?,template_key=?,template_version=? WHERE id=?',[$startup!=='' ? $startup : $profile['startup_command'],$source,$folder,bin2hex(random_bytes(16)),'queued',$templateKey,$templateVersion,$serverId]);
+                }
+                if($slots>0 && in_array($game,['cs16','css','cs2'],true)){
+                    $command=(string)$this->db->query('SELECT startup_command FROM servers WHERE id=?',[$serverId])->fetchColumn();
+                    $flag=$game==='cs2'?'-maxplayers_override':'+maxplayers';
+                    $command=preg_replace('/(?:^|\s)'.preg_quote($flag,'/').'\s+[0-9]+/','',$command) ?? $command;
+                    $command=trim($command).' '.$flag.' '.$slots;
+                    $this->db->query('UPDATE servers SET startup_command=? WHERE id=?',[$command,$serverId]);
                 }
                 if(!$id || empty($existing['port']) || ($requestedPort!=='' && (int)$requestedPort!==(int)$existing['port'])) {
                     if ($id && in_array($existing['provision_state'] ?? '',['queued','running'],true)) throw new RuntimeException('Folyamatban lévő másolás közben a port nem módosítható.');

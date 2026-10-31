@@ -22,9 +22,11 @@ final class AuthService
     }
     public function login(array $data): void
     {
-        $email=strtolower(trim(is_string($data['email'] ?? null) ? $data['email'] : ''));
+        $identity=trim(is_string($data['email'] ?? null) ? $data['email'] : '');
+        $email=strtolower($identity);
         (new LoginRateLimiter())->consume(substr($email,0,190),(string)($_SERVER['REMOTE_ADDR'] ?? 'local'));
-        $user=$this->db->query('SELECT * FROM users WHERE email=?',[$email])->fetch();
+        $hasUsername=(bool)$this->db->query("SHOW COLUMNS FROM users LIKE 'username'")->fetch();
+        $user=$hasUsername ? $this->db->query('SELECT * FROM users WHERE email=? OR username=? LIMIT 1',[$email,$identity])->fetch() : $this->db->query('SELECT * FROM users WHERE email=?',[$email])->fetch();
         $password=is_string($data['password'] ?? null) ? $data['password'] : '';
         $valid=password_verify($password,$user['password_hash'] ?? '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2uheWG/igi.');
         if (!$user || !$valid) throw new RuntimeException('Hibás bejelentkezési adatok.');

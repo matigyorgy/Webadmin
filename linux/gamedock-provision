@@ -69,6 +69,10 @@ def validate(payload,cfg):
     job_path(payload['job'])
     limit=payload.get('disk_limit_mb',0)
     if type(limit) is not int or not 0<=limit<=1073741824:raise ValueError('Invalid disk limit')
+    slots=payload.get('slot_limit',0)
+    if type(slots) is not int or not 0<=slots<=1000:raise ValueError('Invalid player slot limit')
+    expires=payload.get('expires_at',0)
+    if type(expires) is not int or expires<0:raise ValueError('Invalid server expiry')
     unit=payload['unit'];game=payload['game'];folder=payload['folder'];source=payload['source']
     if not isinstance(unit,str) or not re.fullmatch(r'[A-Za-z0-9_][A-Za-z0-9_-]*(?:\.service)?',unit):raise ValueError('Invalid unit')
     if not isinstance(game,str) or not re.fullmatch(r'[a-z][a-z0-9_-]{0,31}',game) or not isinstance(folder,str) or not re.fullmatch(r'[a-zA-Z0-9_-]{1,120}',folder):raise ValueError('Invalid game/folder')
@@ -108,7 +112,7 @@ def create(payload):
         path=job_path(payload['job'])
         if os.path.exists(path):
             old=read_job(payload['job'])
-            if any(old['request'].get(k,0 if k=='disk_limit_mb' else None)!=payload.get(k,0 if k=='disk_limit_mb' else None) for k in ('job','unit','game','source','folder','port','minecraft_type','disk_limit_mb')):raise ValueError('Job request mismatch')
+            if any(old['request'].get(k,0 if k in ('disk_limit_mb','slot_limit','expires_at') else None)!=payload.get(k,0 if k in ('disk_limit_mb','slot_limit','expires_at') else None) for k in ('job','unit','game','source','folder','port','minecraft_type','disk_limit_mb','slot_limit','expires_at')):raise ValueError('Job request mismatch')
             return public(old)
         cfg=config()
         game=payload.get('game','')
@@ -175,12 +179,18 @@ def configure(folder,settings):
         if not settings.get('eula'):raise ValueError('Minecraft EULA acceptance required')
         props=root/'server.properties';lines=props.read_text().splitlines() if props.exists() else []
         lines=[line for line in lines if not line.startswith(('server-port=','query.port='))]
-        props.write_text('\n'.join(lines+['server-port='+str(port),'query.port='+str(port)])+'\n')
+        lines += ['server-port='+str(port),'query.port='+str(port)]
+        slots=settings.get('slot_limit',0)
+        if slots:lines=[line for line in lines if not line.startswith('max-players=')]+['max-players='+str(slots)]
+        props.write_text('\n'.join(lines)+'\n')
         (root/'eula.txt').write_text('eula=true\n')
     if settings['game']=='fivem':
         file=root/'server.cfg';lines=file.read_text().splitlines() if file.exists() else []
         lines=[line for line in lines if not line.lstrip().startswith(('endpoint_add_tcp','endpoint_add_udp'))]
-        file.write_text('\n'.join(lines+['endpoint_add_tcp "0.0.0.0:'+str(port)+'"','endpoint_add_udp "0.0.0.0:'+str(port)+'"'])+'\n')
+        lines += ['endpoint_add_tcp "0.0.0.0:'+str(port)+'"','endpoint_add_udp "0.0.0.0:'+str(port)+'"']
+        slots=settings.get('slot_limit',0)
+        if slots:lines=[line for line in lines if not line.lstrip().lower().startswith('sv_maxclients')]+['sv_maxClients '+str(slots)]
+        file.write_text('\n'.join(lines)+'\n')
     for file in ([] if settings.get('reconfigure') else root.rglob('*')):
         if file.is_file() and file.suffix.lower() in ('.cfg','.properties','.json','.yml','.yaml','.txt') and file.stat().st_size<1024*1024:
             try:content=file.read_text()
@@ -202,7 +212,7 @@ def worker(job_id):
         os.mkdir(stage,0o700);os.chown(stage,data['uid'],data['gid'])
         if data.get('disk_limit_mb',0):storage_module().attach(data['unit'],stage,data['disk_limit_mb'])
         # No shell and no root copy: template symlinks cannot expose root-only files.
-        subprocess.run(['/usr/bin/python3','-I',SELF,'copy',data['source'],stage,base64.b64encode(json.dumps({'game':data['game'],'port':data['port'],'minecraft':bool(data.get('minecraft_type')),'eula':bool(data.get('eula_accepted'))}).encode()).decode()],check=True,timeout=3600,capture_output=True,start_new_session=True,preexec_fn=runtime.drop(pwd.getpwnam(data['user'])),env=runtime.environment(pwd.getpwnam(data['user'])))
+        subprocess.run(['/usr/bin/python3','-I',SELF,'copy',data['source'],stage,base64.b64encode(json.dumps({'game':data['game'],'port':data['port'],'slot_limit':data.get('slot_limit',0),'minecraft':bool(data.get('minecraft_type')),'eula':bool(data.get('eula_accepted'))}).encode()).decode()],check=True,timeout=3600,capture_output=True,start_new_session=True,preexec_fn=runtime.drop(pwd.getpwnam(data['user'])),env=runtime.environment(pwd.getpwnam(data['user'])))
         lock=locked()
         try:
             cfg=config()
@@ -210,7 +220,7 @@ def worker(job_id):
             if cfg.get('_copy_jobs',{}).get(data['unit'])!=job_id:raise ValueError('Reservation changed')
             os.chmod(stage,0o700)
             os.rename(stage,data['target'])
-            cfg[data['unit']]={'launch':True,'user':data['user'],'directory':data['target'],'provision_job':job_id,'port':data['port'],'game':data['game'],'disk_limit_mb':data.get('disk_limit_mb',0),'minecraft_type':data.get('minecraft_type'),'template_key':data.get('template_key'),'template_version':data.get('template_version')}
+            cfg[data['unit']]={'launch':True,'user':data['user'],'directory':data['target'],'provision_job':job_id,'port':data['port'],'game':data['game'],'disk_limit_mb':data.get('disk_limit_mb',0),'slot_limit':data.get('slot_limit',0),'expires_at':data.get('expires_at',0),'minecraft_type':data.get('minecraft_type'),'template_key':data.get('template_key'),'template_version':data.get('template_version')}
             cfg['_copy_jobs'].pop(data['unit'],None);atomic(CONFIG,cfg)
             job['state']='ready';job['message']='A fájlmásolás kész. A szerver indítható.';atomic(path,job)
         finally:fcntl.flock(lock,fcntl.LOCK_UN);lock.close()

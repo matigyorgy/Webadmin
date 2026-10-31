@@ -11,7 +11,7 @@ final class ProvisionApiService
     }
     public static function input(array $data): array
     {
-        $allowed=['action','user_id','node_id','game','minecraft_template','install_source','startup_command','port','memory_limit_mb','cpu_limit_percent'];
+        $allowed=['action','user_id','node_id','game','minecraft_template','install_source','startup_command','port','memory_limit_mb','cpu_limit_percent','disk_limit_mb','slot_limit','expires_at'];
         foreach($data as $key=>$value)if(!in_array($key,$allowed,true) || !is_scalar($value))throw new RuntimeException('Ismeretlen vagy hibás API-mező: '.$key,400);
         $result=[];foreach($data as $key=>$value)if($key!=='action')$result[$key]=(string)$value;
         try{
@@ -20,6 +20,67 @@ final class ProvisionApiService
             $result['game']=Validation::text($result,'game',32);
         }catch(RuntimeException $e){throw new RuntimeException($e->getMessage(),400,$e);}
         ksort($result);return $result;
+    }
+    public static function order(array $query): array
+    {
+        $pick=static function(string $key,string $fallback='')use($query):string{$value=$query[$key]??$fallback;if(!is_scalar($value))throw new RuntimeException('Hibás rendelési mező: '.$key,400);return trim((string)$value);};
+        if($pick('feladat')!=='szolg_letrehozas')throw new RuntimeException('Ismeretlen feladat. A feladat=szolg_letrehozas érték szükséges.',400);
+        $type=$pick('type');if($type!==''&&!in_array($type,['basic','premium'],true))throw new RuntimeException('A type mező basic vagy premium legyen.',400);
+        $premium=filter_var($pick('premium',$type==='premium'?'true':'false'),FILTER_VALIDATE_BOOLEAN,FILTER_NULL_ON_FAILURE);
+        if($premium===null)throw new RuntimeException('A premium mező true vagy false legyen.',400);
+        if($type!==''&&(($type==='premium')!==$premium))throw new RuntimeException('A type és premium mezők értéke nem egyezik.',400);
+        $service=$pick('szolg_type');
+        $service=preg_replace('/\A(?:premium|basic)_/','',$service);
+        $aliases=['fivm'=>'fivem'];$game=$aliases[$service]??$service;
+        if(!in_array($game,['minecraft','cs16','cs2','css','fivem'],true))throw new RuntimeException('Nem támogatott szolgáltatástípus. Használható: minecraft, cs16, cs2, css, fivem.',400);
+        $version=$pick('version');$template='';
+        if($game==='minecraft'){
+            if(!preg_match('/\A(vanilla|paper|forge|bukkit|spigot|purpur|fabric)_([A-Za-z0-9.-]{1,32})\z/',$version,$match))throw new RuntimeException('A Minecraft verzió például vanilla_26.1.2 legyen.',400);
+            $template=$match[1].':'.$match[2];
+        }
+        foreach(['slot','memory','hdd','lejar'] as $number)if(!preg_match('/\A[0-9]{1,12}\z/',$pick($number)))throw new RuntimeException('Érvénytelen számmező: '.$number,400);
+        $slot=(int)$pick('slot');$memory=(int)$pick('memory');$gb=(int)$pick('hdd');$expiry=(int)$pick('lejar');
+        if($slot<1 || $slot>1000 || $memory<0 || $memory>1048576 || $gb<0 || $gb>1048576 || $expiry<=time())throw new RuntimeException('A férőhely, memória, HDD vagy lejárat kívül esik az engedélyezett tartományon.',400);
+        $email=strtolower($pick('email_cim'));if(!filter_var($email,FILTER_VALIDATE_EMAIL)||strlen($email)>190)throw new RuntimeException('Érvényes email_cim szükséges.',400);
+        $username=$pick('felhasznalonev');if(!preg_match('/\A[A-Za-z0-9][A-Za-z0-9_.-]{2,63}\z/',$username))throw new RuntimeException('Érvényes, legalább 3 karakteres felhasznalonev szükséges.',400);
+        $password=$pick('jelszo');if(strlen($password)<12||strlen($password)>72||str_contains($password,"\0"))throw new RuntimeException('A jelszo 12–72 bájt hosszú legyen.',400);
+        $orderId=$pick('rendeles_id');if($orderId!==''&&!preg_match('/\A[A-Za-z0-9_.:-]{8,120}\z/',$orderId))throw new RuntimeException('A rendeles_id 8–120 biztonságos karakter legyen.',400);
+        return ['premium'=>$premium,'game'=>$game,'template'=>$template,'slot_limit'=>$slot,'memory_limit_mb'=>$memory,'disk_limit_mb'=>$gb*1024,'expires_at'=>$expiry,'email'=>$email,'username'=>$username,'password'=>$password,'order_id'=>$orderId];
+    }
+    public function runOrder(array $actor,array $order): array
+    {
+        if(!$this->db->query('SELECT is_admin FROM users WHERE id=?',[$actor['id']])->fetchColumn())throw new RuntimeException('Adminisztrátori jogosultság szükséges.',403);
+        if(!$this->db->query("SHOW COLUMNS FROM users LIKE 'username'")->fetch() || !(new SchemaUpdater($this->db))->orderFieldsEnabled())throw new RuntimeException('Először futtasd az admin adatbázisfrissítését az új rendelési mezőkhöz.',409);
+        if(!(new SchemaUpdater($this->db))->provisionEnabled())throw new RuntimeException('Először futtasd az admin adatbázisfrissítését a szerverlétrehozáshoz.',409);
+            $key=$order['order_id']!=='' ? 'order:'.$order['order_id'] : 'order:'.hash('sha256',json_encode([$order['email'],$order['username'],$order['game'],$order['template'],$order['premium'],$order['slot_limit'],$order['memory_limit_mb'],$order['disk_limit_mb'],$order['expires_at']],JSON_THROW_ON_ERROR));
+            $prior=$this->db->query('SELECT r.server_id,s.user_id,s.node_id,s.game,s.template_key,s.template_version,s.minecraft_type,s.memory_limit_mb,s.disk_limit_mb,s.slot_limit,s.expires_at,u.email,u.username,n.premium FROM provision_api_requests r JOIN servers s ON s.id=r.server_id JOIN users u ON u.id=s.user_id JOIN nodes n ON n.id=s.node_id WHERE r.request_hash=?',[hash('sha256',$key)])->fetch();
+            if($prior){if(strtolower($prior['email'])!==$order['email']||strcasecmp((string)$prior['username'],$order['username'])!==0||$prior['game']!==$order['game']||(int)$prior['premium']!==(int)$order['premium']||(int)$prior['memory_limit_mb']!==$order['memory_limit_mb']||(int)$prior['disk_limit_mb']!==$order['disk_limit_mb']||(int)$prior['slot_limit']!==$order['slot_limit']||(int)$prior['expires_at']!==$order['expires_at']||($order['game']==='minecraft'&&($prior['minecraft_type'].':'.$prior['template_version']!==$order['template'])))throw new RuntimeException('Ehhez a rendelésazonosítóhoz már más adatok tartoznak.',409);$input=['action'=>'create','user_id'=>(int)$prior['user_id'],'node_id'=>(int)$prior['node_id'],'game'=>$prior['game'],'memory_limit_mb'=>(int)$prior['memory_limit_mb'],'disk_limit_mb'=>(int)$prior['disk_limit_mb'],'slot_limit'=>(int)$prior['slot_limit'],'expires_at'=>(int)$prior['expires_at']];if($prior['template_key'])$input['minecraft_template']=$prior['template_key'];return $this->orderResult($actor,$key,$input);}
+            $nodes=$this->db->query('SELECT n.id,n.premium,(SELECT COUNT(*) FROM servers s WHERE s.node_id=n.id) AS used FROM nodes n WHERE n.premium=? ORDER BY used,n.id',[$order['premium']?1:0])->fetchAll();
+            if(!$nodes)throw new RuntimeException($order['premium']?'Nincs prémiumként megjelölt Linux-gép.':'Nincs normál Linux-gép.',409);
+            $node=$nodes[0];$templateKey=null;
+            if($order['game']==='minecraft'){
+                $node=null;
+                foreach($nodes as $candidateNode){
+                    try{$catalog=(new TemplateService($this->db,$this->ssh))->catalog($actor,(int)$candidateNode['id']);}catch(\Throwable){continue;}
+                    foreach($catalog['templates']??[] as $candidate)if(($candidate['type']??'').':'.($candidate['version']??'')===$order['template']&&($candidate['state']??'')==='ready'&&($candidate['provider']??'')!=='folder'){$node=$candidateNode;$templateKey=$candidate['key'];break 2;}
+                }
+                if(!$node)throw new RuntimeException('A kért Minecraft template egyik megfelelő Linux-gépen sem érhető el.',409);
+            }
+        $ownerId=$this->db->transaction(function()use($order){
+            $owner=$this->db->query('SELECT * FROM users WHERE email=? FOR UPDATE',[$order['email']])->fetch();
+            if(!$owner){$claimed=$this->db->query('SELECT id FROM users WHERE username=?',[$order['username']])->fetch();if($claimed)throw new RuntimeException('A rendelés felhasználóneve már foglalt.',409);$this->db->query('INSERT INTO users(email,username,password_hash,is_admin) VALUES(?,?,?,0)',[$order['email'],$order['username'],Validation::password($order['password'])]);return (int)$this->db->lastInsertId();}
+            $ownerId=(int)$owner['id'];if($owner['username']!==null&&strcasecmp((string)$owner['username'],$order['username'])!==0)throw new RuntimeException('Ehhez az e-mail-címhez már más felhasználónév tartozik.',409);
+            if($owner['username']===null){$claimed=$this->db->query('SELECT id FROM users WHERE username=? AND id<>?',[$order['username'],$ownerId])->fetch();if($claimed)throw new RuntimeException('A rendelés felhasználóneve már foglalt.',409);$this->db->query('UPDATE users SET username=? WHERE id=?',[$order['username'],$ownerId]);}
+            return $ownerId;
+        });
+        $input=['action'=>'create','user_id'=>$ownerId,'node_id'=>(int)$node['id'],'game'=>$order['game'],'memory_limit_mb'=>$order['memory_limit_mb'],'disk_limit_mb'=>$order['disk_limit_mb'],'slot_limit'=>$order['slot_limit'],'expires_at'=>$order['expires_at']];if($templateKey!==null)$input['minecraft_template']=$templateKey;
+        return $this->orderResult($actor,$key,$input);
+    }
+    private function orderResult(array $actor,string $key,array $input): array
+    {
+        $result=$this->run($actor,$key,$input);
+        if(($result['status']??0)===202)$result['json']['message']='A szerver létrehozása folyamatban van. Ismételd meg ugyanazt a rendelési URL-t vagy POST-kérést az állapot lekéréséhez.';
+        return $result;
     }
     public static function success(array $server): string
     {

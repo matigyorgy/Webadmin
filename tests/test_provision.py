@@ -23,6 +23,11 @@ class ProvisionTests(unittest.TestCase):
     def test_valid_paths(self):
         data=provision.validate(self.payload,self.policy)
         self.assertEqual(data['target'],str(self.target/'survival'));self.assertEqual(data['uid'],1001)
+    def test_player_slots_and_expiry_are_validated(self):
+        data=provision.validate(dict(self.payload,slot_limit=10,expires_at=1796122800),self.policy)
+        self.assertEqual(data['slot_limit'],10);self.assertEqual(data['expires_at'],1796122800)
+        for extra in ({'slot_limit':1001},{'expires_at':-1}):
+            with self.assertRaises(ValueError):provision.validate(dict(self.payload,**extra),self.policy)
     def test_source_escape(self):
         with self.assertRaises(ValueError):provision.validate(dict(self.payload,source=str(self.root/'outside')),self.policy)
     def test_source_symlink_escape(self):
@@ -77,6 +82,14 @@ class ProvisionTests(unittest.TestCase):
             (root/'server.cfg').write_text('sv_hostname "keep"\nendpoint_add_tcp "0.0.0.0:25000"\n')
             provision.configure(root,{'game':'fivem','port':25777,'reconfigure':True})
             self.assertIn('endpoint_add_udp "0.0.0.0:25777"',(root/'server.cfg').read_text());self.assertIn('sv_hostname "keep"',(root/'server.cfg').read_text())
+    def test_slots_are_written_to_minecraft_and_fivem_config(self):
+        root=self.root/'instance';root.mkdir();(root/'server.properties').write_text('motd=keep\nmax-players=20\n')
+        with patch.object(provision.os,'geteuid',return_value=1001):
+            provision.configure(root,{'game':'minecraft','minecraft':True,'eula':True,'port':25555,'slot_limit':10,'reconfigure':True})
+            self.assertIn('max-players=10',(root/'server.properties').read_text())
+            (root/'server.cfg').write_text('sv_hostname "keep"\nsv_maxClients 32\n')
+            provision.configure(root,{'game':'fivem','port':25556,'slot_limit':12,'reconfigure':True})
+            self.assertIn('sv_maxClients 12',(root/'server.cfg').read_text());self.assertNotIn('sv_maxClients 32',(root/'server.cfg').read_text())
     def test_port_manifest_escape_rejected(self):
         root=self.root/'instance';root.mkdir();(root/'.gamedock-ports.json').write_text('{"port":25000,"files":["../outside/secret.cfg"]}')
         with patch.object(provision.os,'geteuid',return_value=1001):

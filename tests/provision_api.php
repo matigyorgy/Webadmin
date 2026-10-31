@@ -11,6 +11,10 @@ apiReject(fn()=>GameDock\ProvisionApiService::input(['user_id'=>0,'node_id'=>1,'
 $a=GameDock\ProvisionApiService::input(['game'=>'cs2','user_id'=>1,'node_id'=>2]);
 $b=GameDock\ProvisionApiService::input(['node_id'=>'2','user_id'=>'1','game'=>'cs2']);
 apiCheck($a===$b,'A paraméterek normalizálása nem stabil.');
+$order=GameDock\ProvisionApiService::order(['feladat'=>'szolg_letrehozas','premium'=>'true','type'=>'premium','slot'=>'10','hdd'=>'100','memory'=>'4096','version'=>'vanilla_26.1.2','szolg_type'=>'premium_minecraft','lejar'=>(string)(time()+3600),'email_cim'=>'laszlo@example.com','felhasznalonev'=>'SS9-360985','jelszo'=>'test-password-123','rendeles_id'=>'order-test-1']);
+apiCheck($order['premium']&&$order['game']==='minecraft'&&$order['template']==='vanilla:26.1.2'&&$order['slot_limit']===10&&$order['disk_limit_mb']===102400&&$order['memory_limit_mb']===4096,'A rendelési mezők normalizálása hibás.');
+apiCheck(GameDock\ProvisionApiService::order(['feladat'=>'szolg_letrehozas','premium'=>'false','slot'=>'8','hdd'=>'50','memory'=>'2048','version'=>'latest','szolg_type'=>'fivm','lejar'=>(string)(time()+3600),'email_cim'=>'user@example.com','felhasznalonev'=>'user-123','jelszo'=>'test-password-123'])['game']==='fivem','A FiveM alias nem működik.');
+apiReject(fn()=>GameDock\ProvisionApiService::order(['feladat'=>'wrong']),400);
 $view=new GameDock\SmartyView(dirname(__DIR__));ob_start();
 try{$view->render('api-settings.tpl',['user'=>['id'=>1,'email'=>'admin@example.com','is_admin'=>1],'page'=>'api','csrf'=>'test','error'=>'','notice'=>'','token'=>'','configured'=>false]);$html=ob_get_contents();}finally{ob_end_clean();}
 apiCheck(str_contains($html,'provision_api.php') && str_contains($html,'name="csrf"') && str_contains($html,'API-kulcs létrehozása'),'Hiányos API-beállító felület.');
@@ -48,5 +52,9 @@ try{
     apiCheck($service->run($actor,$key,['action'=>'status'])['status']===422,'Hibás másolás sikert jelez.');
     $db->query('DELETE FROM servers WHERE id=1');apiReject(fn()=>$service->run($actor,$key,$input),410);
     apiCheck((int)$db->query('SELECT COUNT(*) FROM servers')->fetchColumn()===0,'A törölt példány újra létrejött.');
+    (new GameDock\GameRegistry($db))->seed();
+    $limited=(new GameDock\AdminService($db,static fn(array $node):array=>[]))->save($actor,'servers',['user_id'=>'2','node_id'=>'1','game'=>'cs16','memory_limit_mb'=>'512','cpu_limit_percent'=>'0','disk_limit_mb'=>'0','slot_limit'=>'10','expires_at'=>(string)(time()+3600)]);
+    $limitedRow=$db->query('SELECT startup_command,slot_limit,expires_at FROM servers WHERE id=?',[$limited])->fetch();
+    apiCheck(str_contains($limitedRow['startup_command'],'+maxplayers 10')&&(int)$limitedRow['slot_limit']===10&&(int)$limitedRow['expires_at']>time(),'A férőhely/lejárat limit nem került a szerverre.');$db->query('DELETE FROM servers WHERE id=?',[$limited]);
     echo "MySQL: tranzakciós visszagörgetés, adminjog, ismétlésvédelem, hibás/törölt szerver ellenőrizve.\n";
 }finally{$root->exec('DROP DATABASE `'.$name.'`');}

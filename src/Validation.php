@@ -23,6 +23,12 @@ final class Validation
         if (!filter_var($email,FILTER_VALIDATE_EMAIL)) throw new RuntimeException('Érvényes e-mail-cím szükséges.');
         return $email;
     }
+    public static function username(array $data): string
+    {
+        $value=trim(is_string($data['username'] ?? null) ? $data['username'] : '');
+        if($value==='' || strlen($value)>64 || !preg_match('/\A[A-Za-z0-9][A-Za-z0-9_.-]{2,63}\z/',$value))throw new RuntimeException('A felhasználónév 3–64 karakteres legyen, betűvel vagy számmal kezdődjön.');
+        return $value;
+    }
     public static function password(string $password): string
     {
         if (strlen($password)<12 || strlen($password)>72 || str_contains($password,"\0")) throw new RuntimeException('A jelszó 12–72 bájt hosszú legyen.');
@@ -36,8 +42,10 @@ final class Validation
     }
     public static function node(array $data): array
     {
+        $premium=$data['premium'] ?? '0';if(!is_scalar($premium)||!in_array((string)$premium,['','0','1'],true))throw new RuntimeException('Érvénytelen prémium gépjelölő.');
         $node=['name'=>self::text($data,'name'),'ssh_host'=>self::text($data,'ssh_host',255),
-            'ssh_user'=>self::text($data,'ssh_user',64),'ssh_fingerprint'=>self::text($data,'ssh_fingerprint',100)];
+            'ssh_user'=>self::text($data,'ssh_user',64),'ssh_fingerprint'=>self::text($data,'ssh_fingerprint',100),
+            'premium'=>(string)$premium==='1' ? 1 : 0];
         if (!preg_match('/\A(?:[a-zA-Z0-9_.-]+|[a-fA-F0-9:]+)\z/',$node['ssh_host'])) throw new RuntimeException('Érvénytelen SSH-cím.');
         $node['ssh_port']=self::id($data['ssh_port'] ?? 0);
         if ($node['ssh_port']>65535) throw new RuntimeException('Érvénytelen SSH-port.');

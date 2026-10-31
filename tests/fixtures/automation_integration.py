@@ -73,4 +73,8 @@ a.p.atomic(str(a.folder(unit)/'job.json'),{'id':'f'*32,'state':'running','operat
 assert cli('list')['job']['state']=='failed';assert (target/'world.txt').read_text()=='original-world'
 for record in cli('list')['backups']:cli('backup_delete',{'id':record['id']})
 assert cli('list')['backups']==[]
-print('Automation integration passed: real sudo, PTY stop/snapshot/resume, gzip archive, offline + confirmation enforcement, exact restore, metadata barrier, actual cron execution, scoped retention, corruption rejection, interrupted-restore recovery and deletion.')
+launch('start')
+with a.p.locked():cfg=a.p.config();cfg[unit]['expires_at']=int(time.time())-1;a.p.atomic(a.p.CONFIG,cfg)
+a.tick();assert cli('list')['server_state']=='inactive'
+with a.p.locked():cfg=a.p.config();cfg[unit]['expires_at']=0;a.p.atomic(a.p.CONFIG,cfg)
+print('Automation integration passed: real sudo, PTY stop/snapshot/resume, gzip archive, offline + confirmation enforcement, exact restore, metadata barrier, actual cron execution, automatic expiry stop, scoped retention, corruption rejection, interrupted-restore recovery and deletion.')

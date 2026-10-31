@@ -172,7 +172,19 @@ A Linux-telepítés hibaüzenete most a sikertelen lépést és a kilépési kó
 
 Adminbeállítás: `/api_settings.php`. Itt készíthető vagy visszavonható az API-kulcs, a szükséges ismétlésvédelmi tábla automatikusan létrejön. A kulcs csak egyszer látható, a panel kizárólag SHA-256 lenyomatát tárolja a webgyökéren kívül. Az API az őt létrehozó adminhoz kötődik; az adminjog visszavonása az API-hozzáférést is megszünteti.
 
-Végpont: **`https://dev.vgh.hu/provision_api.php`**, más telepítésnél a saját domainnel. Kizárólag `POST application/json`, `Authorization: Bearer <kulcs>` és kötelező, rendelésenként egyedi, 8–128 karakteres `Idempotency-Key` fejléc támogatott. A kulcsot szerveroldalon kezeld, HTTPS-en küldd. Nginx/FastCGI továbbítsa az Authorization fejlécet PHP-nak (`fastcgi_param HTTP_AUTHORIZATION $http_authorization;`), amennyiben ezt a tárhely nem teszi meg alapból.
+Végpont: **`https://dev.vgh.hu/provision_api.php`**, más telepítésnél a saját domainnel. Az ajánlott formátum `POST application/json`, `Authorization: Bearer <kulcs>` és kötelező, rendelésenként egyedi, 8–128 karakteres `Idempotency-Key` fejléccel. Nginx/FastCGI továbbítsa az Authorization fejlécet PHP-nak (`fastcgi_param HTTP_AUTHORIZATION $http_authorization;`), amennyiben ezt a tárhely nem teszi meg alapból.
+
+Meglévő rendelési rendszerhez a végpont a régi GET-paraméteres formátumot és `application/x-www-form-urlencoded` POST törzset is fogadja. A GET-es példa:
+
+```text
+https://dev.vgh.hu/provision_api.php?key=API-KULCS&premium=true&slot=10&hdd=100&type=premium&memory=4096&version=vanilla_26.1.2&szolg_type=premium_minecraft&feladat=szolg_letrehozas&lejar=1893456000&email_cim=ugyfel%40pelda.hu&felhasznalonev=ugyfel123&jelszo=JELSZO&rendeles_id=RENDELES-123
+```
+
+Mivel a GET címsor tartalmaz API-kulcsot és ügyféljelszót, azok bekerülhetnek a proxy-, webszerver- és böngészőnaplókba. HTTPS kötelező. A rendelési szolgáltatás POST támogatásával inkább a mezőket a POST törzsében, az API-kulcsot `Authorization: Bearer …` fejlécben küldje. A végpont mindkét formátumot ugyanazzal a jogosultság-ellenőrzéssel kezeli.
+
+`feladat=szolg_letrehozas` rendelést indít. `email_cim`, `felhasznalonev` és `jelszo` szükséges; új e-mail-címhez panel-fiókot készít, létező fióknál nem cseréli le a jelszót. A `rendeles_id` legyen minden rendelésnél egyedi, ismételt átadásnál pedig változatlan; ha hiányzik, azonos rendelési adatokból képezünk ismétlésvédelmi kulcsot. `premium=true` a Prémiumként megjelölt Linux-gépek közül választ (a legkevesebb szerverrel rendelkezőt); `false` a többi gépet választja. A `szolg_type` az admin játéktípus azonosítója, opcionálisan `premium_`/`basic_` előtaggal; `fivm` alias is elfogadott. Minecraftnál a `version` alakja `vanilla_26.1.2`, a kért template-nek már telepítve kell lennie a kiválasztott gépen.
+
+`slot` 1–1000 játékos férőhelyet állít be az ismert Minecraft, CS1.6, CS2, CS:S és FiveM beállításokban. `hdd` GB-ban érkezik, és MiB-ra váltva tároljuk/korlátozzuk; tényleges kvótához a korábban leírt ext4/XFS projektkvóta szükséges. `memory` MiB. `lejar` jövőbeli Unix időbélyeg; a Linux-gép cron feladata percenként ellenőrzi, leállítja a lejárt szervert, és a panel nem engedi újraindítani. `type` kiegészítő csomagcímke; a gépválasztást a `premium` mező végzi.
 
 ```sh
 curl 'https://dev.vgh.hu/provision_api.php' \
@@ -182,7 +194,7 @@ curl 'https://dev.vgh.hu/provision_api.php' \
   --data '{"action":"create","user_id":1731,"node_id":1,"game":"cs2","memory_limit_mb":4096,"cpu_limit_percent":200}'
 ```
 
-A `user_id` a meglévő ügyfél számos adatbázis-azonosítója; `node_id` a Linux-gép adatbázis-azonosítója; `game` az admin játéktípus-azonosítója. Az API ügyfelet nem hoz létre. Opcionális: `port` (25000–25999, elhagyva véletlen), `install_source`, `startup_command`, `memory_limit_mb`, `cpu_limit_percent`, Minecraftnál a már letöltött `minecraft_template` kulcs. A template és indítóparancs alapból a játéktípus beállításából jön. A node neve például `node_s1` legyen (betű/szám/pont/kötőjel/aláhúzás).
+A JSON API `user_id` mezője meglévő ügyfél számos adatbázis-azonosítója; `node_id` a Linux-gép adatbázis-azonosítója; `game` az admin játéktípus-azonosítója. A kompatibilitási rendelési API ezzel szemben `email_cim`, `felhasznalonev` és `jelszo` alapján automatikusan létrehozza a még hiányzó ügyfélfiókot. A JSON API további mezői: `port` (25000–25999, elhagyva véletlen), `install_source`, `startup_command`, `memory_limit_mb`, `cpu_limit_percent`, Minecraftnál a már letöltött `minecraft_template` kulcs. A template és indítóparancs alapból a játéktípus beállításából jön. A node neve például `node_s1` legyen (betű/szám/pont/kötőjel/aláhúzás).
 
 A `202` válasz JSON-ban jelzi a folyamatban lévő másolást. Azonos `Idempotency-Key` fejléccel, `{"action":"status"}` törzzsel kérdezd le 3 másodpercenként. Ha a létrehozási kérés hálózati hibával megszakad, az eredeti `create` kérés is biztonságosan megismételhető azonos kulccsal és adatokkal. Más paraméterek azonos kulccsal `409` hibát adnak. A kérés és szerverbejegyzés egy tranzakcióban készül, párhuzamos ismétlés nem hoz létre második szervert. A szerver későbbi törlése után ugyanaz a kulcs nem használható újra.
 
