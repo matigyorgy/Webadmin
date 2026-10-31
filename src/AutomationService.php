@@ -9,7 +9,7 @@ final class AutomationService
     {
         $s=(new ServerService($this->db,$this->ssh))->find($user,$id);
         if(($s['provision_state'] ?? 'ready')!=='ready')throw new RuntimeException('A szerverfájlok elkészülte után használható az időzítő és a mentés.');
-        if(!array_key_exists('last_restore_job',$s))throw new RuntimeException('Az adminban először engedélyezd az új szerverfunkciókat, majd frissítsd a Linux-segédprogramokat.');
+        if(!array_key_exists('last_restore_job',$s))throw new RuntimeException('Az időzítő és a biztonsági mentés adatbázisfrissítése hiányzik. Az adminisztrátor nyissa meg: Admin → Játékszerverek → Új szerverfunkciók engedélyezése. Ezután az érintett gépen futtassa az Automatikus Linux-telepítést.');
         return $s;
     }
     private function panel(array $s): array

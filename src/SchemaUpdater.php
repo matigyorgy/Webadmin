@@ -10,6 +10,10 @@ final class SchemaUpdater
     {
         return (bool)$this->db->query("SHOW COLUMNS FROM servers LIKE 'startup_command'")->fetch();
     }
+    public function automationEnabled(): bool
+    {
+        return (bool)$this->db->query("SHOW COLUMNS FROM servers LIKE 'last_restore_job'")->fetch();
+    }
     public function provisionEnabled(): bool
     {
         $available=array_column($this->db->query('SHOW COLUMNS FROM servers')->fetchAll(),'Field');
@@ -54,7 +58,7 @@ final class SchemaUpdater
             }
         }
         catch (Throwable $e) {
-            if (!$this->provisionEnabled() || !$this->db->query("SHOW COLUMNS FROM servers LIKE 'last_restore_job'")->fetch()) throw new RuntimeException('Az új szerverfunkciókhoz ALTER TABLE jogosultság szükséges. Engedélyezd a panel adatbázis-felhasználójának, majd próbáld újra.');
+            if (!$this->provisionEnabled() || !$this->automationEnabled()) throw new RuntimeException('Az új szerverfunkciókhoz ALTER TABLE jogosultság szükséges. Engedélyezd a panel adatbázis-felhasználójának, majd próbáld újra.');
         }
         $cs16=GameRegistry::defaults()['cs16'];
         $this->db->query('INSERT IGNORE INTO game_types(slug,name,template_path,startup_command,provider) VALUES(?,?,?,?,?)',array_values($cs16));

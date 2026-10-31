@@ -39,7 +39,7 @@ final class AdminController
                 $action=(string)($_POST['action'] ?? '');
                 if ($action==='upgrade_startup' && $section==='servers') {
                     (new SchemaUpdater($this->db))->enableStartup($user);
-                    $_SESSION['admin_notice']='Az indítóparancsokat és szerverfájl-másolást engedélyeztük. A meglévő szerverek és adatok megmaradtak.';
+                    $_SESSION['admin_notice']='Az új szerverfunkciók, az időzítő és a biztonsági mentés adatbázisfrissítése elkészült. A meglévő szerverek és adatok megmaradtak. Az érintett gépeken frissítsd a Linux-segédprogramokat az Automatikus Linux-telepítéssel.';
                 } elseif ($action==='save') {
                     $created=$section==='servers' && empty($_POST['id']);
                     $savedId=$service->save($user,$section,$_POST); $_SESSION['admin_notice']='A bejegyzést elmentettük.';
@@ -97,6 +97,6 @@ final class AdminController
         } catch (Throwable $e) { $error=$e instanceof RuntimeException && !$e instanceof PDOException ? $e->getMessage() : 'Az adminlista nem tölthető be.'; }
         $defaults=['custom_template'=>'','public_host'=>'','memory_limit_mb'=>0,'cpu_limit_percent'=>0,'id'=>'','email'=>'','is_admin'=>'0','name'=>'','ssh_host'=>'','ssh_port'=>'22','ssh_user'=>'gamedock','ssh_fingerprint'=>'','user_id'=>'','node_id'=>'','game'=>'minecraft','unit_name'=>'','startup_command'=>'','install_source'=>'','install_folder'=>'','provision_job'=>'','provision_state'=>'ready','provision_message'=>'','slug'=>'','existing_slug'=>'','template_path'=>'','provider'=>'folder','minecraft_template'=>'','port'=>null];
         $this->view->render('admin.tpl',['user'=>$user,'navigation_groups'=>(new ServerService($this->db,$this->ssh))->navigation($user),'csrf'=>$_SESSION['csrf'],'section'=>$section,'error'=>$error,'notice'=>$notice,'rows'=>$rows,
-            'record'=>$record===null ? null : array_replace($defaults,$record),'users'=>$users,'nodes'=>$nodes,'public_key'=>$key,'catalog'=>$catalog,'selected_node'=>$selectedNode,'profiles'=>(new GameRegistry($this->db))->all(),'startup_supported'=>(new SchemaUpdater($this->db))->startupEnabled(),'provision_supported'=>(new SchemaUpdater($this->db))->provisionEnabled(),'games'=>(new GameRegistry($this->db))->names()]);
+            'record'=>$record===null ? null : array_replace($defaults,$record),'users'=>$users,'nodes'=>$nodes,'public_key'=>$key,'catalog'=>$catalog,'selected_node'=>$selectedNode,'profiles'=>(new GameRegistry($this->db))->all(),'startup_supported'=>(new SchemaUpdater($this->db))->startupEnabled(),'provision_supported'=>(new SchemaUpdater($this->db))->provisionEnabled(),'automation_supported'=>(new SchemaUpdater($this->db))->automationEnabled(),'games'=>(new GameRegistry($this->db))->names()]);
     }
 }

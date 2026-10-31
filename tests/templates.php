@@ -52,11 +52,15 @@ function renderCaseForInstaller(GameDock\SmartyView $view,array $data): string {
 }
 
 $adminBase=['user'=>['id'=>1,'email'=>'admin@example.com','is_admin'=>1],'csrf'=>'admin-csrf','section'=>'servers','error'=>'','notice'=>'','rows'=>[],
-    'record'=>null,'users'=>[],'nodes'=>[],'public_key'=>'ssh-rsa example','startup_supported'=>true,'provision_supported'=>true,'profiles'=>GameDock\GameRegistry::defaults(),'catalog'=>['templates'=>[],'state'=>'idle','message'=>''],'selected_node'=>null,'games'=>GameDock\Validation::GAMES];
+    'record'=>null,'users'=>[],'nodes'=>[],'public_key'=>'ssh-rsa example','startup_supported'=>true,'provision_supported'=>true,'automation_supported'=>true,'profiles'=>GameDock\GameRegistry::defaults(),'catalog'=>['templates'=>[],'state'=>'idle','message'=>''],'selected_node'=>null,'games'=>GameDock\Validation::GAMES];
 function renderTemplate(GameDock\SmartyView $view,string $template,array $data): string {
     ob_start();
     try { $view->render($template,$data); return ob_get_contents(); } finally { ob_end_clean(); }
 }
+$html=renderTemplate($view,'admin.tpl',array_replace($adminBase,['section'=>'servers','provision_supported'=>true,'automation_supported'=>false]));
+check(str_contains($html,'value="upgrade_startup"'),'Automation upgrade hidden behind legacy provisioning readiness');
+$html=renderTemplate($view,'admin.tpl',array_replace($adminBase,['section'=>'servers','provision_supported'=>true,'automation_supported'=>true]));
+check(!str_contains($html,'value="upgrade_startup"'),'Upgrade banner remained after automation migration');
 $record=['id'=>'','email'=>'','is_admin'=>0,'name'=>'','ssh_host'=>'','ssh_port'=>22,'ssh_user'=>'gamedock','ssh_fingerprint'=>'', 'user_id'=>'','node_id'=>'','game'=>'minecraft','unit_name'=>'','startup_command'=>'','install_source'=>'','install_folder'=>'','provision_job'=>'','provision_state'=>'ready','provision_message'=>'','slug'=>'','existing_slug'=>'','template_path'=>'','provider'=>'folder','port'=>null];
 foreach (['users','nodes','servers'] as $section) {
     $html=renderTemplate($view,'admin.tpl',array_replace($adminBase,['section'=>$section,'record'=>$record]));
