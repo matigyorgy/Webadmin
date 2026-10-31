@@ -118,11 +118,24 @@ if (gameSelect) {
     gameSelect.addEventListener('change',updateGame);node?.addEventListener('change',updateGame);updateGame();
 }
 const templatePanel=document.querySelector('[data-template-node]');
-if(templatePanel){let busy=false;const timer=setInterval(async()=>{
+if(templatePanel){let busy=false,refreshNeeded=false;setInterval(async()=>{
     if(busy || document.hidden)return;busy=true;
-    try{const response=await fetch(`/admin_api.php?action=templates&node_id=${encodeURIComponent(templatePanel.dataset.templateNode)}`,{cache:'no-store'});const data=await response.json();if(!response.ok)throw Error(data.error);const message=templatePanel.querySelector('[data-template-message]');message.textContent=data.message || '';if(data.state!=='running'){clearInterval(timer);const link=document.createElement('a');link.href=location.href;link.className='ms-2';link.textContent='Telepített templatek frissítése';message.append(link);}}
-    catch(error){templatePanel.querySelector('[data-template-message]').textContent=error.message;clearInterval(timer);}finally{busy=false;}
+    try{
+        const response=await fetch(`/admin_api.php?action=templates&node_id=${encodeURIComponent(templatePanel.dataset.templateNode)}`,{cache:'no-store'});
+        const data=await response.json();if(!response.ok)throw Error(data.error);
+        const previous=templatePanel.dataset.templateState;templatePanel.dataset.templateState=data.state;
+        document.dispatchEvent(new Event('template-state-updated'));
+        const message=templatePanel.querySelector('[data-template-message]');message.textContent=data.message || '';
+        if(previous==='running' && data.state!=='running')refreshNeeded=true;
+        if(refreshNeeded){
+            const link=document.createElement('a');link.href=location.href;link.className='ms-2';link.textContent='Telepített templatek frissítése';message.append(link);
+        }
+    }catch(error){
+        templatePanel.querySelector('[data-template-message]').textContent=error.message;
+        templatePanel.dataset.templateState='unknown';document.dispatchEvent(new Event('template-state-updated'));
+    }finally{busy=false;}
 },5000);}
+
 const setup=document.getElementById('node-setup');
 if(setup) document.getElementById('start-node-setup').addEventListener('click',async()=>{
     const button=document.getElementById('start-node-setup');const output=document.getElementById('node-setup-result');
@@ -288,7 +301,12 @@ if(releaseCatalog){
     const form=releaseCatalog.querySelector('[data-release-form]'),type=releaseCatalog.querySelector('#release-type'),version=releaseCatalog.querySelector('#release-version');
     const message=releaseCatalog.querySelector('[data-release-message]'),retry=releaseCatalog.querySelector('[data-release-retry]'),install=releaseCatalog.querySelector('[data-release-install]');
     let request=0,controller,submitting=false;
-    const update=()=>{install.disabled=submitting || version.disabled || !version.value;};
+    const update=()=>{
+        const state=templatePanel?.dataset.templateState,blocked=state==='running' || state==='unknown';
+        install.disabled=submitting || blocked || version.disabled || !version.value;
+        releaseCatalog.querySelector('[data-install-state]').textContent=state==='running' ? 'Ezen a Linux-gépen már egy template telepítése fut. Új telepítést a befejezése után indíthatsz.' : state==='unknown' ? 'A telepítés állapota nem érhető el. A kapcsolat helyreállása után újra próbálhatod.' : '';
+    };
+    document.addEventListener('template-state-updated',update);
     async function load(){
         const current=++request,selectedType=releaseCatalog.hidden ? '' : type.value;
         controller?.abort();controller=new AbortController();

@@ -18,9 +18,12 @@ const {chromium}=require('playwright');
   const page=await browser.newPage(),errors=[],posts=[];
   page.on('pageerror',e=>errors.push(e.message));
   const rows=type=>Array.from({length:12},(_,i)=>({type,key:`${type}:1.21.${12-i}:build`,version:`1.21.${12-i}`,build:'build'}));
-  let fail=false,empty=false;
+  let fail=false,empty=false,catalogState='idle',catalogFail=false;
+  await page.route('**/admin_api.php?action=templates&*',route=>route.fulfill({status:catalogFail?503:200,json:catalogFail?{error:'Status unavailable'}:{state:catalogState,templates:[],message:'Test installation state'}}));
   await page.route('**/admin_api.php?*',async route=>{
-   const type=new URL(route.request().url()).searchParams.get('type');
+   const params=new URL(route.request().url()).searchParams;
+   if(params.get('action')==='templates')return route.fallback();
+   const type=params.get('type');
    if(type==='paper')await new Promise(resolve=>setTimeout(resolve,200));
    await route.fulfill({status:fail?503:200,json:fail?{error:'Catalog unavailable'}:{templates:empty?[]:rows(type)}}).catch(()=>{});
   });
@@ -74,12 +77,17 @@ const {chromium}=require('playwright');
   assert(await version.isDisabled());assert(await button.isDisabled());
   empty=false;await type.selectOption('vanilla');await page.waitForFunction(()=>!document.querySelector('#release-version').disabled);
   await version.selectOption('vanilla:1.21.11:build');
+  catalogState='running';await page.waitForFunction(()=>document.querySelector('[data-template-node]').dataset.templateState==='running');
+  assert(await button.isDisabled());assert((await page.locator('[data-install-state]').textContent()).includes('telepítése fut'));
+  catalogFail=true;await page.waitForFunction(()=>document.querySelector('[data-template-node]').dataset.templateState==='unknown');assert(await button.isDisabled());
+  catalogFail=false;catalogState='ready';await page.waitForFunction(()=>document.querySelector('[data-template-node]').dataset.templateState==='ready');assert(!(await button.isDisabled()));
+  assert.equal(posts.length,0);
   // Submitting without the install button must never send an installation request.
   await page.locator('[data-release-form]').evaluate(form=>form.requestSubmit());assert.equal(posts.length,0);
   await Promise.all([page.waitForNavigation(),button.click()]);
   assert.equal(posts.length,1);assert.equal(posts[0].get('action'),'install_template');
   assert.equal(posts[0].get('template_key'),'vanilla:1.21.11:build');assert.equal(posts[0].get('node_id'),'1');assert.equal(posts[0].get('csrf'),'release-picker-test');
   assert.deepEqual(errors,[]);
-  console.log('Game/template picker passed: game selection, custom version/path POST, seven Minecraft types, latest ten versions, explicit install only, selection reset, stale responses, error/retry, empty catalog and exact POST payload.');
+  console.log('Game/template picker passed: game selection, custom version/path POST, seven Minecraft types, latest ten versions, explicit install only, selection reset, stale responses, error/retry, empty catalog, running-install block, polling recovery and exact POST payload.');
  }finally{if(browser)await browser.close();await new Promise(resolve=>server.close(resolve));}
 })().catch(error=>{console.error(error);process.exitCode=1;});

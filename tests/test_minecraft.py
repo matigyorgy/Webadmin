@@ -56,6 +56,13 @@ class MinecraftTests(unittest.TestCase):
    with patch.object(mc,'CACHE',folder),patch.object(mc,'cfg',return_value={'_provision':{'source_root':folder,'users':{'minecraft':'game'}}}),patch.object(mc.pwd,'getpwnam',return_value=SimpleNamespace(pw_uid=1001)),patch.object(mc,'public_directory'),patch.object(mc,'paper',return_value=[dict(selected)]) as provider,patch.object(mc,'vanilla',side_effect=AssertionError('Wrong provider')):
     mc.worker()
    saved=json.loads((root/'catalog.json').read_text());self.assertEqual({row['key'] for row in saved['templates']},{selected['key'],other['key']});self.assertEqual(provider.call_count,1)
+ def test_running_install_is_not_replaced(self):
+  with tempfile.TemporaryDirectory() as folder:
+   current={'state':'running','selection':'paper:1.21.10:1','worker':{'pid':123},'templates':[]}
+   with patch.object(mc,'CACHE',folder),patch.object(mc,'catalog',return_value=current),patch.object(mc.rt,'alive',return_value=True),patch.object(mc.subprocess,'Popen') as launch:
+    self.assertEqual(mc.sync(current['selection']),current)
+    with self.assertRaisesRegex(ValueError,'Another template installation is running'):mc.sync('vanilla:1.21.10:2')
+    launch.assert_not_called()
  def test_jdk_archive_traversal(self):
   with tempfile.TemporaryDirectory() as folder:
    archive=Path(folder)/'jdk.tar';destination=Path(folder)/'extract';destination.mkdir()
