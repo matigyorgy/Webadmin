@@ -36,6 +36,10 @@ try{
     try{$admin->save($actor,'users',['email'=>'rollback@example.com','password'=>'Test-password-123'],static function(int $id){throw new RuntimeException('rollback');});}catch(RuntimeException $e){apiCheck($e->getMessage()==='rollback','A mentési callback nem futott le.');}
     apiCheck((int)$db->query('SELECT COUNT(*) FROM users')->fetchColumn()===$before,'A mentés nem gördült vissza.');
     $db->query('INSERT INTO nodes(id,name,ssh_host,ssh_port,ssh_user,ssh_fingerprint) VALUES(1,?,?,?,?,?)',['node_s1','127.0.0.1',22,'gamedock','SHA256:'.str_repeat('A',43)]);
+    $db->query('ALTER TABLE servers DROP COLUMN slot_limit,DROP COLUMN expires_at');$db->query('ALTER TABLE nodes DROP COLUMN premium');$db->query('ALTER TABLE users DROP COLUMN username');
+    try{(new GameDock\ProvisionApiService($db,new GameDock\SshClient()))->runOrder($actor,GameDock\ProvisionApiService::order(['feladat'=>'szolg_letrehozas','premium'=>'true','type'=>'premium','slot'=>'10','hdd'=>'100','memory'=>'4096','version'=>'latest','szolg_type'=>'premium_cs2','lejar'=>(string)(time()+3600),'email_cim'=>'migration@example.com','felhasznalonev'=>'migration-user','jelszo'=>'test-password-123']));throw new RuntimeException('A hiányzó rendelési adatbázismezők után API-ellenőrzés nem futott tovább.');}
+    catch(RuntimeException $e){apiCheck($e->getCode()===409 && str_contains($e->getMessage(),'Nincs prémiumként megjelölt Linux-gép'),'Az API nem frissítette automatikusan a rendelési adatbázismezőket: '.$e->getMessage());}
+    apiCheck((new GameDock\SchemaUpdater($db))->orderFieldsEnabled(),'Az API-kérés nem végezte el a hiányzó rendelési mezők adatbázisfrissítését.');
     $db->query('INSERT INTO servers(id,name,game,unit_name,user_id,node_id,provision_job,provision_state) VALUES(1,?,?,?,?,?,?,?)',['CS2','cs2','15366',2,1,str_repeat('a',32),'ready']);
     $key='integration-order-123';$input=['action'=>'create','user_id'=>2,'node_id'=>1,'game'=>'cs2'];
     $hash=hash('sha256',json_encode(GameDock\ProvisionApiService::input($input),JSON_THROW_ON_ERROR));
