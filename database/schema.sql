@@ -40,6 +40,7 @@ CREATE TABLE servers (
  provision_job VARCHAR(32) NULL,
  provision_state VARCHAR(16) NOT NULL DEFAULT 'ready',
  provision_message VARCHAR(500) NULL,
+ last_restore_job VARCHAR(32) NULL,
  FOREIGN KEY (user_id) REFERENCES users(id),
  FOREIGN KEY (node_id) REFERENCES nodes(id)
 );

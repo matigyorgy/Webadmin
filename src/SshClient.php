@@ -58,6 +58,18 @@ PYTHON;
         $ssh=$this->connect($node);$ssh->enableQuietMode();if($action==='releases')$ssh->setTimeout(60);$output=$ssh->exec('/usr/bin/sudo -n /usr/local/sbin/gamedock-templates '.$action.(in_array($action,['delete','custom-save','releases','install','steam-install'],true) ? ' '.escapeshellarg($key) : ''));
         return TemplateCommandResult::parse($output,$ssh->getExitStatus(),(string)$ssh->getStdError(),$ssh->isTimeout());
     }
+    public function automation(array $server,string $action,array $payload): array
+    {
+        if(!in_array($action,['list','schedule_add','schedule_delete','backup','restore','backup_delete','ack_restore','policy','clear_schedules'],true) || !preg_match('/\A[A-Za-z0-9_][A-Za-z0-9_-]*(?:\.service)?\z/',$server['unit_name']))throw new RuntimeException('Érvénytelen időzítési művelet.');
+        $ssh=$this->connect($server);$ssh->enableQuietMode();$ssh->setTimeout(20);
+        $output=$ssh->exec('/usr/bin/sudo -n /usr/local/sbin/gamedock-automation '.$action.' '.escapeshellarg($server['unit_name']).' '.escapeshellarg(base64_encode(json_encode($payload,JSON_THROW_ON_ERROR))));
+        if($output===false || $ssh->isTimeout() || $ssh->getExitStatus()!==0){
+            $error=(string)$ssh->getStdError();
+            foreach(['Cron service is not running'=>'A Linux-gépen nem fut az időzítő szolgáltatás. Az admin indítsa el a cron szolgáltatást vagy futtassa újra a Linux-telepítést.','Restore confirmation required'=>'A visszaállításhoz megerősítés szükséges.','Stop the server before restoring'=>'Visszaállítás előtt állítsd le a szervert.','Another automation job'=>'Ezen a szerveren már fut egy mentési vagy vezérlési feladat.','Version change is running'=>'A verzióváltás befejezése után próbáld újra.','Choose a future time'=>'Válassz jövőbeli időpontot.','daylight saving time'=>'Ez a helyi időpont az óraátállítás miatt nem létezik.','Maximum 100 backups'=>'Elérted a 100 mentéses korlátot. Törölj régi mentéseket.'] as $needle=>$message)if(str_contains($error,$needle))throw new RuntimeException($message);
+            throw new RuntimeException('Az időzítő/mentés segédprogram nem érhető el vagy elutasította a kérést. Ellenőrizd a Linux-telepítő frissítését és a gép automation/units naplóját.');
+        }
+        return json_decode($output,true,512,JSON_THROW_ON_ERROR);
+    }
     public function versions(array $server,string $action,array $payload): array
     {
         if(!in_array($action,['create','status'],true) || !preg_match('/\A[a-f0-9]{32}\z/',(string)($payload['job'] ?? ''))) throw new RuntimeException('Érvénytelen verzióváltási művelet.');

@@ -15,7 +15,7 @@ if [ "$3" = "1" ]; then
  if command -v apt-get >/dev/null 2>&1; then
   export DEBIAN_FRONTEND=noninteractive
   STEP='APT csomaglista frissitese';apt-get update
-  STEP='Alapcsomagok telepitese';apt-get install -y python3 sudo passwd git default-jdk-headless ca-certificates tar unzip
+  STEP='Alapcsomagok telepitese';apt-get install -y python3 sudo passwd git default-jdk-headless ca-certificates tar unzip cron tzdata
   if [ "$(uname -m)" = "x86_64" ]; then
    STEP='SteamCMD futtatokonyvtarak telepitese';apt-get install -y lib32gcc-s1 lib32stdc++6
   fi

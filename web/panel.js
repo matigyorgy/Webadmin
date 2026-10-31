@@ -368,3 +368,64 @@ if(templateGame){
     }
     templateGame.addEventListener('change',selectGame);selectGame();
 }
+
+const automation=document.getElementById('server-automation');
+if(automation){
+    const sections=[automation.querySelector('#scheduler'),automation.querySelector('#backups')];
+    const scheduleForm=automation.querySelector('[data-schedule-form]'),create=automation.querySelector('[data-backup-create]');
+    const names={start:'Indítás',stop:'Leállítás',restart:'Újraindítás',backup:'Biztonsági mentés'};
+    let data=null,loading=false,writing=false,lastBackups='',notice='';
+    const pending=()=>writing || ['queued','running'].includes(data?.job?.state);
+    function textCell(row,text){const cell=document.createElement('td');cell.textContent=text;row.append(cell);return cell;}
+    function button(label,handler){const b=document.createElement('button');b.type='button';b.className='btn btn-sm btn-outline-secondary';b.textContent=label;b.addEventListener('click',handler);return b;}
+    function messages(){for(const target of automation.querySelectorAll('[data-automation-message]'))target.textContent=notice || (data?.scheduler_ready===false ? 'Az időzítő szolgáltatás nem fut a Linux-gépen. Keresd az adminisztrátort.' : data?.job?.message || '');}
+    function render(){
+        create.disabled=pending();scheduleForm.querySelector('button').disabled=pending();messages();
+        const rows=automation.querySelector('[data-schedule-rows]');rows.replaceChildren();
+        for(const task of data?.schedules || []){
+            const row=document.createElement('tr');textCell(row,names[task.operation]);
+            textCell(row,task.next_run ? new Intl.DateTimeFormat('hu-HU',{dateStyle:'short',timeStyle:'short',timeZone:task.timezone}).format(new Date(task.next_run*1000))+' ('+task.timezone+')' : 'Nincs további futás');
+            textCell(row,{once:'Egyszer',daily:'Naponta',weekly:'Hetente'}[task.repeat]);textCell(row,task.last_result);
+            const remove=button('Törlés',()=>write('schedule_delete',{id:task.id}));remove.disabled=pending();textCell(row,'').append(remove);rows.append(row);
+        }
+        if(!rows.children.length){const row=document.createElement('tr');textCell(row,'Nincs beállított időzítés.').colSpan=5;rows.append(row);}
+        const signature=JSON.stringify([data?.backups,data?.server_state,pending()]);if(signature===lastBackups)return;lastBackups=signature;
+        const backups=automation.querySelector('[data-backup-rows]');backups.replaceChildren();
+        for(const record of data?.backups || []){
+            const row=document.createElement('tr');textCell(row,new Date(record.created_at*1000).toLocaleString('hu-HU'));textCell(row,(record.size/1024/1024).toFixed(1)+' MiB');
+            const cell=textCell(row,''),form=document.createElement('form'),label=document.createElement('label'),confirm=document.createElement('input');confirm.type='checkbox';confirm.required=true;confirm.name='confirmed';
+            label.append(confirm,document.createTextNode(' Megerősítem a jelenlegi fájlok cseréjét.'));form.append(label);
+            const restore=document.createElement('button');restore.type='submit';restore.className='btn btn-sm btn-warning ms-2';restore.textContent='Visszaállítás';
+            const offline=data.server_state==='inactive';confirm.disabled=pending() || !offline;restore.disabled=pending() || !offline || !confirm.checked;
+            confirm.addEventListener('change',()=>{restore.disabled=pending() || !offline || !confirm.checked;});
+            form.addEventListener('submit',event=>{event.preventDefault();if(confirm.checked && !restore.disabled)write('restore',{backup_id:record.id,confirmed:'1'});});form.append(restore);cell.append(form);
+            const remove=button('Törlés',()=>{if(window.confirm('Biztosan törlöd ezt a biztonsági mentést?'))write('backup_delete',{id:record.id});});remove.disabled=pending();textCell(row,'').append(remove);backups.append(row);
+        }
+        if(!backups.children.length){const row=document.createElement('tr');textCell(row,'Még nincs biztonsági mentés.').colSpan=4;backups.append(row);}
+    }
+    async function refresh(){
+        if(loading || writing)return;loading=true;
+        try{data=await queryServer(automation.dataset.serverId,'automation');render();}
+        catch(error){notice=error.message;messages();}
+        finally{loading=false;}
+    }
+    async function write(action,values={}){
+        if(writing)return;writing=true;notice='';render();
+        try{
+            const body=new FormData();for(const [name,value] of Object.entries({action,server_id:automation.dataset.serverId,csrf:automation.dataset.csrf,...values}))body.set(name,value);
+            const response=await fetch('/api.php',{method:'POST',body,credentials:'same-origin'}),result=await response.json();if(!response.ok)throw Error(result.error);
+            if(result.job || result.schedules)data=result;else if(result.state)data={...data,job:result};
+            notice=result.message || 'A beállítást elmentettük.';
+            if(action==='schedule_add')scheduleForm.querySelector('[name=local_time]').value='';
+        }catch(error){notice=error.message;}
+        finally{writing=false;render();await refresh();document.dispatchEvent(new Event('server-operation-complete'));}
+    }
+    scheduleForm.addEventListener('submit',event=>{event.preventDefault();if(!pending() && scheduleForm.reportValidity())write('schedule_add',Object.fromEntries(new FormData(scheduleForm)));});
+    create.addEventListener('click',()=>{if(!pending())write('backup');});
+    function reveal(){
+        for(const section of sections)section.hidden=location.hash!=='#'+section.id;
+        if(sections.some(s=>!s.hidden)){notice='';refresh();}
+    }
+    window.addEventListener('hashchange',reveal);reveal();
+    setInterval(()=>{if(!document.hidden && (pending() || sections.some(s=>!s.hidden))){notice='';refresh();}},5000);
+}

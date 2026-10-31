@@ -32,7 +32,7 @@ final class SchemaUpdater
     public function enableStartup(array $actor): void
     {
         if (!$this->db->query('SELECT is_admin FROM users WHERE id=?',[$actor['id']])->fetchColumn()) throw new RuntimeException('Adminisztrátori jogosultság szükséges.');
-        $columns=['template_key'=>'VARCHAR(200) NULL','template_version'=>'VARCHAR(64) NULL','memory_limit_mb'=>'INT UNSIGNED NOT NULL DEFAULT 0','cpu_limit_percent'=>'INT UNSIGNED NOT NULL DEFAULT 0','startup_command'=>'TEXT NULL','install_source'=>'VARCHAR(255) NULL','install_folder'=>'VARCHAR(120) NULL',
+        $columns=['last_restore_job'=>'VARCHAR(32) NULL','template_key'=>'VARCHAR(200) NULL','template_version'=>'VARCHAR(64) NULL','memory_limit_mb'=>'INT UNSIGNED NOT NULL DEFAULT 0','cpu_limit_percent'=>'INT UNSIGNED NOT NULL DEFAULT 0','startup_command'=>'TEXT NULL','install_source'=>'VARCHAR(255) NULL','install_folder'=>'VARCHAR(120) NULL',
             'provision_job'=>'VARCHAR(32) NULL','provision_state'=>"VARCHAR(16) NOT NULL DEFAULT 'ready'",'provision_message'=>'VARCHAR(500) NULL','port'=>'SMALLINT UNSIGNED NULL','minecraft_type'=>'VARCHAR(24) NULL','minecraft_version'=>'VARCHAR(32) NULL'];
         $missing=[];
         $available=array_column($this->db->query('SHOW COLUMNS FROM servers')->fetchAll(),'Field');
@@ -54,7 +54,7 @@ final class SchemaUpdater
             }
         }
         catch (Throwable $e) {
-            if (!$this->provisionEnabled()) throw new RuntimeException('Az új szerverfunkciókhoz ALTER TABLE jogosultság szükséges. Engedélyezd a panel adatbázis-felhasználójának, majd próbáld újra.');
+            if (!$this->provisionEnabled() || !$this->db->query("SHOW COLUMNS FROM servers LIKE 'last_restore_job'")->fetch()) throw new RuntimeException('Az új szerverfunkciókhoz ALTER TABLE jogosultság szükséges. Engedélyezd a panel adatbázis-felhasználójának, majd próbáld újra.');
         }
         foreach (['game_types'=>['template_path','startup_command'],'servers'=>['install_source','startup_command']] as $table=>$fields) foreach($fields as $field) $this->db->query("UPDATE $table SET $field=REPLACE($field,?,?) WHERE $field LIKE ?",['/srv/gamedock/templates','/home/gamedock/templates','%/srv/gamedock/templates%']);
     }

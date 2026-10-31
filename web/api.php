@@ -11,11 +11,13 @@ try {
     if ($write) $auth->csrf();
     $input=$write ? $_POST : $_GET;
     $action=(string)($input['action'] ?? ''); $id=GameDock\Validation::id($input['server_id'] ?? 0);
-    if ($write && !in_array($action,['start','stop','restart','change_version'],true)) throw new RuntimeException('Nem engedélyezett vezérlési művelet.');
+    if ($write && !in_array($action,['start','stop','restart','change_version','schedule_add','schedule_delete','backup','restore','backup_delete'],true)) throw new RuntimeException('Nem engedélyezett vezérlési művelet.');
     $service=new GameDock\ServerService($db,new GameDock\SshClient());
     $service->find($user,$id); // Reject other owners before any network operation.
     session_write_close();
-    $result=$write ? ($action==='change_version' ? (new GameDock\VersionService($db,new GameDock\SshClient()))->request($user,$id,(string)($_POST['template_key'] ?? ''),($_POST['confirm_reinstall'] ?? '')==='1') : $service->perform($user,$id,$action)) : $service->read($user,$id,$action);
+    if($action==='automation' && !$write)$result=(new GameDock\AutomationService($db,new GameDock\SshClient()))->listing($user,$id);
+    elseif($write && in_array($action,['schedule_add','schedule_delete','backup','restore','backup_delete'],true))$result=(new GameDock\AutomationService($db,new GameDock\SshClient()))->perform($user,$id,$action,$input);
+    else $result=$write ? ($action==='change_version' ? (new GameDock\VersionService($db,new GameDock\SshClient()))->request($user,$id,(string)($_POST['template_key'] ?? ''),($_POST['confirm_reinstall'] ?? '')==='1') : $service->perform($user,$id,$action)) : $service->read($user,$id,$action);
     echo json_encode($result,JSON_INVALID_UTF8_SUBSTITUTE | JSON_THROW_ON_ERROR);
 } catch (Throwable $e) {
     http_response_code(400);

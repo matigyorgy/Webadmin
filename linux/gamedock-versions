@@ -17,7 +17,7 @@ def status(job_id):
     except FileNotFoundError:return {'state':'missing','message':'A verzióváltási feladat nem található.'}
     if job.get('operation')!='version':raise ValueError('Wrong job kind')
     if job['state'] in ('queued','running') and job.get('worker') and not p.runtime.alive(job['worker'],0):
-        with p.locked(),unit_lock(job['unit']):
+        with unit_lock(job['unit']),p.locked():
             target=Path(job['target']);backup=Path(job['backup']);stage=Path(job['stage'])
             if job.get('phase')=='switching' and backup.exists() and target.exists() and not stage.exists():
                 cfg=p.config();cfg[job['unit']].update(minecraft_type=None if job['template'].get('provider')=='folder' else job['template']['type'],template_key=job['template']['key'],template_version=job['template']['version']);p.atomic(p.CONFIG,cfg)
@@ -37,8 +37,12 @@ def create(payload):
     if type(reinstall) is not bool or (reinstall and payload.get('confirmed') is not True):raise ValueError('Reinstallation requires explicit confirmation')
     if not isinstance(unit,str) or not re.fullmatch(r'[A-Za-z0-9_][A-Za-z0-9_-]*(?:\.service)?',unit):raise ValueError('Invalid unit')
     p.prepare()
-    with create_lock(),unit_lock(unit,False):
+    with unit_lock(unit,False),create_lock():
         cfg=p.config();server=cfg[unit];account=pwd.getpwnam(server['user'])
+        maintenance=Path('/var/lib/gamedock/automation/units')/unit/'job.json'
+        if maintenance.exists():
+            maintenance_job=json.loads(maintenance.read_text())
+            if maintenance_job.get('state') in ('queued','running') or (maintenance_job.get('operation')=='restore' and maintenance_job.get('state')=='ready' and not maintenance_job.get('reconciled')):raise ValueError('Backup or restore is running')
         if Path(p.job_path(job_id)).exists():
             with open(p.job_path(job_id)) as stream:existing=json.load(stream)
             if existing.get('operation')!='version' or existing.get('unit')!=unit or existing.get('template',{}).get('key')!=key or existing.get('reinstall',False)!=reinstall:raise ValueError('Job token mismatch')
@@ -103,7 +107,7 @@ def worker(job_id):
     try:
         account=pwd.getpwnam(job['user'])
         subprocess.run(['/usr/bin/python3','-I',SELF,'copy',job['source'],job['target'],job['stage'],base64.b64encode(json.dumps({'reinstall':job.get('reinstall',False),'settings':job.get('settings')}).encode()).decode()],check=True,timeout=7200,capture_output=True,preexec_fn=p.runtime.drop(account),env=p.runtime.environment(account))
-        with p.locked(),unit_lock(job['unit']):
+        with unit_lock(job['unit']),p.locked():
             cfg=p.config()
             if cfg.get('_version_jobs',{}).get(job['unit'])!=job_id:raise ValueError('Version reservation changed')
             job['phase']='switching';p.atomic(p.job_path(job_id),job)

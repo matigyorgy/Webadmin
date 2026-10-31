@@ -1,0 +1,341 @@
+#!/usr/bin/python3
+"""Persistent per-instance schedules and compressed backups; cron calls tick."""
+import base64,contextlib,datetime as dt,fcntl,hashlib,importlib.machinery,importlib.util,json,os,pwd,re,shutil,stat,subprocess,sys,tarfile,tempfile,time
+from pathlib import Path
+from zoneinfo import ZoneInfo
+
+def load(name):
+    path=Path(__file__).resolve().parent/name
+    if not path.is_file():path=Path('/usr/local/sbin')/name
+    loader=importlib.machinery.SourceFileLoader(name.replace('-','_'),str(path));spec=importlib.util.spec_from_loader(loader.name,loader);module=importlib.util.module_from_spec(spec);loader.exec_module(module);return module
+v=load('gamedock-versions');p=v.p;l=load('gamedock-launch')
+ROOT=Path('/var/lib/gamedock/automation');BACKUPS=Path('/var/lib/gamedock/backups');SELF='/usr/local/sbin/gamedock-automation'
+UTC=dt.timezone.utc
+
+def token(value):
+    if not isinstance(value,str) or not re.fullmatch('[a-f0-9]{32}',value):raise ValueError('Invalid identifier')
+    return value
+
+def unit_name(unit):
+    if not isinstance(unit,str) or not re.fullmatch(r'[A-Za-z0-9_][A-Za-z0-9_-]*(?:\.service)?',unit):raise ValueError('Invalid server')
+    return unit
+
+def folder(unit):
+    unit_name(unit)
+    for directory in (ROOT,ROOT/'units',ROOT/'units'/unit,BACKUPS,BACKUPS/unit):
+        directory.mkdir(mode=0o700,parents=True,exist_ok=True);p.secure(str(directory),True)
+    return ROOT/'units'/unit
+
+def read(path,default):
+    try:
+        p.secure(str(path));return json.loads(Path(path).read_text())
+    except FileNotFoundError:return default
+
+def server(unit):
+    cfg=p.config();s=cfg[unit];account=pwd.getpwnam(s['user']);target=Path(s['directory']);base=Path(cfg['_provision']['target_root'])
+    if not s.get('launch') or account.pw_uid==0 or account.pw_gid==0 or target.parent!=base or target.is_symlink() or not target.is_dir() or target.resolve()!=target:raise ValueError('Unsafe instance')
+    p.secure(str(base),True);return cfg,s,account,target
+
+def running(unit,account):
+    data=l.metadata(unit);data['_name']=unit;return l.active(data,account)
+
+def version_busy(unit,cfg):
+    job=cfg.get('_version_jobs',{}).get(unit)
+    if job and p.read_job(job).get('state') in ('queued','running'):raise ValueError('Version change is running')
+
+def encode(value):return base64.b64encode(json.dumps(value).encode()).decode()
+def power(unit,action,panel):
+    command=['gamedock-launch',unit,action]
+    if action in ('start','restart'):
+        panel=read(folder(unit)/'policy.json',panel)
+        startup=panel.get('startup','').replace('{port}',str(panel['limits']['port']))
+        if not isinstance(startup,str) or not startup.strip() or len(startup.encode())>4096:raise ValueError('Startup command missing')
+        command.extend([base64.b64encode(startup.encode()).decode(),encode(panel['limits'])])
+    l.execute(command,lock_held=True)
+
+def schedule_time(local,zone):
+    naive=dt.datetime.strptime(local,'%Y-%m-%dT%H:%M');aware=naive.replace(tzinfo=ZoneInfo(zone))
+    if dt.datetime.fromtimestamp(aware.timestamp(),ZoneInfo(zone)).replace(tzinfo=None)!=naive:raise ValueError('This local time does not exist because of daylight saving time')
+    return int(aware.timestamp())
+
+def next_run(task,after):
+    if task['repeat']=='once':return None
+    zone=ZoneInfo(task['timezone']);start=dt.datetime.strptime(task['local_time'],'%Y-%m-%dT%H:%M');step=1 if task['repeat']=='daily' else 7
+    today=dt.datetime.fromtimestamp(after,zone).date();days=max(0,(today-start.date()).days//step)*step
+    for offset in range(days,days+step*4,step):
+        candidate=start+dt.timedelta(days=offset)
+        try:stamp=schedule_time(candidate.strftime('%Y-%m-%dT%H:%M'),task['timezone'])
+        except ValueError:continue
+        if stamp>after:return stamp
+    raise ValueError('No next schedule time')
+
+@contextlib.contextmanager
+def schedule_lock(unit):
+    with open(folder(unit)/'schedules.lock','a') as handle:fcntl.flock(handle,fcntl.LOCK_EX);yield
+
+def scheduler_ready():
+    for path in (Path('/run/crond.pid'),Path('/run/cron.pid')):
+        try:
+            pid=int(path.read_text().split()[0]);name=Path('/proc')/str(pid)/'comm'
+            if name.read_text().strip() in ('cron','crond'):return True
+        except (OSError,ValueError,IndexError):pass
+    return False
+
+def schedule_add(unit,data,panel):
+    server(unit)
+    if not scheduler_ready():raise ValueError('Cron service is not running')
+    action=data.get('operation');repeat=data.get('repeat','once');zone=data.get('timezone','Europe/Budapest');local=data.get('local_time','')
+    if action not in ('start','stop','restart','backup') or repeat not in ('once','daily','weekly'):raise ValueError('Invalid scheduled action')
+    if len(zone)>100:raise ValueError('Invalid timezone')
+    due=schedule_time(local,zone)
+    if due<=time.time():raise ValueError('Choose a future time')
+    keep=data.get('keep',7)
+    if type(keep) is not int or not 1<=keep<=100:raise ValueError('Retention must be between 1 and 100')
+    with schedule_lock(unit):
+        tasks=read(folder(unit)/'schedules.json',[])
+        if len(tasks)>=50:raise ValueError('Maximum 50 schedules per server')
+        tasks.append({'id':os.urandom(16).hex(),'operation':action,'repeat':repeat,'timezone':zone,'local_time':local,'next_run':due,'keep':keep,'panel':panel,'last_result':'Még nem futott.','instance':{k:server(unit)[1].get(k) for k in ('user','directory','provision_job')}})
+        p.atomic(str(folder(unit)/'schedules.json'),tasks)
+
+def schedule_delete(unit,key):
+    token(key)
+    with schedule_lock(unit):p.atomic(str(folder(unit)/'schedules.json'),[row for row in read(folder(unit)/'schedules.json',[]) if row['id']!=key])
+
+def backup_records(unit):
+    rows=[]
+    for path in (BACKUPS/unit).glob('*.json'):
+        row=read(path,None)
+        if row and (BACKUPS/unit/(token(row['id'])+'.tar.gz')).is_file():rows.append(row)
+    return sorted(rows,key=lambda r:(r['created_at'],r.get('created_ns',0)),reverse=True)
+
+def recover(unit):
+    path=folder(unit)/'job.json';job=read(path,{})
+    if job.get('state') in ('queued','running') and ((job.get('worker') and not p.runtime.alive(job['worker'],0)) or (not job.get('worker') and time.time()-job.get('created_at',0)>60)):
+        try:handle=v.unit_lock(unit,False)
+        except BlockingIOError:return job
+        with handle:
+            job=read(path,{})
+            if job.get('state') not in ('queued','running') or p.runtime.alive(job.get('worker'),0):return job
+            rollback=Path(job['rollback']) if job.get('rollback') else None
+            target=Path(job['target']) if job.get('target') else None
+            if rollback and rollback.exists():
+                if target.exists():os.rename(target,str(target)+'.abandoned-'+job['id'])
+                os.rename(rollback,target)
+                with p.locked():
+                    cfg=p.config();cfg[unit]=job['original_config'];p.atomic(p.CONFIG,cfg)
+            job.update(state='failed',message='A háttérfeladat megszakadt. A visszaállítás előtti fájlokat megőriztük. Ellenőrizd a szerver állapotát.');p.atomic(str(path),job)
+    return job
+
+def view(unit):
+    job=recover(unit);server(unit);records=backup_records(unit)
+    tasks=[{k:value for k,value in row.items() if k!='panel'} for row in read(folder(unit)/'schedules.json',[])]
+    _,_,account,_=server(unit)
+    public_job={k:job[k] for k in ('id','state','message','operation','restored_panel') if k in job}
+    if job.get('state')=='ready' and p.runtime.alive(job.get('worker'),0):public_job.update(state='running',message='A feladat lezárása folyamatban van.')
+    return {'scheduler_ready':scheduler_ready(),'schedules':tasks,'backups':[{k:r[k] for k in ('id','created_at','size','label')} for r in records],'job':public_job,'server_state':'active' if running(unit,account) else 'inactive'}
+
+def request(unit,operation,data,panel,schedule_id=None):
+    if operation not in ('backup','restore','start','stop','restart'):raise ValueError('Invalid operation')
+    if operation=='restore' and data.get('confirmed') is not True:raise ValueError('Restore confirmation required')
+    location=folder(unit);recover(unit)
+    with v.unit_lock(unit,False):
+        cfg,s,account,target=server(unit);version_busy(unit,cfg)
+        old=read(location/'job.json',{})
+        if old.get('state') in ('queued','running'):raise ValueError('Another automation job is running')
+        if old.get('state')=='ready' and old.get('operation')=='restore' and not old.get('reconciled'):raise ValueError('Restore metadata must be synchronized first')
+        if operation=='restore':
+            if running(unit,account):raise ValueError('Stop the server before restoring a backup')
+            key=token(data.get('backup_id'));record=read(BACKUPS/unit/(key+'.json'),None)
+            if not record:raise ValueError('Backup not found')
+            if any(record['config'].get(k)!=s.get(k) for k in ('user','directory','game')):raise ValueError('Backup belongs to another instance')
+        else:record=None
+        if operation=='backup' and len(backup_records(unit))>=100:raise ValueError('Maximum 100 backups; remove old backups first')
+        job={'id':os.urandom(16).hex(),'unit':unit,'operation':operation,'panel':panel,'record':record,'state':'queued','created_at':int(time.time()),'message':'A feladat indításra vár.','schedule_id':schedule_id,'original_config':s,'target':str(target)}
+        p.atomic(str(location/'job.json'),job)
+        try:
+            with open(location/'worker.log','ab') as output:child=subprocess.Popen(['/usr/bin/python3','-I',SELF,'worker',unit,job['id']],stdin=subprocess.DEVNULL,stdout=output,stderr=subprocess.STDOUT,start_new_session=True,env=p.runtime.environment())
+            job['worker']=p.runtime.identity(child.pid);p.atomic(str(location/'job.json'),job)
+        except OSError:
+            job.update(state='failed',message='A háttérfolyamat nem indult el.');p.atomic(str(location/'job.json'),job);raise
+    return {'id':job['id'],'state':job['state'],'message':job['message'],'operation':operation}
+
+def copy_archive(source,stage):
+    if os.geteuid()==0:raise ValueError('Backup copy must run as non-root')
+    p.copy_files(source,str(Path(stage)/'snapshot'))
+
+def compress(stage):
+    if os.geteuid()==0:raise ValueError('Compression must run as non-root')
+    source=Path(stage)/'snapshot'
+    with tarfile.open(Path(stage)/'archive.tar.gz','w:gz') as archive:
+        for directory,dirs,files in os.walk(source,followlinks=False):
+            for name in dirs+files:
+                path=Path(directory)/name;mode=path.lstat().st_mode
+                if not(stat.S_ISDIR(mode) or stat.S_ISREG(mode)):raise ValueError('Unsafe snapshot file')
+                archive.add(path,arcname=str(path.relative_to(source)),recursive=False)
+
+def extract(fd,stage):
+    if os.geteuid()==0:raise ValueError('Restore extraction must run as non-root')
+    with os.fdopen(fd,'rb') as stream,tarfile.open(fileobj=stream,mode='r:gz') as archive:
+        members=archive.getmembers();size=sum(max(0,m.size) for m in members)
+        if size+16*1024**2>shutil.disk_usage(stage).free:raise ValueError('Insufficient space for restore')
+        for member in members:
+            path=Path(member.name)
+            if path.is_absolute() or '..' in path.parts or not(member.isdir() or member.isfile()):raise ValueError('Unsafe backup archive')
+            member.mode &= 0o777
+        for member in members:
+            if hasattr(tarfile,'data_filter'):archive.extract(member,stage,filter='data')
+            else:archive.extract(member,stage)
+
+def child(action,args,account,fd=None):
+    subprocess.run(['/usr/bin/python3','-I',SELF,action,*map(str,args)],check=True,timeout=14400,preexec_fn=p.runtime.drop(account),env=p.runtime.environment(account),pass_fds=() if fd is None else (fd,))
+
+def digest(path):
+    result=hashlib.sha256()
+    with open(path,'rb') as stream:
+        for block in iter(lambda:stream.read(1024*1024),b''):result.update(block)
+    return result.hexdigest()
+
+def worker(unit,key):
+    path=folder(unit)/'job.json'
+    with v.unit_lock(unit):
+        job=read(path,{})
+        if job.get('id')!=token(key) or job.get('state')!='queued':return
+        job.update(state='running',message='A művelet folyamatban van.');p.atomic(str(path),job)
+        stage=None;resume=False
+        try:
+            cfg,s,account,target=server(unit);version_busy(unit,cfg)
+            if s['directory']!=job['original_config']['directory'] or s['user']!=job['original_config']['user']:raise ValueError('Instance changed')
+            operation=job['operation'];panel=read(folder(unit)/'policy.json',job['panel'])
+            if operation in ('start','restart','backup') and s.get('template_key') and s.get('template_key')!=panel.get('template_key'):raise ValueError('Template changed; recreate the schedule')
+            if operation in ('start','stop','restart'):power(unit,operation,panel)
+            else:
+                stage=Path(tempfile.mkdtemp(prefix='.gamedock-maintenance-',dir=target.parent));os.chown(stage,account.pw_uid,account.pw_gid)
+                if operation=='backup':
+                    resume=bool(running(unit,account))
+                    if resume:power(unit,'stop',panel)
+                    child('copy',[target,stage],account)
+                    if resume:power(unit,'start',panel);resume=False
+                    job['message']='A fájlmásolat elkészült, tömörítés folyamatban.';p.atomic(str(path),job)
+                    child('compress',[stage],account)
+                    archive=BACKUPS/unit/(key+'.tar.gz')
+                    descriptor=os.open(stage/'archive.tar.gz',os.O_RDONLY|os.O_NOFOLLOW)
+                    with os.fdopen(descriptor,'rb') as source,open(archive,'xb') as destination:
+                        if not stat.S_ISREG(os.fstat(source.fileno()).st_mode):raise ValueError('Invalid backup output')
+                        shutil.copyfileobj(source,destination,1024*1024)
+                    os.chmod(archive,0o600)
+                    record={'id':key,'created_at':int(time.time()),'created_ns':time.time_ns(),'size':archive.stat().st_size,'label':dt.datetime.now(UTC).strftime('%Y-%m-%d %H:%M UTC'),'sha256':digest(archive),'panel':panel,'config':s,'schedule_id':job.get('schedule_id')}
+                    p.atomic(str(BACKUPS/unit/(key+'.json')),record)
+                else:
+                    if running(unit,account):raise ValueError('Stop the server before restoring a backup')
+                    record=job['record'];archive=BACKUPS/unit/(token(record['id'])+'.tar.gz')
+                    if digest(archive)!=record['sha256']:raise ValueError('Backup checksum mismatch')
+                    with open(archive,'rb') as stream:child('extract',[stream.fileno(),stage],account,stream.fileno())
+                    # Reconfigure the restored files for the current instance port.
+                    child('configure',[stage,encode({'game':s['game'],'port':job['panel']['limits']['port'],'minecraft':bool(record['config'].get('minecraft_type')),'eula':bool(record['config'].get('minecraft_type'))})],account)
+                    rollback=target.parent/('.gamedock-rollback-'+key);job['rollback']=str(rollback);p.atomic(str(path),job)
+                    os.rename(target,rollback);os.rename(stage,target);stage=None
+                    with p.locked():
+                        cfg=p.config()
+                        for field in ('minecraft_type','template_key','template_version'):cfg[unit][field]=record['config'].get(field)
+                        cfg[unit]['port']=job['panel']['limits']['port']
+                        p.atomic(p.CONFIG,cfg)
+                    job['restored_panel']=record['panel']
+            job.update(state='ready',message='A visszaállítás elkészült; a szerver leállítva maradt.' if operation=='restore' else 'A tömörített mentés elkészült.' if operation=='backup' else 'Az időzített vezérlés lefutott.')
+            p.atomic(str(path),job)
+            if job.get('rollback') and Path(job['rollback']).exists():
+                try:shutil.rmtree(job['rollback'])
+                except OSError as cleanup_error:print('Restore committed; rollback cleanup failed: '+str(cleanup_error),file=sys.stderr)
+        except Exception as error:
+            print(type(error).__name__+': '+str(error),file=sys.stderr)
+            if job.get('rollback') and Path(job['rollback']).exists():
+                target=Path(job['target'])
+                if target.exists():shutil.rmtree(target)
+                os.rename(job['rollback'],target)
+                with p.locked():cfg=p.config();cfg[unit]=job['original_config'];p.atomic(p.CONFIG,cfg)
+            job.update(state='failed',message='A feladat nem sikerült. Ellenőrizd a szabad helyet, a szerver állapotát és a Linux-segédprogram naplóját.');p.atomic(str(path),job)
+        finally:
+            if resume:
+                try:power(unit,'start',job['panel'])
+                except Exception as error:print('Resume failed: '+str(error),file=sys.stderr)
+            if stage and stage.exists() and shutil.rmtree.avoids_symlink_attacks:shutil.rmtree(stage)
+            if job['operation']=='backup' and not (BACKUPS/unit/(key+'.json')).exists():(BACKUPS/unit/(key+'.tar.gz')).unlink(missing_ok=True)
+        if job.get('schedule_id'):
+            with schedule_lock(unit):
+                tasks=read(folder(unit)/'schedules.json',[])
+                for task in tasks:
+                    if task['id']==job['schedule_id']:
+                        task['last_result']=job['message']
+                        if job['state']=='ready' and job['operation']=='backup':
+                            own=[r for r in backup_records(unit) if r.get('schedule_id')==task['id']]
+                            for record in own[task['keep']:]:delete_backup(unit,record['id'])
+                p.atomic(str(folder(unit)/'schedules.json'),tasks)
+
+def delete_backup(unit,key):
+    token(key)
+    for suffix in ('.json','.tar.gz'):(BACKUPS/unit/(key+suffix)).unlink(missing_ok=True)
+
+def tick(now=None):
+    now=int(time.time()) if now is None else now
+    if not (ROOT/'units').exists():return
+    for directory in (ROOT/'units').iterdir():
+        if not directory.is_dir() or directory.is_symlink():continue
+        unit=unit_name(directory.name)
+        try:
+            recover(unit);server(unit)
+            with schedule_lock(unit):
+                path=folder(unit)/'schedules.json';tasks=read(path,[])
+                for task in tasks:
+                    if task.get('next_run') is None or task['next_run']>now:continue
+                    due=task['next_run'];task['next_run']=next_run(task,now)
+                    if task.get('instance')!={k:server(unit)[1].get(k) for k in ('user','directory','provision_job')}:task['last_result']='Kimaradt: a szerver példánya megváltozott.';p.atomic(str(path),tasks);continue
+                    task['last_result']='Kimaradt: a gép nem futott a megadott időpontban.' if now-due>120 else 'Indítás folyamatban.'
+                    # Persist before launching: a cron retry cannot duplicate a due action.
+                    p.atomic(str(path),tasks)
+                    if now-due<=120:
+                        try:request(unit,task['operation'],{},task['panel'],task['id'])
+                        except Exception as error:task['last_result']='Nem indult el: egy másik művelet fut, vagy a szerver nem elérhető.';print(str(error),file=sys.stderr)
+                    p.atomic(str(path),tasks)
+        except Exception as error:print(unit+': '+str(error),file=sys.stderr)
+
+def api(unit,action,payload):
+    unit_name(unit);folder(unit);recover(unit);server(unit);data=payload.get('data',{});panel=payload.get('panel',{})
+    pending=read(folder(unit)/'job.json',{})
+    blocked=pending.get('operation')=='restore' and pending.get('state') in ('queued','running','ready') and not pending.get('reconciled')
+    if panel and not blocked:p.atomic(str(folder(unit)/'policy.json'),panel)
+    if action=='policy':return {'accepted':not blocked}
+    if action=='clear_schedules':
+        with v.unit_lock(unit,False),schedule_lock(unit):
+            if read(folder(unit)/'job.json',{}).get('state') in ('queued','running'):raise ValueError('Another automation job is running')
+            p.atomic(str(folder(unit)/'schedules.json'),[])
+        return {'accepted':True}
+    if action=='list':return view(unit)
+    if action=='ack_restore':
+        with v.unit_lock(unit,False):
+            job=read(folder(unit)/'job.json',{})
+            if job.get('id')==token(data.get('id')) and job.get('operation')=='restore' and job.get('state')=='ready':job['reconciled']=True;p.atomic(str(folder(unit)/'job.json'),job)
+            if panel:p.atomic(str(folder(unit)/'policy.json'),panel)
+        return {'accepted':True}
+    if action=='schedule_add':schedule_add(unit,data,panel)
+    elif action=='schedule_delete':schedule_delete(unit,data.get('id'))
+    elif action in ('backup','restore'):return request(unit,action,data,panel)
+    elif action=='backup_delete':
+        with v.unit_lock(unit,False):
+            if read(folder(unit)/'job.json',{}).get('state') in ('queued','running'):raise ValueError('Another automation job is running')
+            delete_backup(unit,data.get('id'))
+    else:raise ValueError('Unknown automation action')
+    return view(unit)
+
+if __name__=='__main__':
+    os.umask(0o077)
+    try:
+        action=sys.argv[1]
+        if action=='copy' and len(sys.argv)==4:copy_archive(*sys.argv[2:])
+        elif action=='configure' and len(sys.argv)==4:p.configure(sys.argv[2],json.loads(base64.b64decode(sys.argv[3],validate=True)))
+        elif action=='compress' and len(sys.argv)==3:compress(sys.argv[2])
+        elif action=='extract' and len(sys.argv)==4:extract(int(sys.argv[2]),sys.argv[3])
+        elif os.geteuid()!=0:raise ValueError('Root helper required')
+        elif action=='tick' and len(sys.argv)==2:tick()
+        elif action=='worker' and len(sys.argv)==4:worker(sys.argv[2],sys.argv[3])
+        elif len(sys.argv)==4 and len(sys.argv[3])<16384:print(json.dumps(api(sys.argv[2],action,json.loads(base64.b64decode(sys.argv[3],validate=True))),ensure_ascii=False))
+        else:raise ValueError('Invalid automation command')
+    except Exception as error:print(type(error).__name__+': '+str(error),file=sys.stderr);sys.exit(1)

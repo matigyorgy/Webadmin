@@ -201,7 +201,7 @@ def worker(job_id):
             if cfg.get('_copy_jobs',{}).get(data['unit'])!=job_id:raise ValueError('Reservation changed')
             os.chmod(stage,0o700)
             os.rename(stage,data['target'])
-            cfg[data['unit']]={'launch':True,'user':data['user'],'directory':data['target'],'provision_job':job_id,'port':data['port'],'game':data['game'],'minecraft_type':data.get('minecraft_type')}
+            cfg[data['unit']]={'launch':True,'user':data['user'],'directory':data['target'],'provision_job':job_id,'port':data['port'],'game':data['game'],'minecraft_type':data.get('minecraft_type'),'template_key':data.get('template_key'),'template_version':data.get('template_version')}
             cfg['_copy_jobs'].pop(data['unit'],None);atomic(CONFIG,cfg)
             job['state']='ready';job['message']='A fájlmásolás kész. A szerver indítható.';atomic(path,job)
         finally:fcntl.flock(lock,fcntl.LOCK_UN);lock.close()

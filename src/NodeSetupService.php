@@ -40,7 +40,7 @@ final class NodeSetupService
         }
         $folder=rtrim((string)$ssh->pwd(),'/').'/.gamedock-install-'.bin2hex(random_bytes(12));
         if(!$ssh->mkdir($folder,0700))throw new RuntimeException('A telepítési munkakönyvtár nem hozható létre.');
-        $files=['install.py','bootstrap.sh','gamedock_runtime.py','gamedock-launch','gamedock-runner','gamedock-provision','gamedock-versions','gamedock-templates'];
+        $files=['gamedock-automation','install.py','bootstrap.sh','gamedock_runtime.py','gamedock-launch','gamedock-runner','gamedock-provision','gamedock-versions','gamedock-templates'];
         foreach($files as $file) {
             $contents=file_get_contents(Config::root().'/linux/'.$file);
             if(!$ssh->put($folder.'/'.$file,$contents) || !hash_equals(hash('sha256',$contents),hash('sha256',(string)$ssh->get($folder.'/'.$file))))throw new RuntimeException('A telepítőfájl feltöltésének ellenőrzése sikertelen.');

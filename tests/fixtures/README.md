@@ -25,3 +25,18 @@ node tests/browser_release_picker.cjs /tmp/gamedock-releases.html
 ```
 
 This checks game selection, the custom-game version/path POST payload, CS2/CS:S download-button POST payloads, all seven Minecraft types, the ten-version limit, selection resets, late responses, catalog errors/retry, empty catalogs, and that only the install button submits the selected key with CSRF and node ID.
+
+Automation UI (no SSH/MySQL):
+
+```sh
+php tests/fixtures/automation.php > /tmp/gamedock-automation.html
+node tests/browser_automation.cjs /tmp/gamedock-automation.html
+```
+
+After building the disposable SSH image, run the real cron, backup/restore and PTY integration test without publishing any ports:
+
+```sh
+docker run --rm --entrypoint /bin/sh -v "$PWD/tests:/tests:ro" gamedock-direct-fixture -ec 'service cron start; python3 /tests/fixtures/automation_integration.py'
+```
+
+This fixture test uses only its own server directory and may wait up to 75 seconds for the next cron minute. It verifies offline/confirmation enforcement, snapshot/resume, gzip output, exact restore, corruption rejection, scoped retention, crash recovery and cleanup. Never run it on a real game host.
