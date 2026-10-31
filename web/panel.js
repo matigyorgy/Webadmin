@@ -282,6 +282,7 @@ if (versionPanel) {
     if(!versionPanel.hidden)reveal();
 }
 
+const templateGame=document.getElementById('template-game');
 const releaseCatalog=document.querySelector('[data-release-catalog]');
 if(releaseCatalog){
     const form=releaseCatalog.querySelector('[data-release-form]'),type=releaseCatalog.querySelector('#release-type'),version=releaseCatalog.querySelector('#release-version');
@@ -289,7 +290,7 @@ if(releaseCatalog){
     let request=0,controller,submitting=false;
     const update=()=>{install.disabled=submitting || version.disabled || !version.value;};
     async function load(){
-        const current=++request,selectedType=type.value;
+        const current=++request,selectedType=releaseCatalog.hidden ? '' : type.value;
         controller?.abort();controller=new AbortController();
         version.replaceChildren(new Option(selectedType ? 'Verziók betöltése…' : 'Előbb válassz típust',''));
         version.disabled=true;retry.hidden=true;update();
@@ -314,9 +315,24 @@ if(releaseCatalog){
     }
     type.addEventListener('change',load);version.addEventListener('change',update);retry.addEventListener('click',load);
     form.addEventListener('submit',event=>{
-        if(submitting || event.submitter!==install || install.disabled || !form.reportValidity()){event.preventDefault();return;}
+        if(releaseCatalog.hidden || submitting || event.submitter!==install || install.disabled || !form.reportValidity()){event.preventDefault();return;}
         submitting=true;
         // Keep the submit button enabled until the browser has serialized its action value.
         setTimeout(update,0);
     });
+}
+
+if(templateGame){
+    const custom=document.querySelector('[data-custom-template]'),customFields=custom.querySelector('[data-custom-template-fields]');
+    const releaseFields=releaseCatalog.querySelector('[data-release-fields]'),type=releaseCatalog.querySelector('#release-type');
+    function selectGame(){
+        const selected=templateGame.selectedOptions[0],minecraft=selected?.dataset.provider==='minecraft',folder=selected?.dataset.provider==='folder';
+        releaseCatalog.hidden=!minecraft;releaseFields.disabled=!minecraft;
+        custom.hidden=!folder;customFields.disabled=!folder;
+        custom.querySelector('form').reset();
+        custom.querySelector('[name=template_name]').value=folder ? selected.textContent : '';
+        custom.querySelector('[name=template_game]').value=folder ? templateGame.value : '';
+        type.value='';type.dispatchEvent(new Event('change'));
+    }
+    templateGame.addEventListener('change',selectGame);selectGame();
 }

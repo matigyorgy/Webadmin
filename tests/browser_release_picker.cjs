@@ -33,8 +33,21 @@ const {chromium}=require('playwright');
   });
   const url=`http://127.0.0.1:${server.address().port}`;
   await page.goto(url);
-  const type=page.locator('#release-type'),version=page.locator('#release-version'),button=page.getByRole('button',{name:'Sablon telepítése',exact:true});
+  const type=page.locator('#release-type'),version=page.locator('#release-version'),button=page.locator('[data-release-install]');
   assert(await version.isDisabled());assert(await button.isDisabled());
+  assert(!(await type.isVisible()));assert(!(await page.locator('[data-custom-template]').isVisible()));
+  await page.selectOption('#template-game','cs2');
+  assert(await page.locator('[data-custom-template]').isVisible());assert(!(await type.isVisible()));
+  assert.equal(await page.locator('[name=template_game]').inputValue(),'cs2');
+  await page.locator('[name=template_name]').fill('Counter-Strike 2');
+  await page.locator('[name=template_version]').fill('2026.10');
+  await page.locator('[name=template_path]').fill('/home/gamedock/templates/cs2/2026.10');
+  await Promise.all([page.waitForNavigation(),page.getByRole('button',{name:'Template felvétele',exact:true}).click()]);
+  assert.equal(posts.length,1);assert.equal(posts[0].get('action'),'save_custom_template');
+  assert.equal(posts[0].get('template_game'),'cs2');assert.equal(posts[0].get('template_version'),'2026.10');
+  assert.equal(posts[0].get('template_path'),'/home/gamedock/templates/cs2/2026.10');
+  posts.length=0;await page.goto(url);await page.selectOption('#template-game','minecraft');
+  assert(await type.isVisible());assert(!(await page.locator('[data-custom-template]').isVisible()));
   for(const name of ['vanilla','bukkit','spigot','paper','forge','purpur','fabric']){
    await type.selectOption(name);
    await page.waitForFunction(()=>!document.querySelector('#release-version').disabled);
@@ -43,6 +56,11 @@ const {chromium}=require('playwright');
    await version.selectOption(`${name}:1.21.12:build`);assert(!(await button.isDisabled()));
    assert.equal(posts.length,0);
   }
+  await page.selectOption('#template-game','custom');
+  assert(await button.isDisabled());assert.equal(await page.locator('[name=template_game]').inputValue(),'custom');
+  assert.equal(await page.locator('[name=template_path]').inputValue(),'');
+  assert.equal(await page.locator('[name=template_name]').inputValue(),'Custom game');
+  await page.selectOption('#template-game','minecraft');assert.equal(await type.inputValue(),'');assert(await button.isDisabled());
   // A late response must not populate another type's version picker.
   await type.selectOption('paper');await type.selectOption('forge');
   await page.waitForFunction(()=>document.querySelector('#release-version').options[1]?.value.startsWith('forge:'));
@@ -62,6 +80,6 @@ const {chromium}=require('playwright');
   assert.equal(posts.length,1);assert.equal(posts[0].get('action'),'install_template');
   assert.equal(posts[0].get('template_key'),'vanilla:1.21.11:build');assert.equal(posts[0].get('node_id'),'1');assert.equal(posts[0].get('csrf'),'release-picker-test');
   assert.deepEqual(errors,[]);
-  console.log('Release picker passed: seven types, latest ten versions, explicit install only, selection reset, stale responses, error/retry, empty catalog and exact POST payload.');
+  console.log('Game/template picker passed: game selection, custom version/path POST, seven Minecraft types, latest ten versions, explicit install only, selection reset, stale responses, error/retry, empty catalog and exact POST payload.');
  }finally{if(browser)await browser.close();await new Promise(resolve=>server.close(resolve));}
 })().catch(error=>{console.error(error);process.exitCode=1;});

@@ -10,6 +10,7 @@ const {chromium}=require('playwright');
  async function action(page,values){return page.evaluate(async values=>{const data=new FormData();data.set('csrf',document.querySelector('[name=csrf]').value);data.set('server_id','710001');for(const [key,value]of Object.entries(values))data.set(key,value);const r=await fetch('/api.php',{method:'POST',body:data});return {status:r.status,body:await r.json()};},values);}
  await login(admin,'admin@example.com');await admin.goto(base+'/admin.php?section=templates&node=1');
  if(!await admin.getByRole('heading',{name:'Játékszerver-templatek',exact:true}).count())throw Error('General heading missing');
+ await admin.selectOption('#template-game','minecraft');
  for(const type of ['vanilla','bukkit','spigot','paper','forge','purpur','fabric']){
   await admin.selectOption('#release-type',type);await admin.waitForFunction(()=>document.querySelector('#release-version').options.length===11 && !document.querySelector('#release-version').disabled);
   if(await admin.locator('#release-version option').count()!==11)throw Error('Not ten releases: '+type);
