@@ -352,7 +352,7 @@ if(releaseCatalog){
                 seen.add(entry.version);return true;
             }).slice(0,10);
             version.replaceChildren(new Option('Válassz verziót',''));
-            for(const entry of entries)version.append(new Option(`${entry.version}${entry.build ? ' · '+entry.build : ''}`,entry.key));
+            for(const entry of entries)version.append(new Option(entry.version,entry.key));
             version.disabled=entries.length===0;
             message.textContent=entries.length ? 'Válassz verziót, majd kattints a Sablon telepítése gombra.' : 'Ehhez a típushoz jelenleg nincs elérhető stabil kiadás.';
         }catch(error){

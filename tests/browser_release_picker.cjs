@@ -73,7 +73,7 @@ const {chromium}=require('playwright');
    await page.waitForFunction(()=>!document.querySelector('#release-version').disabled);
    assert.equal(await version.locator('option').count(),11);
    assert(await button.isDisabled());
-   await version.selectOption(`${name}:1.21.12:build`);assert(!(await button.isDisabled()));
+   await version.selectOption(`${name}:1.21.12:build`);assert(!(await button.isDisabled()));assert.equal(await version.locator('option:checked').textContent(),'1.21.12');
    assert.equal(posts.length,0);
   }
   await page.selectOption('#template-game','custom');
