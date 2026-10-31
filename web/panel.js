@@ -283,23 +283,40 @@ if (versionPanel) {
 }
 
 const releaseCatalog=document.querySelector('[data-release-catalog]');
-if(releaseCatalog)for(const category of releaseCatalog.querySelectorAll('[data-release-type]')){
-    let loaded=false,busy=false;
-    const message=category.querySelector('[data-release-message]'),retry=category.querySelector('[data-release-retry]');
+if(releaseCatalog){
+    const form=releaseCatalog.querySelector('[data-release-form]'),type=releaseCatalog.querySelector('#release-type'),version=releaseCatalog.querySelector('#release-version');
+    const message=releaseCatalog.querySelector('[data-release-message]'),retry=releaseCatalog.querySelector('[data-release-retry]'),install=releaseCatalog.querySelector('[data-release-install]');
+    let request=0,controller,submitting=false;
+    const update=()=>{install.disabled=submitting || version.disabled || !version.value;};
     async function load(){
-        if(loaded || busy || !category.open)return;busy=true;retry.hidden=true;message.textContent='Stabil kiadások lekérése…';
+        const current=++request,selectedType=type.value;
+        controller?.abort();controller=new AbortController();
+        version.replaceChildren(new Option(selectedType ? 'Verziók betöltése…' : 'Előbb válassz típust',''));
+        version.disabled=true;retry.hidden=true;update();
+        message.textContent=selectedType ? 'Stabil kiadások lekérése…' : 'Válassz típust a verziók betöltéséhez.';
+        if(!selectedType)return;
         try{
-            const response=await fetch(`/admin_api.php?action=releases&node_id=${encodeURIComponent(releaseCatalog.dataset.node)}&type=${encodeURIComponent(category.dataset.releaseType)}`,{cache:'no-store'});
-            const data=await response.json();if(!response.ok)throw Error(data.error);
-            const body=category.querySelector('[data-release-rows]');body.replaceChildren();
-            for(const entry of data.templates || []){
-                const row=document.createElement('tr');for(const field of ['version','build']){const cell=document.createElement('td');cell.textContent=entry[field];row.append(cell);}
-                const cell=document.createElement('td'),form=document.createElement('form');form.method='post';
-                for(const [name,value] of Object.entries({csrf:releaseCatalog.dataset.csrf,node_id:releaseCatalog.dataset.node,template_key:entry.key})){const input=document.createElement('input');input.type='hidden';input.name=name;input.value=value;form.append(input);}
-                const button=document.createElement('button');button.name='action';button.value='install_template';button.className='btn btn-sm btn-success';button.textContent='Telepítés template-ként';form.append(button);cell.append(form);row.append(cell);body.append(row);
-            }
-            message.textContent=data.templates?.length ? 'Az adott típus legfrissebb elérhető stabil verziói.' : 'Ehhez a típushoz jelenleg nincs elérhető stabil kiadás.';loaded=true;
-        }catch(error){message.textContent=error.message;retry.hidden=false;}finally{busy=false;}
+            const response=await fetch(`/admin_api.php?action=releases&node_id=${encodeURIComponent(releaseCatalog.dataset.node)}&type=${encodeURIComponent(selectedType)}`,{cache:'no-store',signal:controller.signal});
+            const data=await response.json();if(current!==request)return;
+            if(!response.ok)throw Error(data.error || 'A verziók lekérése nem sikerült.');
+            const seen=new Set(),entries=(data.templates || []).filter(entry=>{
+                if(entry.type!==selectedType || !entry.key || !entry.version || seen.has(entry.version))return false;
+                seen.add(entry.version);return true;
+            }).slice(0,10);
+            version.replaceChildren(new Option('Válassz verziót',''));
+            for(const entry of entries)version.append(new Option(`${entry.version}${entry.build ? ' · '+entry.build : ''}`,entry.key));
+            version.disabled=entries.length===0;
+            message.textContent=entries.length ? 'Válassz verziót, majd kattints a Sablon telepítése gombra.' : 'Ehhez a típushoz jelenleg nincs elérhető stabil kiadás.';
+        }catch(error){
+            if(current!==request || error.name==='AbortError')return;
+            version.replaceChildren(new Option('A verziók nem érhetők el',''));message.textContent=error.message;retry.hidden=false;
+        }finally{if(current===request)update();}
     }
-    category.addEventListener('toggle',load);retry.addEventListener('click',load);
+    type.addEventListener('change',load);version.addEventListener('change',update);retry.addEventListener('click',load);
+    form.addEventListener('submit',event=>{
+        if(submitting || event.submitter!==install || install.disabled || !form.reportValidity()){event.preventDefault();return;}
+        submitting=true;
+        // Keep the submit button enabled until the browser has serialized its action value.
+        setTimeout(update,0);
+    });
 }

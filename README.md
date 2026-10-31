@@ -55,7 +55,7 @@ Counter-Strike vagy más saját mappás játéknál a típus alap template útvo
 
 ## Minecraft-típusok és az utolsó 10 verzió
 
-A **Játékszerver-templatek** adminmenüben válassz Linux-gépet, nyisd meg a kívánt Minecraft-kategóriát, majd válaszd ki a telepítendő stabil verziót. A letöltés/fordítás aszinkron, a gépen fut, a lap állapotot mutat.
+A **Játékszerver-templatek** adminmenüben válassz Linux-gépet, majd a külön **Típus** és **Verzió** választóval add meg a telepítendő stabil kiadást. Kizárólag a **Sablon telepítése** gomb indít telepítést; a választók módosítása nem. A letöltés/fordítás aszinkron, a gépen fut, a lap állapotot mutat.
 
 Támogatott szolgáltatók: **Vanilla, Paper, Forge, Bukkit, Spigot, Purpur, Fabric**. Típusonként a legutóbbi tíz stabil **Minecraft-verzió** kerül a katalógusba, és azon belül a legfrissebb stabil build/loader. Nem tíz külön buildet mutatunk ugyanahhoz az egy Minecraft-verzióhoz.
 
@@ -175,7 +175,7 @@ FELH_ID:1731|SZOLG_ID:15366|NODE:node_s1|
 
 ## Játékszerver-templatek és verzióváltás
 
-Az admin **Játékszerver-templatek** oldalán Linux-gépenként kezelhetők a sablonok. A Vanilla, Bukkit, Spigot, Paper, Forge, Purpur és Fabric külön kategória; megnyitásuk a hivatalos szolgáltatói katalógusból lekéri az adott típus legfrissebb legfeljebb 10 stabil játékverzióját. A lista 10 percig gyorsítótárazott. Verziónként külön **Telepítés template-ként** gomb indítja a háttérben a letöltést/fordítást. Egyszerre egy telepítési feladat futhat egy gépen. Más játéktípushoz meglévő, teljes Linux-mappából egyedi verziózott template vehető fel.
+Az admin **Játékszerver-templatek** oldalán Linux-gépenként kezelhetők a sablonok. A Vanilla, Bukkit, Spigot, Paper, Forge, Purpur és Fabric külön típus; kiválasztásuk a hivatalos szolgáltatói katalógusból lekéri az adott típus legfrissebb legfeljebb 10 stabil játékverzióját. A lista 10 percig gyorsítótárazott. A külön **Verzió** választóban kiválasztott kiadáshoz a **Sablon telepítése** gomb indítja a háttérben a letöltést/fordítást. Egyszerre egy telepítési feladat futhat egy gépen. Más játéktípushoz meglévő, teljes Linux-mappából egyedi verziózott template vehető fel.
 
 A telepített template minden verziójánál külön menthető a **minimum memória (MiB)** és az **Újratelepítés szükséges** jelölő. A szabály a kiválasztott Linux-gépre és template-verzióra vonatkozik. A minimumot új szerver létrehozásakor és verzióváltáskor szerveroldalon is ellenőrizzük; a túl kicsi memórialimit tiltást eredményez. A 0 memórialimit korlátlant jelent, a 0 minimum nem ír elő minimumot.
 

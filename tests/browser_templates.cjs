@@ -11,8 +11,8 @@ const {chromium}=require('playwright');
  await login(admin,'admin@example.com');await admin.goto(base+'/admin.php?section=templates&node=1');
  if(!await admin.getByRole('heading',{name:'Játékszerver-templatek',exact:true}).count())throw Error('General heading missing');
  for(const type of ['vanilla','bukkit','spigot','paper','forge','purpur','fabric']){
-  const category=admin.locator(`[data-release-type=${type}]`);await category.locator('summary').click();await category.locator('[data-release-rows] tr').nth(9).waitFor();
-  if(await category.locator('[data-release-rows] tr').count()!==10)throw Error('Not ten releases: '+type);
+  await admin.selectOption('#release-type',type);await admin.waitForFunction(()=>document.querySelector('#release-version').options.length===11 && !document.querySelector('#release-version').disabled);
+  if(await admin.locator('#release-version option').count()!==11)throw Error('Not ten releases: '+type);
  }
  await login(client,'client@example.com');await client.goto(base+'/?server=710001');await client.locator('a[href="#version-switch"]').click();await client.waitForFunction(()=>document.querySelectorAll('#version-choice optgroup').length===7);
  let result=await action(client,{action:'start'});if(result.status!==200)throw Error('Fixture startup failed '+JSON.stringify(result));

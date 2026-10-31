@@ -10,7 +10,7 @@ policyCheck(GameDock\VersionService::matches(['minecraft_type'=>'vanilla'],['typ
 policyCheck(!GameDock\VersionService::matches(['minecraft_type'=>'vanilla'],['type'=>'cs2','provider'=>'folder','game'=>'cs2']),'Másik játék választható Minecraftnak.');
 $view=new GameDock\SmartyView(dirname(__DIR__));ob_start();
 try{$view->render('admin/templates.tpl',['nodes'=>[['id'=>1,'name'=>'node_s1']],'selected_node'=>1,'csrf'=>'test','catalog'=>['state'=>'idle','templates'=>[['key'=>'paper:1.2:1','type'=>'paper','version'=>'1.2','build'=>'1','state'=>'ready','minimum_memory_mb'=>2048,'requires_reinstall'=>true]]],'profiles'=>[]]);$html=ob_get_contents();}finally{ob_end_clean();}
-foreach(GameDock\TemplatePolicy::TYPES as $type=>$name)policyCheck(str_contains($html,'data-release-type="'.$type.'"'),'Hiányzó kiadási kategória.');
+foreach(GameDock\TemplatePolicy::TYPES as $type=>$name)policyCheck(str_contains($html,'value="'.$type.'"'),'Hiányzó kiadási kategória.');
 policyCheck(str_contains($html,'name="minimum_memory_mb"') && str_contains($html,'name="requires_reinstall"') && !str_contains($html,'Minecraft-templatek'),'Hiányos adminfelület.');
 echo "Template minimum memória, játéktípus-korlát és kategorizált Smarty-felület rendben.\n";
 if(!getenv('TEST_MYSQL_HOST'))exit;

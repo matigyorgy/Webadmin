@@ -16,3 +16,12 @@ Run the Playwright/Chromium test with `GAMEDOCK_TEST_URL` (loopback only) and `G
 `tests/fixtures/minecraft_catalog.py` creates a clearly labelled **fake** forty-entry catalog from the test Python game, ten versions of four core Minecraft types. It is not a real Minecraft download. After running it inside the disposable SSH fixture, `tests/browser_minecraft.cjs` tests type/version selection without an EULA checkbox, automatic EULA/port configuration, AJAX controls, offline version switching with world preservation/full backup, template deletion and another random free 25xxx port. The test scripts use automatically generated numeric server identifiers and game names. Catalog parser/checksum/JDK extraction tests are in tests/test_minecraft.py.
 
 Remove all disposable containers, databases, networks and temporary files after testing. Never run these browser workflows against real user data.
+
+The release picker can also be checked without SSH/MySQL or upstream downloads. Render the actual Smarty page, then run the isolated Chromium test (Playwright and Chromium must be installed):
+
+```sh
+php tests/fixtures/releases.php > /tmp/gamedock-releases.html
+node tests/browser_release_picker.cjs /tmp/gamedock-releases.html
+```
+
+This checks all seven types, the ten-version limit, selection resets, late responses, catalog errors/retry, empty catalogs, and that only the install button submits the selected key with CSRF and node ID.
