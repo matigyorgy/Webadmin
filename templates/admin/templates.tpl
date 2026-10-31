@@ -1,5 +1,5 @@
 <section class="card mb-4"><div class="card-body"><h3 class="h5">Játékszerver-templatek</h3>
-<p>Minecraftnál típusonként a legfrissebb 10 stabil, a szolgáltatónál elérhető játékverzióból választhatsz. A telepítés a Linux-gépen háttérben fut. Más játékhoz saját forrásmappa vehető fel.</p>
+<p>A telepítés a Linux-gépen háttérben fut. Más játékhoz saját forrásmappa vehető fel.</p>
 <form method="get" class="d-flex gap-2"><input type="hidden" name="section" value="templates"><select class="form-select" name="node" required><option value="">Válassz Linux-gépet</option>{foreach $nodes as $node}<option value="{$node.id}"{if $selected_node == $node.id} selected{/if}>{$node.name}</option>{/foreach}</select><button class="btn btn-outline-secondary">Megnyitás</button></form>
 {if $selected_node}<a class="btn btn-outline-info mt-3" href="/admin.php?section=nodes&amp;edit={$selected_node}#node-setup">Linux telepítése / frissítése</a>{/if}
 </div></section>
