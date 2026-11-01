@@ -44,6 +44,14 @@ final class SchemaUpdater
             && (bool)$this->db->query("SHOW COLUMNS FROM nodes LIKE 'premium'")->fetch()
             && (bool)$this->db->query("SHOW COLUMNS FROM users LIKE 'username'")->fetch();
     }
+    public function ensureSteamAppId(array $actor): void
+    {
+        if (!$this->db->query('SELECT is_admin FROM users WHERE id=?',[$actor['id']])->fetchColumn()) throw new RuntimeException('Adminisztrátori jogosultság szükséges.');
+        if (!(new GameRegistry($this->db))->available()) throw new RuntimeException('Először futtasd az admin adatbázisfrissítést.');
+        if ((bool)$this->db->query("SHOW COLUMNS FROM game_types LIKE 'steam_app_id'")->fetch()) return;
+        try { $this->db->query('ALTER TABLE game_types ADD COLUMN steam_app_id INT UNSIGNED NULL'); }
+        catch (Throwable $error) { throw new RuntimeException('A játéktípusok Steam App ID mezőjének adatbázis-frissítése nem sikerült. Ellenőrizd, hogy a panel adatbázis-felhasználójának van ALTER TABLE jogosultsága.'); }
+    }
     public function enableStartup(array $actor): void
     {
         if (!$this->db->query('SELECT is_admin FROM users WHERE id=?',[$actor['id']])->fetchColumn()) throw new RuntimeException('Adminisztrátori jogosultság szükséges.');

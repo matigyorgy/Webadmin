@@ -77,10 +77,10 @@ final class AdminController
                 header('Location: /admin.php?section='.$section,true,303); return;
             }
         } catch (Throwable $e) {
-            $error=$e instanceof RuntimeException && !$e instanceof PDOException ? $e->getMessage() : 'A mentés nem sikerült. Az e-mail már foglalt lehet, vagy a bejegyzésre más adat hivatkozik.';
+            $error=$e instanceof RuntimeException && !$e instanceof PDOException ? $e->getMessage() : ($section==='games' && $e instanceof PDOException && $e->getCode()==='23000' ? 'Ez a típusazonosító már használatban van.' : 'A mentés nem sikerült. Az e-mail már foglalt lehet, vagy a bejegyzésre más adat hivatkozik.');
             if (($_POST['action'] ?? '')==='save') {
                 $record=[];
-                foreach (['id','email','username','is_admin','premium','name','ssh_host','public_host','ssh_port','ssh_user','ssh_fingerprint','user_id','node_id','game','unit_name','startup_command','install_source','install_folder','slug','existing_slug','template_path','provider','minecraft_template','memory_limit_mb','cpu_limit_percent','disk_limit_mb','slot_limit','expires_at','port','custom_template'] as $field) $record[$field]=is_scalar($_POST[$field] ?? null) ? (string)$_POST[$field] : '';
+                foreach (['id','email','username','is_admin','premium','name','ssh_host','public_host','ssh_port','ssh_user','ssh_fingerprint','user_id','node_id','game','unit_name','startup_command','install_source','install_folder','slug','existing_slug','template_path','provider','steam_app_id','minecraft_template','memory_limit_mb','cpu_limit_percent','disk_limit_mb','slot_limit','expires_at','port','custom_template'] as $field) $record[$field]=is_scalar($_POST[$field] ?? null) ? (string)$_POST[$field] : '';
             }
         }
         try {

@@ -39,6 +39,7 @@ final class AdminService
             if ($id!==null) $this->find($actor,$section,$id);
             if ($section==='games') {
                 if(!(new GameRegistry($this->db))->available())throw new RuntimeException('Először futtasd az admin adatbázisfrissítést.');
+                (new SchemaUpdater($this->db))->ensureSteamAppId($actor);
                 $slug=trim((string)($data['slug'] ?? ''));
                 if(!preg_match('/\A[a-z][a-z0-9_-]{0,31}\z/',$slug))throw new RuntimeException('A típusazonosító kisbetűből, számból, kötőjelből és aláhúzásból állhat.');
                 $name=Validation::text($data,'name');$source=Validation::text($data,'template_path',255);
