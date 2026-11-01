@@ -18,6 +18,12 @@ def public_directory(path):
     if not stat.S_ISDIR(info.st_mode) or info.st_uid!=0 or info.st_mode&0o022:raise ValueError('Unsafe template publication directory')
     os.chmod(path,0o755)
 
+def private_stage(prefix,account):
+    parent=Path('/var/tmp');info=parent.lstat()
+    if not stat.S_ISDIR(info.st_mode) or info.st_uid!=0 or (info.st_mode&0o022 and not info.st_mode&stat.S_ISVTX):raise ValueError('Unsafe temporary build directory')
+    stage=Path(tempfile.mkdtemp(prefix=prefix,dir=str(parent)));os.chown(stage,account.pw_uid,account.pw_gid)
+    return stage
+
 def release_directory(row):
     return Path(cfg()['_provision']['source_root'])/'minecraft'/row['type']/row['version']
 
@@ -140,14 +146,14 @@ def install_jdk(required,settings):
     assets=metadata('https://api.adoptium.net/v3/assets/latest/'+str(required)+'/hotspot?architecture='+arch+'&image_type=jdk&os=linux')
     package=assets[0]['binary']['package'];digest=package['checksum']
     if not re.fullmatch(r'[a-fA-F0-9]{64}',digest):raise ValueError('JDK checksum missing')
-    account=pwd.getpwnam(settings['_provision']['users']['minecraft']);stage=Path(tempfile.mkdtemp(prefix='.jdk-',dir=root));os.chown(stage,account.pw_uid,account.pw_gid)
+    account=pwd.getpwnam(settings['_provision']['users']['minecraft']);stage=private_stage('.jdk-',account)
     payload={'url':package['link'],'algorithm':'sha256','digest':digest}
     try:
         env=rt.environment(account);env.update({k:v for k,v in os.environ.items() if k.lower() in ('http_proxy','https_proxy','no_proxy','ssl_cert_file')})
         subprocess.run(['/usr/bin/python3','-I',SELF,'jdk',base64.b64encode(json.dumps(payload).encode()).decode(),str(stage)],preexec_fn=rt.drop(account),env=env,check=True,timeout=1200)
         folders=[p for p in stage.iterdir() if p.is_dir() and (p/'bin/java').is_file()]
         if len(folders)!=1:raise ValueError('JDK output missing')
-        public_directory(destination.parent);os.rename(folders[0],destination);return str(destination/'bin/java')
+        public_directory(destination.parent);shutil.move(str(folders[0]),str(destination));return str(destination/'bin/java')
     finally:
         if shutil.rmtree.avoids_symlink_attacks:shutil.rmtree(stage)
 
@@ -314,7 +320,7 @@ def worker():
             old=previous.get(row['key'])
             if old and old.get('state')=='ready' and not final.is_symlink() and final.is_dir():row.update(old);continue
             row['state']='building';value['message']=kind+' '+row['version']+' letöltése/fordítása';atomic(CACHE+'/catalog.json',value)
-            stage=Path(tempfile.mkdtemp(prefix='.mc-build-',dir=root));os.chown(stage,account.pw_uid,account.pw_gid)
+            stage=private_stage('.mc-build-',account)
             try:
                 java=java_for(row,settings)
                 payload=base64.b64encode(json.dumps(row).encode()).decode();env=rt.environment(account)
@@ -443,7 +449,7 @@ def steam_worker(value,token):
     stage=None
     try:
         public_directory(root/game)
-        stage=Path(tempfile.mkdtemp(prefix='.steam-build-',dir=root/game));os.chown(stage,account.pw_uid,account.pw_gid)
+        stage=private_stage('.steam-build-',account)
         env=rt.environment(account);env.update({k:v for k,v in os.environ.items() if k.lower() in ('http_proxy','https_proxy','no_proxy','ssl_cert_file')})
         encoded=base64.b64encode(json.dumps(profile,separators=(',',':')).encode()).decode()
         subprocess.run(['/usr/bin/python3','-I',SELF,'steam-build',encoded,str(stage)],preexec_fn=rt.drop(account),env=env,check=True,timeout=22000)

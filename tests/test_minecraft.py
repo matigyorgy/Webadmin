@@ -5,6 +5,11 @@ from pathlib import Path
 from unittest.mock import patch
 loader=importlib.machinery.SourceFileLoader('mc_templates','linux/gamedock-templates');spec=importlib.util.spec_from_loader(loader.name,loader);mc=importlib.util.module_from_spec(spec);loader.exec_module(mc)
 class MinecraftTests(unittest.TestCase):
+ def test_builder_stage_uses_traversable_system_temp_and_game_owner(self):
+  account=SimpleNamespace(pw_uid=1001,pw_gid=1002)
+  with patch.object(mc.Path,'lstat',return_value=SimpleNamespace(st_mode=0o41777,st_uid=0)),patch.object(mc.tempfile,'mkdtemp',return_value='/var/tmp/.mc-build-test') as create,patch.object(mc.os,'chown') as chown:
+   stage=mc.private_stage('.mc-build-',account)
+  self.assertEqual(str(stage),'/var/tmp/.mc-build-test');create.assert_called_once_with(prefix='.mc-build-',dir='/var/tmp');chown.assert_called_once_with(stage,1001,1002)
  def test_build_error_includes_tool_output_tail(self):
   with patch.object(mc.os,'geteuid',return_value=1001):
    with self.assertRaisesRegex(RuntimeError,'Gradle failed'):

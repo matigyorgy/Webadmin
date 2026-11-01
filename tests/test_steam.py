@@ -88,7 +88,7 @@ class SteamTests(unittest.TestCase):
      stage=Path(command[-1]);(stage/'template').mkdir();(stage/'template'/'server').write_text('fixture')
      if not succeeds:raise subprocess.CalledProcessError(1,command)
      (stage/'result.json').write_text('{"build":"123456"}')
-    with patch.object(mc,'CACHE',str(cache)),patch.object(mc,'cfg',return_value={'_provision':{'source_root':str(templates),'users':{'cs2':'fixture'}}}),patch.object(mc.pwd,'getpwnam',return_value=account),patch.object(mc,'public_directory'),patch.object(mc.os,'chown'),patch.object(mc.rt,'drop',return_value=None),patch.object(mc.subprocess,'run',side_effect=run):mc.steam_worker('cs2','a'*24)
+    with patch.object(mc,'CACHE',str(cache)),patch.object(mc,'cfg',return_value={'_provision':{'source_root':str(templates),'users':{'cs2':'fixture'}}}),patch.object(mc.pwd,'getpwnam',return_value=account),patch.object(mc,'public_directory'),patch.object(mc,'private_stage',side_effect=lambda prefix,account:Path(tempfile.mkdtemp(prefix=prefix,dir=templates/'cs2'))),patch.object(mc.os,'chown'),patch.object(mc.rt,'drop',return_value=None),patch.object(mc.subprocess,'run',side_effect=run):mc.steam_worker('cs2','a'*24)
     saved=json.loads((cache/'catalog.json').read_text());self.assertEqual(saved['templates'],[existing]);self.assertEqual(saved['state'],'ready' if succeeds else 'failed')
     if succeeds:
      row=json.loads((cache/'custom.json').read_text())[0];self.assertEqual(row['game'],'cs2');self.assertEqual(row['version'],'Steam build 123456');self.assertEqual(row['provider'],'folder');self.assertTrue(Path(row['path']).is_dir())
