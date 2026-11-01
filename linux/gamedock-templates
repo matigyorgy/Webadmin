@@ -409,9 +409,11 @@ def steam_worker(game,token):
             for name in dirs+files:
                 mode=os.lstat(Path(directory)/name).st_mode
                 if not(stat.S_ISREG(mode) or stat.S_ISDIR(mode)):raise ValueError('Unsafe Steam template file')
-        final=root/game/('steam-'+build+'-'+token)
+        public_directory(root/game);final=root/game/('steam-'+build)
         if final.exists() or final.is_symlink():raise ValueError('Existing template not overwritten')
-        os.rename(stage/'template',final);os.chmod(final,0o755)
+        final.mkdir(mode=0o755)
+        for item in (stage/'template').iterdir():shutil.move(str(item),str(final/item.name))
+        os.chmod(final,0o755)
         profile=STEAM_GAMES[game]
         save_custom({'key':'custom:'+token,'game':game,'name':profile['name'],'version':'Steam build '+build,'path':str(final),'startup':profile['startup'],'minimum_memory_mb':0})
         value.update(state='ready',message=profile['name']+' template elkészült. Steam build: '+build+'. Mappa: '+str(final))
