@@ -58,8 +58,8 @@ def install(args):
         if CONFIG.exists():
             safe(CONFIG);cfg=json.loads(CONFIG.read_text())
         old=cfg.get('_provision',{})
-        source=Path('/home/gamedock/templates')
-        if args.source_root and Path(args.source_root)!=source:raise ValueError('Template root is fixed at /home/gamedock/templates')
+        source=Path('/home/webadmin/templates')
+        if args.source_root and Path(args.source_root)!=source:raise ValueError('Template root is fixed at /home/webadmin/templates')
         target=Path(args.target_root or old.get('target_root','/home/gamedock'))
         if not source.is_absolute() or not target.is_absolute() or source==target:raise ValueError('Distinct absolute source/target roots required')
         dangerous={'/','/etc','/root','/usr','/bin','/sbin','/var','/var/lib','/home','/run','/tmp','/dev','/proc','/sys'}
@@ -82,12 +82,14 @@ def install(args):
             previous_source.symlink_to(source,target_is_directory=True)
             catalog=Path('/var/lib/gamedock/minecraft/catalog.json')
             if catalog.exists():save(catalog,catalog.read_text().replace(str(previous_source),str(source)).encode(),0o600)
+        elif previous_source!=source and previous_source.is_symlink() and previous_source.resolve()==source:
+            previous_source.unlink()
         for folder in (target,source):
             if not folder.exists():folder.mkdir(parents=True,mode=0o755);os.chmod(folder,0o755)
             if folder==target and str(folder)=='/home/gamedock' and folder.stat().st_uid==account.pw_uid:
                 os.chown(folder,0,0);os.chmod(folder,0o755)
             safe(folder)
-        if source.resolve()!=source or target.resolve()!=target or source.parent!=target:raise ValueError('Templates must use the protected /home/gamedock/templates directory')
+        if source.resolve()!=source or target.resolve()!=target or source!=Path('/home/webadmin/templates'):raise ValueError('Templates must use the protected /home/webadmin/templates directory')
         users={}
         for game in ('minecraft','cs16','cs2','fivem','css'):
             users[game]=old.get('users',{}).get(game,game);ensure_user(users[game],True)
@@ -151,7 +153,7 @@ def install(args):
     print('Add the panel public SSH key to '+str(ssh/'authorized_keys')+' if not already present.')
 
 if __name__=='__main__':
-    parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--setup-ftp',action='store_true');parser.add_argument('--ftp-host');parser.add_argument('--source-root');parser.add_argument('--target-root');parser.add_argument('--ssh-user',default='gamedock');parser.add_argument('--panel-public-key-file')
+    parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--setup-ftp',action='store_true');parser.add_argument('--ftp-host');parser.add_argument('--source-root');parser.add_argument('--target-root');parser.add_argument('--ssh-user',default='webadmin');parser.add_argument('--panel-public-key-file')
     try:install(parser.parse_args())
     except (ValueError,OSError,subprocess.SubprocessError) as error:
         detail=getattr(error,'stderr',None)

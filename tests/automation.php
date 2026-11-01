@@ -22,7 +22,7 @@ try{
  foreach([fn()=>$service->listing($other,42),fn()=>$service->perform($other,42,'backup',[])] as $request){
   $denied=false;try{$request();}catch(RuntimeException $e){$denied=str_contains($e->getMessage(),'nincs hozzá jogosultságod');}checkAutomation($denied,'Other owner reached automation SSH');
  }
- $panel=['startup'=>'java -Xmx8G -jar server.jar --port {port}','template_key'=>'paper:1.21.1:1','template_version'=>'1.21.1','minecraft_type'=>'paper','minecraft_version'=>'1.21.1','install_source'=>'/home/gamedock/templates/minecraft/paper/1.21.1/1'];
+ $panel=['startup'=>'java -Xmx8G -jar server.jar --port {port}','template_key'=>'paper:1.21.1:1','template_version'=>'1.21.1','minecraft_type'=>'paper','minecraft_version'=>'1.21.1','install_source'=>'/home/webadmin/templates/minecraft/paper/1.21.1/1'];
  $job=['id'=>str_repeat('a',32),'restored_panel'=>$panel];$service->reconcile($owner,42,$job);
  $server=(new GameDock\ServerService($db,new GameDock\SshClient()))->find($owner,42);checkAutomation($server['last_restore_job']===$job['id'] && $server['minecraft_version']==='1.21.1','Restore metadata not applied');
  checkAutomation(str_contains($server['startup_command'],'-Xmx409M'),'Restore ignored current memory limit');

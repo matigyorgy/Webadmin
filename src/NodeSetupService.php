@@ -48,7 +48,7 @@ final class NodeSetupService
         }
         $public=(new AdminService($this->db))->publicKey($actor);
         if(!$ssh->put($folder.'/panel.pub',$public))throw new RuntimeException('A nyilvános kulcs nem tölthető fel.');
-        $source='/home/gamedock/templates';
+        $source='/home/webadmin/templates';
         if(!str_starts_with($source,'/') || strlen($source)>255 || preg_match('/[\x00-\x1f\x7f]/',$source))throw new RuntimeException('Abszolút template gyökérmappa szükséges.');
         $_SESSION['node_setup'][$id]=$folder;
         $command=$prefix.'/usr/bin/nohup /bin/sh '.escapeshellarg($folder.'/bootstrap.sh').' '.escapeshellarg($source).' '.escapeshellarg($node['ssh_user']).' '.(($data['setup_packages'] ?? '')==='1' ? '1':'0').' '.(($data['setup_firewall'] ?? '')==='1' ? '1':'0').' '.escapeshellarg($node['public_host'] ?: $node['ssh_host']).' > '.escapeshellarg($folder.'/setup.log').' 2>&1 < /dev/null &';

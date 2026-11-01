@@ -16,7 +16,7 @@ foreach ([['db_host'=>'x;dbname=other'], ['db_port'=>'65536'], ['db_name'=>'db;h
     ['server_name'=>'Survival','unit_name'=>'game.service','game'=>'minecraft']] as $invalid) {
     rejected(fn()=>$installer->validate(array_replace($input,$invalid)), 'Invalid installation input accepted');
 }
-$node=['node_name'=>'Linux','ssh_host'=>'games.example.com','ssh_port'=>'22','ssh_user'=>'gamedock',
+$node=['node_name'=>'Linux','ssh_host'=>'games.example.com','ssh_port'=>'22','ssh_user'=>'webadmin',
     'ssh_fingerprint'=>'SHA256:'.str_repeat('A',43),'server_name'=>'','game'=>'minecraft','unit_name'=>'minecraft'];
 ensure($installer->validate(array_replace($input,$node))['node']['host']==='games.example.com','Node validation failed');
 rejected(fn()=>$installer->validate(array_replace($input,$node,['ssh_user'=>'root'])), 'Root SSH user allowed');

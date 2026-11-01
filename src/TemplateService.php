@@ -20,7 +20,7 @@ final class TemplateService
         $node=$this->node($actor,$id);$profile=(new GameRegistry($this->db))->get(Validation::text($data,'template_game',32));
         if($profile['provider']==='minecraft')return $this->ssh->templates($node,'install',Validation::text($data,'minecraft_release',200));
         $path=Validation::text($data,'template_path',255);
-        if(!str_starts_with($path,'/home/gamedock/templates/'))throw new RuntimeException('A forrásmappa a /home/gamedock/templates/ alatt legyen.');
+        if(!str_starts_with($path,'/home/webadmin/templates/'))throw new RuntimeException('A forrásmappa a /home/webadmin/templates/ alatt legyen.');
         $startup=Validation::startup((string)($data['template_startup'] ?? '')) ?: $profile['startup_command'];
         $minimum=ResourceLimits::validate(['memory_limit_mb'=>$data['template_minimum_memory'] ?? 0]);
         $payload=['key'=>'custom:'.bin2hex(random_bytes(12)),'game'=>$profile['slug'],'name'=>Validation::text($data,'template_name'),'version'=>Validation::text($data,'template_version',64),'path'=>$path,'startup'=>$startup,'minimum_memory_mb'=>$minimum['memory_limit_mb']];

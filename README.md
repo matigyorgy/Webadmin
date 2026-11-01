@@ -35,7 +35,7 @@ Az admin Linux-gépek menüjében add meg a címet, SSH-portot és a panel haszn
 Nem kell kézzel SSH-val belépni vagy sudoers-/indítószkripteket szerkeszteni a normál webes munkafolyamathoz. A háttérben futó installert a panel végzi. Opcionális CLI-alternatíva:
 
 ```sh
-sudo python3 linux/install.py --source-root /home/gamedock/templates --target-root /home/gamedock --ssh-user gamedock
+sudo python3 linux/install.py --source-root /home/webadmin/templates --target-root /home/gamedock --ssh-user webadmin
 ```
 
 A Linux-oldali feltétel Python 3.9+ és pidfd-t támogató Linux-kernel. Az installer nem igényel systemd-t, tmuxot vagy screen-t. Az SSH-fiók meglévő kulcsai és a meglévő szerverbejegyzések megmaradnak. A `/home/gamedock` felső könyvtár root tulajdonú lesz; a benne lévő SSH-kulcsok tulajdonosát nem változtatja meg, a példányok saját alkönyvtárat kapnak.
@@ -61,7 +61,7 @@ CS1.6-nál az app 90 teljes `cstrike` fájlkészletét ellenőrizzük; a HLDS sa
 
 A SteamCMD bootstrap a Valve hivatalos HTTPS-címéről érkezik (`steamcdn-a.akamaihd.net/client/installer/steamcmd_linux.tar.gz`), a SteamCMD `app_update … validate` ellenőrzi a szerverfájlokat. A letöltés és kibontás nem rootként fut. A gép x86_64 Linux legyen, és érje el a Steam hitelesítési, tartalom- és frissítési szolgáltatásait. Elegendő szabad hely kell a teljes letöltéshez; a már elkészült template-ek megmaradnak.
 
-A kész template a `/home/gamedock/templates/cs16/steam-<build>-<azonosító>/`, `/home/gamedock/templates/cs2/steam-<build>-<azonosító>/` vagy `/home/gamedock/templates/css/steam-<build>-<azonosító>/` mappába kerül. A panel automatikusan felveszi, megjeleníti a buildszámot és útvonalat; ezután szerverhez választható. A meglévő template-et nem frissíti és nem írja felül. Egyszerre egy Minecraft- vagy Steam-letöltési feladat futhat gépenként. Részleges/hibás letöltés nem kerül a választható template-ek közé. Állapot a panelen, részletes hibanapló a Linux-gépen: `/var/lib/gamedock/minecraft/steam.log`.
+A kész template a `/home/webadmin/templates/cs16/steam-<build>-<azonosító>/`, `/home/webadmin/templates/cs2/steam-<build>-<azonosító>/` vagy `/home/webadmin/templates/css/steam-<build>-<azonosító>/` mappába kerül. A panel automatikusan felveszi, megjeleníti a buildszámot és útvonalat; ezután szerverhez választható. A meglévő template-et nem frissíti és nem írja felül. Egyszerre egy Minecraft- vagy Steam-letöltési feladat futhat gépenként. Részleges/hibás letöltés nem kerül a választható template-ek közé. Állapot a panelen, részletes hibanapló a Linux-gépen: `/var/lib/gamedock/minecraft/steam.log`.
 
 **Meglévő gépnél szükséges frissítés:** töltsd fel a friss panelt, majd a kiválasztott gépnél futtasd újra az **Automatikus Linux-telepítés** műveletet, bekapcsolt csomagtelepítéssel. Az admin **Új szerverfunkciók engedélyezése** adatbázisfrissítése meglévő telepítéshez is hozzáadja a CS1.6 játéktípust, a saját beállításokat megőrizve. A Linux-telepítés telepíti a friss segédprogramot és sudo-jogokat, továbbá Debian/Ubuntu x86_64 alatt a `lib32gcc-s1` és `lib32stdc++6` SteamCMD-függőségeket. Kikapcsolt csomagtelepítésnél ezeket a gépen előre kell biztosítani.
 
@@ -120,7 +120,7 @@ Az indítás, leállítás, újraindítás és állapot gomb **AJAX-os**, oldalf
 
 ## Szerverkönyvtárak, portok és konfiguráció
 
-A template-ek gyökere mindig **`/home/gamedock/templates/`**. A webes Linux-telepítő ezt rögzítetten állítja be, játékprofilonként ez alatti almappát lehet választani. Frissítéskor a korábbi template-gyökeret automatikusan átköltözteti, és a régi Java-elérési utak működéséhez kompatibilitási hivatkozást hagy. Aktív másolás/verzióváltás alatt nem költöztet; két külön, már tartalmas régi és új mappát nem egyesít felülírással.
+A template-ek gyökere mindig **`/home/webadmin/templates/`**. A webes Linux-telepítő ezt rögzítetten állítja be, játékprofilonként ez alatti almappát lehet választani. Frissítéskor a korábbi template-gyökeret automatikusan átköltözteti, és a régi Java-elérési utak működéséhez kompatibilitási hivatkozást hagy. Aktív másolás/verzióváltás alatt nem költöztet; két külön, már tartalmas régi és új mappát nem egyesít felülírással.
 
 Új példány létrehozásakor a cél **`/home/gamedock/<adatbázisbeli-szerver-ID>/`**, például `/home/gamedock/42/`. A célmappát nem kell és nem lehet kézzel megválasztani. Meglévő célmappát a másoló nem ír felül. Minden példány külön nologin Linux-felhasználót és privát, 0700 jogosultságú könyvtárat kap.
 

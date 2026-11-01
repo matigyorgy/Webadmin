@@ -6,7 +6,7 @@ $root=dirname(__DIR__);
 $installed=GameDock\Config::installed();
 $error=''; $success=null;
 $defaults=['db_host'=>'localhost','db_port'=>'3306','db_name'=>'webadmin','db_user'=>'webadmin','admin_email'=>'',
-    'node_name'=>'Linux gép 1','ssh_host'=>'','ssh_port'=>'22','ssh_user'=>'gamedock','ssh_fingerprint'=>'',
+    'node_name'=>'Linux gép 1','ssh_host'=>'','ssh_port'=>'22','ssh_user'=>'webadmin','ssh_fingerprint'=>'',
     'server_name'=>'','game'=>'minecraft','unit_name'=>'minecraft-survival.service'];
 $values=$defaults;
 $_SESSION['install_csrf'] ??= bin2hex(random_bytes(32));

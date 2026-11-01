@@ -25,7 +25,7 @@ try {
     $nodeData=['name'=>'Linux <test>','public_host'=>'games.example.test','ssh_host'=>'127.0.0.1','ssh_port'=>'22','ssh_user'=>'gamedock','ssh_fingerprint'=>'SHA256:'.str_repeat('A',43)];
     $nodeId=$admin->save($owner,'nodes',$nodeData);
     verify($admin->find($owner,'nodes',$nodeId)['public_host']==='games.example.test','Public game address not persisted');
-    $admin->save($owner,'games',['slug'=>'custom','name'=>'My Custom Game','template_path'=>'/home/gamedock/templates/custom','startup_command'=>'python3 server.py --port {port}','provider'=>'folder']);
+    $admin->save($owner,'games',['slug'=>'custom','name'=>'My Custom Game','template_path'=>'/home/webadmin/templates/custom','startup_command'=>'python3 server.py --port {port}','provider'=>'folder']);
     verify(isset((new GameDock\GameRegistry($db))->names()['custom']),'Custom game profile missing');
     $serverData=['name'=>'Survival <test>','game'=>'minecraft','unit_name'=>'minecraft.service','user_id'=>(string)$clientId,'node_id'=>(string)$nodeId];
     $serverData['port']='25500';

@@ -19,7 +19,7 @@ final class TemplateCommandResult
                 'template synchronization is running'=>'A Minecraft-katalógus szinkronizálása még fut. A törlést a letöltés/fordítás befejezése után próbáld újra.',
                 'template is in use by an active copy job'=>'Erről a template-ről éppen szervermásolás vagy verzióváltás fut. Várd meg a befejezését, majd töröld a sablont.',
                 'unknown template'=>'Ez a template már nincs a Linux-gép katalógusában. Frissítsd a Minecraft-templatek oldalát.',
-                'catalog path mismatch'=>'A katalógus még a korábbi template-mappára hivatkozik. Futtasd a friss panel webes Linux-telepítését a /home/gamedock/templates/ mappára költöztetéshez.',
+                'catalog path mismatch'=>'A katalógus még a korábbi template-mappára hivatkozik. Futtasd a friss panel webes Linux-telepítését a /home/webadmin/templates/ mappára költöztetéshez.',
                 'unsafe template publication directory'=>'A Minecraft-template könyvtár tulajdonosa vagy jogosultsága nem megfelelő.'.$repair,
                 'unsafe config'=>'A Linux-oldali /etc/gamedock/servers.json tulajdonosa vagy jogosultsága nem megfelelő.'.$repair,
                 'read-only file system'=>'A Linux-gép érintett fájlrendszere csak olvasható. Ellenőrizd a kötet állapotát; a helper újratelepítése ezt nem oldja meg.',

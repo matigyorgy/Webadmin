@@ -53,11 +53,11 @@ const {chromium}=require('playwright');
   assert.equal(await page.locator('[name=template_game]').inputValue(),'cs2');
   await page.locator('[name=template_name]').fill('Counter-Strike 2');
   await page.locator('[name=template_version]').fill('2026.10');
-  await page.locator('[name=template_path]').fill('/home/gamedock/templates/cs2/2026.10');
+  await page.locator('[name=template_path]').fill('/home/webadmin/templates/cs2/2026.10');
   await Promise.all([page.waitForNavigation(),page.getByRole('button',{name:'Template felvétele',exact:true}).click()]);
   assert.equal(posts.length,1);assert.equal(posts[0].get('action'),'save_custom_template');
   assert.equal(posts[0].get('template_game'),'cs2');assert.equal(posts[0].get('template_version'),'2026.10');
-  assert.equal(posts[0].get('template_path'),'/home/gamedock/templates/cs2/2026.10');
+  assert.equal(posts[0].get('template_path'),'/home/webadmin/templates/cs2/2026.10');
   posts.length=0;
   for(const game of ['cs16','cs2','css']){
    await page.goto(url);await page.selectOption('#template-game',game);

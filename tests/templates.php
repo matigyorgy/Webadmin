@@ -37,7 +37,7 @@ echo "6 direct SSH policy checks passed.\n";
 
 $installer = new GameDock\Installer(dirname(__DIR__));
 $values=['db_host'=>'localhost','db_port'=>'3306','db_name'=>'webadmin','db_user'=>'webadmin','admin_email'=>'',
-    'node_name'=>'Linux','ssh_host'=>'','ssh_port'=>'22','ssh_user'=>'gamedock','ssh_fingerprint'=>'',
+    'node_name'=>'Linux','ssh_host'=>'','ssh_port'=>'22','ssh_user'=>'webadmin','ssh_fingerprint'=>'',
     'server_name'=>'','game'=>'minecraft','unit_name'=>'minecraft.service'];
 $installBase=['installed'=>false,'success'=>null,'error'=>'','values'=>$values,'requirements'=>[], 'csrf'=>'install-test-token','https'=>true];
 $html=renderCaseForInstaller($view,$installBase);
@@ -64,7 +64,7 @@ $html=renderTemplate($view,'admin.tpl',array_replace($adminBase,['section'=>'ser
 check(!str_contains($html,'value="upgrade_startup"'),'Upgrade banner remained after automation migration');
 $html=renderTemplate($view,'admin.tpl',array_replace($adminBase,['section'=>'servers','storage_supported'=>false]));
 check(str_contains($html,'value="upgrade_startup"'),'Storage migration button hidden on older schemas');
-$record=['id'=>'','email'=>'','is_admin'=>0,'name'=>'','ssh_host'=>'','ssh_port'=>22,'ssh_user'=>'gamedock','ssh_fingerprint'=>'', 'user_id'=>'','node_id'=>'','game'=>'minecraft','unit_name'=>'','startup_command'=>'','install_source'=>'','install_folder'=>'','provision_job'=>'','provision_state'=>'ready','provision_message'=>'','slug'=>'','existing_slug'=>'','template_path'=>'','provider'=>'folder','port'=>null];
+$record=['id'=>'','email'=>'','is_admin'=>0,'name'=>'','ssh_host'=>'','ssh_port'=>22,'ssh_user'=>'webadmin','ssh_fingerprint'=>'', 'user_id'=>'','node_id'=>'','game'=>'minecraft','unit_name'=>'','startup_command'=>'','install_source'=>'','install_folder'=>'','provision_job'=>'','provision_state'=>'ready','provision_message'=>'','slug'=>'','existing_slug'=>'','template_path'=>'','provider'=>'folder','port'=>null];
 foreach (['users','nodes','servers'] as $section) {
     $html=renderTemplate($view,'admin.tpl',array_replace($adminBase,['section'=>$section,'record'=>$record]));
     check(str_contains($html,'value="save"') && str_contains($html,'admin-csrf'),'Admin form missing');
