@@ -11,6 +11,8 @@ apiReject(fn()=>Webadmin\ProvisionApiService::input(['user_id'=>0,'node_id'=>1,'
 $a=Webadmin\ProvisionApiService::input(['game'=>'cs2','user_id'=>1,'node_id'=>2]);
 $b=Webadmin\ProvisionApiService::input(['node_id'=>'2','user_id'=>'1','game'=>'cs2']);
 apiCheck($a===$b,'A paraméterek normalizálása nem stabil.');
+$template=Webadmin\ProvisionApiService::input(['game'=>'cs2','user_id'=>1,'node_id'=>2,'custom_template'=>'custom:0123456789abcdef01234567']);
+apiCheck($template['custom_template']==='custom:0123456789abcdef01234567','Az API nem fogadja el a kész játéktípus-template kulcsát.');
 $order=Webadmin\ProvisionApiService::order(['feladat'=>'szolg_letrehozas','premium'=>'true','type'=>'premium','slot'=>'10','hdd'=>'100','memory'=>'4096','version'=>'vanilla_26.1.2','szolg_type'=>'premium_minecraft','lejar'=>(string)(time()+3600),'email_cim'=>'laszlo@example.com','felhasznalonev'=>'SS9-360985','jelszo'=>'test-password-123','rendeles_id'=>'order-test-1']);
 apiCheck($order['premium']&&$order['game']==='minecraft'&&$order['template']==='vanilla:26.1.2'&&$order['slot_limit']===10&&$order['disk_limit_mb']===102400&&$order['memory_limit_mb']===4096,'A rendelési mezők normalizálása hibás.');
 apiCheck(Webadmin\ProvisionApiService::order(['feladat'=>'szolg_letrehozas','premium'=>'false','slot'=>'8','hdd'=>'50','memory'=>'2048','version'=>'latest','szolg_type'=>'fivm','lejar'=>(string)(time()+3600),'email_cim'=>'user@example.com','felhasznalonev'=>'user-123','jelszo'=>'test-password-123'])['game']==='fivem','A FiveM alias nem működik.');

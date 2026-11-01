@@ -11,7 +11,7 @@ final class ProvisionApiService
     }
     public static function input(array $data): array
     {
-        $allowed=['action','user_id','node_id','game','minecraft_template','install_source','startup_command','port','memory_limit_mb','cpu_limit_percent','disk_limit_mb','slot_limit','expires_at'];
+        $allowed=['action','user_id','node_id','game','minecraft_template','custom_template','install_source','startup_command','port','memory_limit_mb','cpu_limit_percent','disk_limit_mb','slot_limit','expires_at'];
         foreach($data as $key=>$value)if(!in_array($key,$allowed,true) || !is_scalar($value))throw new RuntimeException('Ismeretlen vagy hibás API-mező: '.$key,400);
         $result=[];foreach($data as $key=>$value)if($key!=='action')$result[$key]=(string)$value;
         try{
@@ -47,6 +47,12 @@ final class ProvisionApiService
         $orderId=$pick('rendeles_id');if($orderId!==''&&!preg_match('/\A[A-Za-z0-9_.:-]{8,120}\z/',$orderId))throw new RuntimeException('A rendeles_id 8–120 biztonságos karakter legyen.',400);
         return ['premium'=>$premium,'game'=>$game,'template'=>$template,'slot_limit'=>$slot,'memory_limit_mb'=>$memory,'disk_limit_mb'=>$gb*1024,'expires_at'=>$expiry,'email'=>$email,'username'=>$username,'password'=>$password,'order_id'=>$orderId];
     }
+    private function readyFolderTemplate(array $actor,int $nodeId,string $game): ?array
+    {
+        try{$catalog=(new TemplateService($this->db,$this->ssh))->catalog($actor,$nodeId);}catch(\Throwable){return null;}
+        $matches=array_values(array_filter($catalog['templates']??[],static fn(array $row):bool=>($row['provider']??'')==='folder'&&($row['game']??'')===$game&&($row['state']??'')==='ready'&&!empty($row['key'])));
+        return $matches ? end($matches) : null;
+    }
     public function runOrder(array $actor,array $order): array
     {
         if(!$this->db->query('SELECT is_admin FROM users WHERE id=?',[$actor['id']])->fetchColumn())throw new RuntimeException('Adminisztrátori jogosultság szükséges.',403);
@@ -58,7 +64,7 @@ final class ProvisionApiService
             $key=bin2hex(random_bytes(24));
             $nodes=$this->db->query('SELECT n.id,n.premium,(SELECT COUNT(*) FROM servers s WHERE s.node_id=n.id) AS used FROM nodes n WHERE n.premium=? ORDER BY used,n.id',[$order['premium']?1:0])->fetchAll();
             if(!$nodes)throw new RuntimeException($order['premium']?'Nincs prémiumként megjelölt Linux-gép.':'Nincs normál Linux-gép.',409);
-            $node=$nodes[0];$templateKey=null;
+            $node=$nodes[0];$templateKey=null;$customTemplateKey=null;
             if($order['game']==='minecraft'){
                 $node=null;$catalogsRead=0;$matchingStates=[];
                 [$wantedType,$wantedVersion]=explode(':',$order['template'],2);
@@ -77,6 +83,11 @@ final class ProvisionApiService
                     $class=$order['premium']?'prémiumként megjelölt':'normál';
                     throw new RuntimeException('A kért Minecraft template ('.$wantedType.' '.$wantedVersion.') nincs telepítve egyetlen '.$class.' Linux-gépre sem. Az Admin → Játékszerver-templatek oldalon telepítsd ezt a pontos sablont egy megfelelő gépre, majd ismételd meg a rendelést.',409);
                 }
+            }else{
+                foreach($nodes as $candidateNode){
+                    $entry=$this->readyFolderTemplate($actor,(int)$candidateNode['id'],$order['game']);
+                    if($entry){$node=$candidateNode;$customTemplateKey=$entry['key'];break;}
+                }
             }
         $ownerId=$this->db->transaction(function()use($order){
             $owner=$this->db->query('SELECT * FROM users WHERE email=? FOR UPDATE',[$order['email']])->fetch();
@@ -85,13 +96,13 @@ final class ProvisionApiService
             if($owner['username']===null){$claimed=$this->db->query('SELECT id FROM users WHERE username=? AND id<>?',[$order['username'],$ownerId])->fetch();if($claimed)throw new RuntimeException('A rendelés felhasználóneve már foglalt.',409);$this->db->query('UPDATE users SET username=? WHERE id=?',[$order['username'],$ownerId]);}
             return $ownerId;
         });
-        $input=['action'=>'create','user_id'=>$ownerId,'node_id'=>(int)$node['id'],'game'=>$order['game'],'memory_limit_mb'=>$order['memory_limit_mb'],'disk_limit_mb'=>$order['disk_limit_mb'],'slot_limit'=>$order['slot_limit'],'expires_at'=>$order['expires_at']];if($templateKey!==null)$input['minecraft_template']=$templateKey;
+        $input=['action'=>'create','user_id'=>$ownerId,'node_id'=>(int)$node['id'],'game'=>$order['game'],'memory_limit_mb'=>$order['memory_limit_mb'],'disk_limit_mb'=>$order['disk_limit_mb'],'slot_limit'=>$order['slot_limit'],'expires_at'=>$order['expires_at']];if($templateKey!==null)$input['minecraft_template']=$templateKey;if($customTemplateKey!==null)$input['custom_template']=$customTemplateKey;
         return $this->orderResult($actor,$key,$input);
     }
     private function orderResult(array $actor,string $key,array $input): array
     {
         $result=$this->run($actor,$key,$input);
-        if(($result['status']??0)===202)$result['json']['message']='A szerver létrehozása folyamatban van. Az állapot lekéréséhez használd a visszakapott request_id értéket.';
+        if(($result['status']??0)===202)$result['json']['message']='A szerver létrehozása folyamatban van; a Linux célmappa a sikeres másolás után jelenik meg. Az állapot lekéréséhez használd a visszakapott request_id értéket.';
         return $result;
     }
     public static function success(array $server): string
@@ -116,8 +127,12 @@ final class ProvisionApiService
             if($action==='create'){
                 $input=self::input($data);$payload=hash('sha256',json_encode($input,JSON_THROW_ON_ERROR));
                 if(!$request){
-                    $node=$this->db->query('SELECT name FROM nodes WHERE id=?',[$input['node_id']])->fetchColumn();
-                    if(!$node || !preg_match('/\A[A-Za-z0-9_.-]{1,120}\z/',$node))throw new RuntimeException('Válassz létező Linux-gépet, amelynek neve például node_s1.',400);
+                    $node=$this->db->query('SELECT * FROM nodes WHERE id=?',[$input['node_id']])->fetch();
+                    if(!$node || !preg_match('/\A[A-Za-z0-9_.-]{1,120}\z/',$node['name']))throw new RuntimeException('Válassz létező Linux-gépet, amelynek neve például node_s1.',400);
+                    if(empty($input['install_source'])&&empty($input['custom_template'])&&empty($input['minecraft_template'])){
+                        $entry=$this->readyFolderTemplate($actor,(int)$input['node_id'],$input['game']);
+                        if($entry)$input['custom_template']=$entry['key'];
+                    }
                     if(!(new SchemaUpdater($this->db))->provisionEnabled())throw new RuntimeException('Először futtasd az admin adatbázisfrissítést.',409);
                     $id=(new AdminService($this->db))->save($actor,'servers',$input,function(int $id)use($hash,$payload){
                         $this->db->query('INSERT INTO provision_api_requests(request_hash,payload_hash,server_id) VALUES(?,?,?)',[$hash,$payload,$id]);
@@ -141,7 +156,7 @@ final class ProvisionApiService
             else $result=$provision->poll($actor,$id);
             if($result['state']==='ready')return ['status'=>201,'text'=>self::success($server)];
             if($result['state']==='failed'){$log='/var/lib/webadmin/provision/jobs/'.$server['provision_job'].'.log';return ['status'=>422,'json'=>['state'=>'failed','message'=>($result['message'] ?: 'A Linux-oldali szerverlétrehozás nem sikerült.').' A szerver megmaradt. Frissítsd az érintett Linux-gép segédprogramjait, az adminfelületen nyisd meg ezt a szervert és kattints a „Másolási kérés újrapróbálása” gombra, majd ismételd meg ugyanazt az API-kérést. Részletes napló: '.$log,'server_id'=>$id,'job_id'=>$server['provision_job'],'log'=>$log]];}
-            return ['status'=>202,'json'=>['state'=>$result['state'],'request_id'=>$key,'message'=>'A szerver létrehozása folyamatban. Az állapot lekéréséhez használd a request_id értéket.']];
+            return ['status'=>202,'json'=>['state'=>$result['state'],'request_id'=>$key,'message'=>'A szerver létrehozása folyamatban van; a Linux célmappa a sikeres másolás után jelenik meg. Az állapot lekéréséhez használd a request_id értéket.']];
         }finally{$this->db->query('SELECT RELEASE_LOCK(?)',[$lock]);}
     }
 }

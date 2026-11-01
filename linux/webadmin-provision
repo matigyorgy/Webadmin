@@ -217,6 +217,7 @@ def worker(job_id):
         job=read_job(job_id)
     path=job_path(job_id)
     if job['state']!='queued':return
+    stage=None
     try:
         data=isolated_user(validate(job['request'],config()))
         if data!=job['data']:raise ValueError('Provision policy changed')
@@ -240,6 +241,9 @@ def worker(job_id):
     except (ValueError,KeyError,OSError,subprocess.SubprocessError) as error:
         detail=failure_detail(error)
         print('Copy failed: '+type(error).__name__+': '+detail,file=sys.stderr)
+        if stage and os.path.isdir(stage) and not os.path.islink(stage):
+            try:shutil.rmtree(stage)
+            except OSError as cleanup_error:print('Staging cleanup failed: '+str(cleanup_error),file=sys.stderr)
         job['state']='failed';job['message']='A másolás nem sikerült: '+detail;atomic(path,job)
 
 if __name__=='__main__':
