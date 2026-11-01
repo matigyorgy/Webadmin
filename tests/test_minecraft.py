@@ -9,6 +9,10 @@ class MinecraftTests(unittest.TestCase):
   with patch.object(mc.os,'geteuid',return_value=1001):
    with self.assertRaisesRegex(RuntimeError,'Gradle failed'):
     mc.build_command(['/usr/bin/python3','-c',"print('Gradle failed');raise SystemExit(7)"],'.',10)
+ def test_child_error_reports_output_without_encoded_arguments(self):
+  with self.assertRaisesRegex(RuntimeError,'Download failed: 403') as caught:
+   mc.run_logged(['/usr/bin/python3','-c',"import sys;print('Download failed: 403');sys.exit(1)",'eyJprivate-payload=='],'.',10)
+  self.assertNotIn('eyJprivate-payload',str(caught.exception))
  def test_stable_version_order(self):self.assertEqual(mc.versions(['1.21.9','1.21.10','1.22-pre1','1.21.8']),['1.21.10','1.21.9','1.21.8'])
  def test_vanilla_last_ten(self):
   releases=[{'id':'1.21.'+str(i),'type':'release','url':'https://piston-meta.mojang.com/'+str(i)} for i in range(12,0,-1)]

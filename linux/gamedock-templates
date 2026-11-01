@@ -164,22 +164,33 @@ def java_for(row,settings):
     if not match or int(match.group(1))!=required:return install_jdk(required,settings)
     return '/usr/bin/java'
 
-def build_command(arguments,cwd,timeout,env=None):
-    if os.geteuid()==0:raise ValueError('Build command must be unprivileged')
+def run_logged(arguments,cwd,timeout,env=None,preexec_fn=None):
     with tempfile.TemporaryFile() as output:
-        process=subprocess.Popen(arguments,cwd=cwd,start_new_session=True,env=env,stdout=output,stderr=subprocess.STDOUT)
+        process=subprocess.Popen(arguments,cwd=cwd,start_new_session=True,env=env,preexec_fn=preexec_fn,stdout=output,stderr=subprocess.STDOUT)
         try:
-            code=process.wait(timeout=timeout)
-            if code:
+            try:code=process.wait(timeout=timeout)
+            except subprocess.TimeoutExpired as error:
+                failure=error
+                try:os.killpg(process.pid,signal.SIGTERM)
+                except (ProcessLookupError,PermissionError):pass
+                try:process.wait(timeout=3)
+                except subprocess.TimeoutExpired:os.killpg(process.pid,signal.SIGKILL);process.wait()
+                code='timed out after '+str(timeout)+' seconds'
+            else:failure=None
+            if failure is not None or code:
                 output.seek(0,os.SEEK_END);size=output.tell();output.seek(max(0,size-6000));tail=output.read().decode('utf-8','replace').strip()
-                detail=' '.join(tail.split())[-1600:]
-                raise RuntimeError('Build process exited with code '+str(code)+((': '+detail) if detail else ''))
+                detail=' '.join(tail.split())[-1400:]
+                raise RuntimeError('Build process '+str(code)+((': '+detail) if detail else '')) from failure
         finally:
             try:os.killpg(process.pid,signal.SIGTERM)
             except (ProcessLookupError,PermissionError):pass
             if process.poll() is None:
                 try:process.wait(timeout=3)
                 except subprocess.TimeoutExpired:os.killpg(process.pid,signal.SIGKILL);process.wait()
+
+def build_command(arguments,cwd,timeout,env=None):
+    if os.geteuid()==0:raise ValueError('Build command must be unprivileged')
+    return run_logged(arguments,cwd,timeout,env)
 
 def build(row,stage,java):
     if os.geteuid()==0:raise ValueError('Build must not run as root')
@@ -308,7 +319,7 @@ def worker():
                 java=java_for(row,settings)
                 payload=base64.b64encode(json.dumps(row).encode()).decode();env=rt.environment(account)
                 env.update({k:v for k,v in os.environ.items() if k.lower() in ('http_proxy','https_proxy','no_proxy','ssl_cert_file')})
-                subprocess.run(['/usr/bin/python3','-I',SELF,'build',payload,str(stage),java],preexec_fn=rt.drop(account),env=env,check=True,timeout=8000)
+                run_logged(['/usr/bin/python3','-I',SELF,'build',payload,str(stage),java],str(stage),8000,env,preexec_fn=rt.drop(account))
                 for directory,dirs,files in os.walk(stage/'template',followlinks=False):
                     if any(Path(directory,name).is_symlink() for name in dirs+files):raise ValueError('Template contains symlink')
                 if final.exists():raise ValueError('Existing version template not overwritten')
@@ -319,7 +330,7 @@ def worker():
                 row.update(state='ready',path=str(final),startup=('JAVA_HOME='+shlex.quote(str(Path(java).parent.parent))+' PATH='+shlex.quote(str(Path(java).parent))+':$PATH ./run.sh nogui --port {port}' if kind=='forge' else shlex.quote(java)+' -Xms512M -Xmx2G -jar '+('fabric-server-launch.jar' if kind=='fabric' else 'server.jar')+' nogui --port {port}'),message='Elkészült; a példány indításához a megfelelő Java-verzió szükséges.')
             except Exception as error:
                 detail=' '.join((type(error).__name__+': '+str(error)).split())
-                row.update(state='failed',message='Letöltés/fordítás sikertelen: '+detail[:420]);print(detail,file=sys.stderr)
+                row.update(state='failed',message='Letöltés/fordítás sikertelen: '+detail[-420:]);print(detail,file=sys.stderr)
             finally:
                 if shutil.rmtree.avoids_symlink_attacks:shutil.rmtree(stage)
             atomic(CACHE+'/catalog.json',value)
