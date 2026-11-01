@@ -50,7 +50,7 @@ try{
     try{apiReject(fn()=>$service->run($actor,$key,$input),409);}finally{$statement=$root->prepare('SELECT RELEASE_LOCK(?)');$statement->execute([$lock]);}
     foreach([$input,['action'=>'status']] as $request){$result=$service->run($actor,$key,$request);apiCheck($result===['status'=>201,'text'=>'FELH_ID:2|SZOLG_ID:15366|NODE:node_s1|'],'Hibás idempotens sikeres válasz.');}
     apiCheck((int)$db->query('SELECT COUNT(*) FROM servers')->fetchColumn()===1,'Ismételt kérés duplikált szervert készített.');
-    apiReject(fn()=>$service->run($actor,$key,array_replace($input,['user_id'=>1])),409);
+    $sameKey=$service->run($actor,$key,array_replace($input,['user_id'=>1]));apiCheck($sameKey===['status'=>201,'text'=>'FELH_ID:2|SZOLG_ID:15366|NODE:node_s1|'],'Eltérő paraméterű ismétlés nem a meglévő rendelést adta vissza.');
     apiReject(fn()=>$service->run($actor,'unknown-order-123',['action'=>'status']),404);
     $db->query("UPDATE servers SET provision_state='failed' WHERE id=1");
     $failed=$service->run($actor,$key,['action'=>'status']);apiCheck($failed['status']===422 && $failed['json']['server_id']===1 && $failed['json']['job_id']===str_repeat('a',32) && str_contains($failed['json']['log'],str_repeat('a',32).'.log') && str_contains($failed['json']['message'],'Másolási kérés újrapróbálása'),'Hibás másolás sikert jelez vagy hiányzik a retry/log útmutató.');
