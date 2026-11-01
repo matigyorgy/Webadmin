@@ -5,6 +5,10 @@ from pathlib import Path
 from unittest.mock import patch
 loader=importlib.machinery.SourceFileLoader('mc_templates','linux/gamedock-templates');spec=importlib.util.spec_from_loader(loader.name,loader);mc=importlib.util.module_from_spec(spec);loader.exec_module(mc)
 class MinecraftTests(unittest.TestCase):
+ def test_build_error_includes_tool_output_tail(self):
+  with patch.object(mc.os,'geteuid',return_value=1001):
+   with self.assertRaisesRegex(RuntimeError,'Gradle failed'):
+    mc.build_command(['/usr/bin/python3','-c',"print('Gradle failed');raise SystemExit(7)"],'.',10)
  def test_stable_version_order(self):self.assertEqual(mc.versions(['1.21.9','1.21.10','1.22-pre1','1.21.8']),['1.21.10','1.21.9','1.21.8'])
  def test_vanilla_last_ten(self):
   releases=[{'id':'1.21.'+str(i),'type':'release','url':'https://piston-meta.mojang.com/'+str(i)} for i in range(12,0,-1)]

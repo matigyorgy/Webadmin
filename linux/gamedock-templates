@@ -166,16 +166,20 @@ def java_for(row,settings):
 
 def build_command(arguments,cwd,timeout,env=None):
     if os.geteuid()==0:raise ValueError('Build command must be unprivileged')
-    process=subprocess.Popen(arguments,cwd=cwd,start_new_session=True,env=env)
-    try:
-        code=process.wait(timeout=timeout)
-        if code:raise subprocess.CalledProcessError(code,arguments)
-    finally:
-        try:os.killpg(process.pid,signal.SIGTERM)
-        except (ProcessLookupError,PermissionError):pass
-        if process.poll() is None:
-            try:process.wait(timeout=3)
-            except subprocess.TimeoutExpired:os.killpg(process.pid,signal.SIGKILL);process.wait()
+    with tempfile.TemporaryFile() as output:
+        process=subprocess.Popen(arguments,cwd=cwd,start_new_session=True,env=env,stdout=output,stderr=subprocess.STDOUT)
+        try:
+            code=process.wait(timeout=timeout)
+            if code:
+                output.seek(0,os.SEEK_END);size=output.tell();output.seek(max(0,size-6000));tail=output.read().decode('utf-8','replace').strip()
+                detail=' '.join(tail.split())[-1600:]
+                raise RuntimeError('Build process exited with code '+str(code)+((': '+detail) if detail else ''))
+        finally:
+            try:os.killpg(process.pid,signal.SIGTERM)
+            except (ProcessLookupError,PermissionError):pass
+            if process.poll() is None:
+                try:process.wait(timeout=3)
+                except subprocess.TimeoutExpired:os.killpg(process.pid,signal.SIGKILL);process.wait()
 
 def build(row,stage,java):
     if os.geteuid()==0:raise ValueError('Build must not run as root')
@@ -313,7 +317,9 @@ def worker():
                 os.chmod(final,0o755)
                 row['path']=str(final)
                 row.update(state='ready',path=str(final),startup=('JAVA_HOME='+shlex.quote(str(Path(java).parent.parent))+' PATH='+shlex.quote(str(Path(java).parent))+':$PATH ./run.sh nogui --port {port}' if kind=='forge' else shlex.quote(java)+' -Xms512M -Xmx2G -jar '+('fabric-server-launch.jar' if kind=='fabric' else 'server.jar')+' nogui --port {port}'),message='Elkészült; a példány indításához a megfelelő Java-verzió szükséges.')
-            except Exception as error:row.update(state='failed',message='Letöltés/fordítás sikertelen. Ellenőrizd a Java/JDK, Git, hálózat és lemezterület állapotát.');print(type(error).__name__,str(error),file=sys.stderr)
+            except Exception as error:
+                detail=' '.join((type(error).__name__+': '+str(error)).split())
+                row.update(state='failed',message='Letöltés/fordítás sikertelen: '+detail[:420]);print(detail,file=sys.stderr)
             finally:
                 if shutil.rmtree.avoids_symlink_attacks:shutil.rmtree(stage)
             atomic(CACHE+'/catalog.json',value)
