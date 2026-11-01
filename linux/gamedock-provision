@@ -151,13 +151,20 @@ def create(payload):
 def copy_files(source,target):
     if os.geteuid()==0:raise ValueError('Copy must run without root privileges')
     count=0
-    for directory,dirs,files in os.walk(source,followlinks=False):
+    def walk_error(error):raise error
+    for directory,dirs,files in os.walk(source,followlinks=False,onerror=walk_error):
         for name in dirs+files:
             mode=os.lstat(os.path.join(directory,name)).st_mode
             if not(stat.S_ISDIR(mode) or stat.S_ISREG(mode)):raise ValueError('Only ordinary files and directories are permitted')
             if stat.S_ISREG(mode):count+=1
-    if count==0:raise ValueError('Template is empty')
+    if count==0:raise ValueError('Template is empty: no regular files under '+str(source))
     shutil.copytree(source,target,dirs_exist_ok=True,symlinks=False)
+
+def allow_template_traverse(gid):
+    if type(gid) is not int or gid<1:raise ValueError('Invalid template reader group')
+    home=Path('/home/webadmin');info=home.lstat()
+    if not stat.S_ISDIR(info.st_mode):raise ValueError('Unsafe webadmin home directory')
+    subprocess.run(['/usr/bin/setfacl','-m','g:'+str(gid)+':--x',str(home)],check=True,capture_output=True,timeout=8)
 
 def configure(folder,settings):
     if os.geteuid()==0:raise ValueError('Configuration writes must run as game user')
@@ -213,6 +220,7 @@ def worker(job_id):
     try:
         data=isolated_user(validate(job['request'],config()))
         if data!=job['data']:raise ValueError('Provision policy changed')
+        allow_template_traverse(data['gid'])
         job['state']='running';job['message']='A szerverfájlok másolása folyamatban van.';atomic(path,job)
         stage=os.path.dirname(data['target'])+'/.gamedock-copy-'+job_id
         os.mkdir(stage,0o700);os.chown(stage,data['uid'],data['gid'])

@@ -63,7 +63,17 @@ class ProvisionTests(unittest.TestCase):
         self.assertNotEqual(first['user'],second['user']);self.assertNotEqual(first['uid'],second['uid'])
     def test_empty_template_rejected(self):
         with patch.object(provision.os,'geteuid',return_value=1001):
-            with self.assertRaises(ValueError):provision.copy_files(str(self.source/'minecraft'),str(self.target/'copy'))
+            with self.assertRaisesRegex(ValueError,'Template is empty'):provision.copy_files(str(self.source/'minecraft'),str(self.target/'copy'))
+    def test_template_walk_does_not_hide_permission_errors(self):
+        def walk(source,followlinks,onerror):
+            onerror(PermissionError('template path is not searchable'))
+            return iter(())
+        with patch.object(provision.os,'geteuid',return_value=1001),patch.object(provision.os,'walk',side_effect=walk):
+            with self.assertRaisesRegex(PermissionError,'not searchable'):provision.copy_files(str(self.source/'minecraft'),str(self.target/'copy'))
+    def test_template_parent_traverse_is_granted_to_game_group(self):
+        with patch.object(provision.Path,'lstat',return_value=SimpleNamespace(st_mode=0o40700)),patch.object(provision.subprocess,'run') as run:
+            provision.allow_template_traverse(1002)
+        run.assert_called_once_with(['/usr/bin/setfacl','-m','g:1002:--x','/home/webadmin'],check=True,capture_output=True,timeout=8)
     def test_nested_symlink_rejected(self):
         source=self.source/'minecraft';(source/'bad').symlink_to(self.root/'outside')
         with patch.object(provision.os,'geteuid',return_value=1001):

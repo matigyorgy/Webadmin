@@ -45,7 +45,7 @@ def ensure_user(name,game=False):
 
 def install(args):
     if os.geteuid()!=0:raise ValueError('Run this installer with sudo/root on the game host')
-    for executable in ('python3','sudo','visudo','useradd','bash'):
+    for executable in ('python3','sudo','visudo','useradd','bash','setfacl'):
         if not shutil.which(executable):raise ValueError('Required Linux executable is missing: '+executable)
     if not hasattr(os,'pidfd_open') or not hasattr(signal,'pidfd_send_signal'):raise ValueError('Python 3.9+ and Linux pidfd support required')
     descriptor=os.pidfd_open(os.getpid());os.close(descriptor)
