@@ -64,7 +64,7 @@ def create(payload):
         minecraft=bool(server.get('minecraft_type'))
         if minecraft and (row.get('provider')=='folder' or row['type'] not in ('vanilla','paper','forge','bukkit','spigot','purpur','fabric')):raise ValueError('Minecraft template required')
         if not minecraft and (row.get('provider')!='folder' or row.get('game')!=server['game']):raise ValueError('Template game mismatch')
-        parts=[row['type'],row['version'],row['build']]
+        parts=[row['type'],row['version']]
         if row.get('provider')!='folder' and any(not re.fullmatch(r'[A-Za-z0-9._-]{1,100}',v) or v in ('.','..') for v in parts):raise ValueError('Invalid template path')
         root=Path(cfg['_provision']['source_root']);source=Path(row['path']) if row.get('provider')=='folder' else root.joinpath('minecraft',*parts)
         if source.is_symlink() or not source.is_dir() or source.resolve()!=source or not source.resolve().is_relative_to(root.resolve()) or str(source)!=row['path']:raise ValueError('Unsafe template path')

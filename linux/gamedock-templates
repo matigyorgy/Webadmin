@@ -18,6 +18,9 @@ def public_directory(path):
     if not stat.S_ISDIR(info.st_mode) or info.st_uid!=0 or info.st_mode&0o022:raise ValueError('Unsafe template publication directory')
     os.chmod(path,0o755)
 
+def release_directory(row):
+    return Path(cfg()['_provision']['source_root'])/'minecraft'/row['type']/row['version']
+
 def atomic(path,data):
     descriptor,tmp=tempfile.mkstemp(dir=os.path.dirname(path))
     try:
@@ -243,10 +246,10 @@ def delete_template(key):
         row=next((row for row in value['templates'] if row['key']==key),None)
         if not row:raise ValueError('Unknown template')
         settings=cfg();root=Path(settings['_provision']['source_root'])/'minecraft'
-        parts=[row.get('type',''),row.get('version',''),row.get('build','')]
+        parts=[row.get('type',''),row.get('version','')]
         if any(not re.fullmatch(r'[A-Za-z0-9._-]{1,100}',part) or part in ('.','..') for part in parts):raise ValueError('Invalid template path')
         target=root.joinpath(*parts)
-        if row.get('path') and Path(row['path'])!=target:raise ValueError('Catalog path mismatch')
+        if row.get('path') and Path(row['path']) not in (target,target/row.get('build','')):raise ValueError('Catalog path mismatch')
         if not target.resolve().is_relative_to(root.resolve()) or target.is_symlink():raise ValueError('Template path escapes root')
         for job_id in list(settings.get('_copy_jobs',{}).values())+list(settings.get('_version_jobs',{}).values()):
             with open('/var/lib/gamedock/provision/jobs/'+job_id+'.json') as stream:job=json.load(stream)
@@ -292,7 +295,7 @@ def worker():
         if selection:rows=[row for row in rows if row['key']!=selection]
         rows.extend(planned);value['templates']=rows;atomic(CACHE+'/catalog.json',value)
         for row in planned:
-            public_directory(root/kind);public_directory(root/kind/row['version']);final=root/kind/row['version']/row['build']
+            public_directory(root/kind);final=root/kind/row['version']
             old=previous.get(row['key'])
             if old and old.get('state')=='ready' and not final.is_symlink() and final.is_dir():row.update(old);continue
             row['state']='building';value['message']=kind+' '+row['version']+' letöltése/fordítása';atomic(CACHE+'/catalog.json',value)
@@ -304,8 +307,11 @@ def worker():
                 subprocess.run(['/usr/bin/python3','-I',SELF,'build',payload,str(stage),java],preexec_fn=rt.drop(account),env=env,check=True,timeout=8000)
                 for directory,dirs,files in os.walk(stage/'template',followlinks=False):
                     if any(Path(directory,name).is_symlink() for name in dirs+files):raise ValueError('Template contains symlink')
-                if final.exists():raise ValueError('Existing template not overwritten')
-                os.rename(stage/'template',final);os.chmod(final,0o755)
+                if final.exists():raise ValueError('Existing version template not overwritten')
+                final.mkdir(mode=0o755)
+                for item in (stage/'template').iterdir():shutil.move(str(item),str(final/item.name))
+                os.chmod(final,0o755)
+                row['path']=str(final)
                 row.update(state='ready',path=str(final),startup=('JAVA_HOME='+shlex.quote(str(Path(java).parent.parent))+' PATH='+shlex.quote(str(Path(java).parent))+':$PATH ./run.sh nogui --port {port}' if kind=='forge' else shlex.quote(java)+' -Xms512M -Xmx2G -jar '+('fabric-server-launch.jar' if kind=='fabric' else 'server.jar')+' nogui --port {port}'),message='Elkészült; a példány indításához a megfelelő Java-verzió szükséges.')
             except Exception as error:row.update(state='failed',message='Letöltés/fordítás sikertelen. Ellenőrizd a Java/JDK, Git, hálózat és lemezterület állapotát.');print(type(error).__name__,str(error),file=sys.stderr)
             finally:

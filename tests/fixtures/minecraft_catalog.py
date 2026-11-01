@@ -6,7 +6,7 @@ root=Path('/home/gamedock/templates/minecraft');entries=[]
 script=Path('/home/gamedock/templates/custom/server.py').read_text()
 for kind in ('vanilla','paper','forge','bukkit'):
  for release in range(10,0,-1):
-  version='1.21.'+str(release);folder=root/kind/version/'fixture';folder.mkdir(parents=True,exist_ok=True)
+  version='1.21.'+str(release);folder=root/kind/version;folder.mkdir(parents=True,exist_ok=True)
   (folder/'server.py').write_text("TEMPLATE_VERSION="+repr(version)+"\nfrom pathlib import Path\nPath('world').mkdir(exist_ok=True)\nif not Path('world/level.dat').exists(): Path('world/level.dat').write_text('original world '+TEMPLATE_VERSION)\n"+script);(folder/'server.py').chmod(0o644)
   entries.append({'key':kind+':'+version+':fixture','type':kind,'version':version,'build':'fixture','state':'ready','path':str(folder),'startup':'/usr/bin/python3 -u server.py --port {port}','message':'Controlled test template, not a downloaded real game'})
 cache=Path('/var/lib/gamedock/minecraft');cache.mkdir(parents=True,exist_ok=True)
