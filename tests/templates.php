@@ -69,6 +69,9 @@ foreach (['users','nodes','servers'] as $section) {
     $html=renderTemplate($view,'admin.tpl',array_replace($adminBase,['section'=>$section,'record'=>$record]));
     check(str_contains($html,'value="save"') && str_contains($html,'admin-csrf'),'Admin form missing');
 }
+$failedProvision=array_replace($record,['id'=>42,'provision_job'=>str_repeat('a',32),'provision_state'=>'failed']);
+$html=renderTemplate($view,'admin.tpl',array_replace($adminBase,['section'=>'servers','record'=>$failedProvision]));
+check(str_contains($html,'/var/lib/gamedock/provision/jobs/'.str_repeat('a',32).'.log') && str_contains($html,'Másolási kérés újrapróbálása'),'Provisioning diagnostics or retry guidance missing.');
 $html=renderTemplate($view,'admin.tpl',array_replace($adminBase,['section'=>'setup']));
 check(str_contains($html,'ssh-rsa example'),'Public key page missing');
 $html=renderTemplate($view,'admin.tpl',array_replace($adminBase,['section'=>'audit']));
