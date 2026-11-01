@@ -67,10 +67,6 @@ final class AdminController
                     $_SESSION['admin_notice']='Másolás: '.$result['state'].'. '.$result['message'];
                     header('Location: /admin.php?section=servers&edit='.$id,true,303); return;
                 } elseif ($action==='delete') {
-                    if($section==='servers' && ($_POST['confirm'] ?? '')==='1'){
-                        $existing=$service->find($user,'servers',Validation::id($_POST['id'] ?? 0));
-                        if(($existing['provision_state'] ?? '')==='ready' && array_key_exists('last_restore_job',$existing))(new AutomationService($this->db,$this->ssh))->updatePolicy($user,(int)$existing['id'],true);
-                    }
                     $service->delete($user,$section,Validation::id($_POST['id'] ?? 0),($_POST['confirm'] ?? '')==='1');
                     $_SESSION['admin_notice']=$section==='servers' ? 'A szervert kivettük a panelből. A Linuxon futó játékot és fájljait ez nem módosította.' : 'A bejegyzést töröltük.';
                 } elseif ($action==='test' && $section==='nodes') {

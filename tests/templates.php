@@ -140,7 +140,6 @@ foreach ([
  'ValueError: Unknown operation'=>'régebbi Minecraft-helper',
  'ValueError: Template synchronization is running'=>'szinkronizálása még fut',
  'ValueError: Template is in use by an active copy job'=>'verzióváltás fut',
- 'OSError: [Errno 28] No space left on device'=>'szabad hely',
  'OSError: [Errno 30] Read-only file system'=>'csak olvasható',
  'ValueError: Unsafe template publication directory'=>'könyvtár tulajdonosa',
  "AttributeError: module os has no attribute pidfd_open"=>'Python-verziója túl régi',

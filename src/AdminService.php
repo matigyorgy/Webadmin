@@ -195,7 +195,6 @@ final class AdminService
         if (!$confirmed) throw new RuntimeException('A törlést a jelölőnégyzettel erősítsd meg.');
         $this->db->transaction(function () use($actor,$section,$id) {
             $this->admin($actor); $record=$this->find($actor,$section,$id);
-            if ($section==='servers' && (new SchemaUpdater($this->db))->versionsEnabled() && in_array($this->db->query('SELECT state FROM server_version_jobs WHERE server_id=?',[$id])->fetchColumn(),['queued','running'],true)) throw new RuntimeException('Folyamatban lévő verzióváltás alatt nem törölhető a szerver.');
             if ($section==='users') {
                 $admins=$this->db->query('SELECT id FROM users WHERE is_admin=1 ORDER BY id FOR UPDATE')->fetchAll();
                 if ($id===(int)$actor['id']) throw new RuntimeException('A saját fiókodat itt nem törölheted.');
@@ -205,7 +204,6 @@ final class AdminService
                 $this->db->query('SELECT id FROM nodes WHERE id=? FOR UPDATE',[$id]);
                 if ($this->db->query('SELECT id FROM servers WHERE node_id=? LIMIT 1',[$id])->fetch()) throw new RuntimeException('Előbb rendeld másik géphez vagy vedd ki a panelből a gép szervereit.');
             }
-            if ($section==='servers' && in_array($record['provision_state'] ?? 'ready',['queued','running'],true)) throw new RuntimeException('Folyamatban lévő másolásnál a bejegyzés nem törölhető. Előbb ellenőrizd a másolás állapotát.');
             $table=match($section){'users'=>'users','nodes'=>'nodes','servers'=>'servers',default=>throw new RuntimeException('Ismeretlen bejegyzéstípus.')};
             $this->db->query("DELETE FROM $table WHERE id=?",[$id]);
             $this->audit($actor,$section.'_delete:'.$id,$section==='servers' ? $id : 0);
