@@ -42,7 +42,8 @@ final class AdminService
                 $slug=trim((string)($data['slug'] ?? ''));
                 if(!preg_match('/\A[a-z][a-z0-9_-]{0,31}\z/',$slug))throw new RuntimeException('A típusazonosító kisbetűből, számból, kötőjelből és aláhúzásból állhat.');
                 $name=Validation::text($data,'name');$source=Validation::text($data,'template_path',255);
-                if(!str_starts_with($source,'/home/webadmin/templates/') || str_contains($source,'/../') || str_ends_with($source,'/..'))throw new RuntimeException('A template mappa a /home/webadmin/templates/ alatt legyen.');
+                $expected='/home/webadmin/templates/'.$slug;
+                if($source!==$expected)throw new RuntimeException('A játéktípus template gyökere kötött: '.$expected.'. A verziók ebben a mappában legyenek.');
                 $startup=Validation::startup((string)($data['startup_command'] ?? ''));
                 if($startup==='')throw new RuntimeException('Indítóparancs szükséges.');
                 $provider=($data['provider'] ?? '')==='minecraft' ? 'minecraft' : 'folder';
