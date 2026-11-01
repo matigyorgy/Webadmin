@@ -8,7 +8,7 @@ final class GameRegistry
     public static function defaults(): array
     {
         $rows=[];
-        foreach(Validation::GAMES as $slug=>$name) $rows[$slug]=['slug'=>$slug,'name'=>$name,'template_path'=>'/home/webadmin/templates/'.$slug,'startup_command'=>Validation::STARTUP[$slug],'provider'=>$slug==='minecraft' ? 'minecraft' : 'folder'];
+        foreach(Validation::GAMES as $slug=>$name) $rows[$slug]=['slug'=>$slug,'name'=>$name,'template_path'=>'/home/webadmin/templates/'.$slug,'startup_command'=>Validation::STARTUP[$slug],'provider'=>$slug==='minecraft' ? 'minecraft' : 'folder','steam_app_id'=>null];
         return $rows;
     }
     public function available(): bool { return (bool)$this->db->query("SHOW TABLES LIKE 'game_types'")->fetch(); }
@@ -23,6 +23,6 @@ final class GameRegistry
     public function get(string $slug): array { return $this->all()[$slug] ?? throw new RuntimeException('Ismeretlen játéktípus.'); }
     public function seed(): void
     {
-        foreach(self::defaults() as $row)$this->db->query('INSERT IGNORE INTO game_types(slug,name,template_path,startup_command,provider) VALUES(?,?,?,?,?)',array_values($row));
+        foreach(self::defaults() as $row)$this->db->query('INSERT IGNORE INTO game_types(slug,name,template_path,startup_command,provider,steam_app_id) VALUES(?,?,?,?,?,?)',array_values($row));
     }
 }

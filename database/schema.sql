@@ -20,7 +20,8 @@ CREATE TABLE game_types (
  name VARCHAR(120) NOT NULL,
  template_path VARCHAR(255) NOT NULL,
  startup_command TEXT NOT NULL,
- provider VARCHAR(16) NOT NULL DEFAULT 'folder'
+ provider VARCHAR(16) NOT NULL DEFAULT 'folder',
+ steam_app_id INT UNSIGNED NULL
 );
 CREATE TABLE servers (
  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,

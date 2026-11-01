@@ -18,7 +18,7 @@ class SteamTests(unittest.TestCase):
      if succeeds:
       result=mc.steam_start('cs2');self.assertEqual(result['state'],'running');self.assertTrue(result['selection'].startswith('steam:cs2:'))
       with self.assertRaisesRegex(ValueError,'Another template installation'):mc.steam_start('cs2')
-      self.assertEqual(launch.call_count,1);self.assertEqual(launch.call_args.args[0][3:5],['steam-worker','cs2'])
+      self.assertEqual(launch.call_count,1);self.assertEqual(launch.call_args.args[0][3],'steam-worker');self.assertEqual(json.loads(__import__('base64').b64decode(launch.call_args.args[0][4]))['slug'],'cs2')
      else:
       with self.assertRaises(OSError):mc.steam_start('cs2')
       self.assertEqual(json.loads((Path(folder)/'catalog.json').read_text())['state'],'failed')
@@ -51,6 +51,19 @@ class SteamTests(unittest.TestCase):
     with patch.object(mc.os,'geteuid',return_value=1000),patch.object(mc,'download',side_effect=download),patch.object(mc,'steam_extract'),patch.object(mc,'build_command',side_effect=build):mc.steam_build(game,folder)
     self.assertEqual(json.loads((stage/'result.json').read_text())['build'],'123456')
     if game=='cs16':self.assertEqual((stage/'template/.steam/sdk32/steamclient.so').read_text(),'fixture-sdk')
+ def test_generic_app_id_downloads_without_game_specific_binary(self):
+  profile={'slug':'rust','app_id':258550,'name':'Rust','startup':'./RustDedicated -batchmode -nographics +server.port {port}'}
+  with tempfile.TemporaryDirectory() as folder:
+   stage=Path(folder)
+   def build(command,cwd,timeout,env):
+    self.assertIn('258550',command);self.assertIn('+app_update',command)
+    target=stage/'template';(target/'steamapps').mkdir();(target/'RustDedicated').write_text('server')
+    (target/'steamapps'/'appmanifest_258550.acf').write_text('"buildid" "987654"')
+   with patch.object(mc.os,'geteuid',return_value=1000),patch.object(mc,'download',side_effect=lambda row,path:Path(path).touch()),patch.object(mc,'steam_extract'),patch.object(mc,'build_command',side_effect=build):mc.steam_build(profile,folder)
+   self.assertEqual(json.loads((stage/'result.json').read_text())['build'],'987654')
+ def test_generic_profile_rejects_invalid_slug_and_app_id(self):
+  with self.assertRaisesRegex(ValueError,'game type'):mc.steam_profile({'slug':'../rust','app_id':258550,'name':'Rust','startup':'./run {port}'})
+  with self.assertRaisesRegex(ValueError,'App ID'):mc.steam_profile({'slug':'rust','app_id':0,'name':'Rust','startup':'./run {port}'})
  def test_hlds_incomplete_mod_retries_then_fails(self):
   with tempfile.TemporaryDirectory() as folder:
    stage=Path(folder)
@@ -63,7 +76,7 @@ class SteamTests(unittest.TestCase):
  def test_missing_server_is_not_success(self):
   with tempfile.TemporaryDirectory() as folder:
    with patch.object(mc.os,'geteuid',return_value=1000),patch.object(mc,'download',side_effect=lambda row,path:Path(path).touch()),patch.object(mc,'steam_extract'),patch.object(mc,'build_command'):
-    with self.assertRaisesRegex(ValueError,'executable missing'):mc.steam_build('cs2',folder)
+    with self.assertRaisesRegex(ValueError,'server files incomplete'):mc.steam_build('cs2',folder)
  def test_worker_publishes_only_finished_template(self):
   for succeeds in [True,False]:
    with self.subTest(succeeds=succeeds),tempfile.TemporaryDirectory() as folder:

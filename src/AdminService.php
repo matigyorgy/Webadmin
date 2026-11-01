@@ -47,11 +47,14 @@ final class AdminService
                 $startup=Validation::startup((string)($data['startup_command'] ?? ''));
                 if($startup==='')throw new RuntimeException('Indítóparancs szükséges.');
                 $provider=($data['provider'] ?? '')==='minecraft' ? 'minecraft' : 'folder';
+                $appRaw=trim((string)($data['steam_app_id'] ?? ''));
+                if($appRaw!=='' && (!preg_match('/\\A[0-9]{1,10}\\z/',$appRaw)||(int)$appRaw<1||(int)$appRaw>4294967295))throw new RuntimeException('A Steam App ID pozitív egész szám legyen.');
+                $appId=$appRaw===''?null:(int)$appRaw;
                 if($provider==='folder' && $slug!=='fivem' && !str_contains($startup,'{port}'))throw new RuntimeException('Az indítóparancs tartalmazza a {port} helyőrzőt. Konfigurációs fájlnál is használható: PORT={port} ./start.sh.');
                 if(!empty($data['existing_slug'])) {
                     if($slug!==$data['existing_slug'])throw new RuntimeException('A típusazonosító nem módosítható.');
-                    $this->db->query('UPDATE game_types SET name=?,template_path=?,startup_command=?,provider=? WHERE slug=?',[$name,$source,$startup,$provider,$slug]);
-                }else $this->db->query('INSERT INTO game_types(slug,name,template_path,startup_command,provider) VALUES(?,?,?,?,?)',[$slug,$name,$source,$startup,$provider]);
+                    $this->db->query('UPDATE game_types SET name=?,template_path=?,startup_command=?,provider=?,steam_app_id=? WHERE slug=?',[$name,$source,$startup,$provider,$appId,$slug]);
+                }else $this->db->query('INSERT INTO game_types(slug,name,template_path,startup_command,provider,steam_app_id) VALUES(?,?,?,?,?,?)',[$slug,$name,$source,$startup,$provider,$appId]);
                 $this->audit($actor,'game_save');return 0;
             } elseif ($section==='users') {
                 $admins=$this->db->query('SELECT id FROM users WHERE is_admin=1 ORDER BY id FOR UPDATE')->fetchAll();

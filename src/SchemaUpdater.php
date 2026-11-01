@@ -66,7 +66,7 @@ final class SchemaUpdater
             if(!(bool)$this->db->query("SHOW COLUMNS FROM users LIKE 'username'")->fetch())$this->db->query('ALTER TABLE users ADD COLUMN username VARCHAR(64) NULL UNIQUE');
             if($missing)$this->db->query('ALTER TABLE servers '.implode(',',$missing));
             if(!(new GameRegistry($this->db))->available()) {
-                $this->db->query("CREATE TABLE game_types (slug VARCHAR(32) PRIMARY KEY,name VARCHAR(120) NOT NULL,template_path VARCHAR(255) NOT NULL,startup_command TEXT NOT NULL,provider VARCHAR(16) NOT NULL DEFAULT 'folder')");
+                $this->db->query("CREATE TABLE game_types (slug VARCHAR(32) PRIMARY KEY,name VARCHAR(120) NOT NULL,template_path VARCHAR(255) NOT NULL,startup_command TEXT NOT NULL,provider VARCHAR(16) NOT NULL DEFAULT 'folder',steam_app_id INT UNSIGNED NULL)");
                 (new GameRegistry($this->db))->seed();
             }
         }
@@ -74,7 +74,8 @@ final class SchemaUpdater
             if (!$this->provisionEnabled() || !$this->automationEnabled() || !$this->storageEnabled() || !$this->orderFieldsEnabled()) throw new RuntimeException('Az új szerverfunkciókhoz ALTER TABLE jogosultság szükséges. Engedélyezd a panel adatbázis-felhasználójának, majd próbáld újra.');
         }
         $cs16=GameRegistry::defaults()['cs16'];
-        $this->db->query('INSERT IGNORE INTO game_types(slug,name,template_path,startup_command,provider) VALUES(?,?,?,?,?)',array_values($cs16));
+        if(!(bool)$this->db->query("SHOW COLUMNS FROM game_types LIKE 'steam_app_id'")->fetch())$this->db->query('ALTER TABLE game_types ADD COLUMN steam_app_id INT UNSIGNED NULL');
+        $this->db->query('INSERT IGNORE INTO game_types(slug,name,template_path,startup_command,provider,steam_app_id) VALUES(?,?,?,?,?,?)',array_values($cs16));
         foreach (['game_types'=>['template_path','startup_command'],'servers'=>['install_source','startup_command']] as $table=>$fields) foreach($fields as $field) {
             $this->db->query("UPDATE $table SET $field=REPLACE($field,?,?) WHERE $field LIKE ?",['/srv/gamedock/templates','/home/webadmin/templates','%/srv/gamedock/templates%']);
             $this->db->query("UPDATE $table SET $field=REPLACE($field,?,?) WHERE $field LIKE ?",['/home/gamedock/templates','/home/webadmin/templates','%/home/gamedock/templates%']);

@@ -321,27 +321,56 @@ def worker():
 
 
 STEAM_GAMES={
-    'cs16':{'app':90,'mod':'cstrike','name':'Counter-Strike 1.6','binary':'hlds_run','required':['hlds_linux','cstrike/liblist.gam','cstrike/dlls/cs.so'],'startup':'./hlds_run -game cstrike -console -port {port} +map de_dust2 +maxplayers 16'},
-    'cs2':{'app':730,'name':'Counter-Strike 2','binary':'game/bin/linuxsteamrt64/cs2','startup':'./game/bin/linuxsteamrt64/cs2 -dedicated -console -usercon -port {port} +map de_dust2'},
-    'css':{'app':232330,'name':'Counter-Strike: Source','binary':'srcds_run','startup':'./srcds_run -game cstrike -console +map de_dust2 -port {port}'},
+    'cs16':{'app_id':90,'app':90,'name':'Counter-Strike 1.6','binary':'hlds_run','required':['hlds_linux','cstrike/liblist.gam','cstrike/dlls/cs.so'],'startup':'./hlds_run -game cstrike -console -port {port} +map de_dust2 +maxplayers 16','mod':'cstrike'},
+    'cs2':{'app_id':730,'app':730,'name':'Counter-Strike 2','binary':'game/bin/linuxsteamrt64/cs2','startup':'./game/bin/linuxsteamrt64/cs2 -dedicated -console -usercon -port {port} +map de_dust2'},
+    'css':{'app_id':232330,'app':232330,'name':'Counter-Strike: Source','binary':'srcds_run','startup':'./srcds_run -game cstrike -console +map de_dust2 -port {port}'},
 }
+def steam_profile(value):
+    if isinstance(value,str):
+        if value not in STEAM_GAMES:raise ValueError('Unsupported Steam game')
+        profile=dict(STEAM_GAMES[value]);profile['slug']=value
+    elif isinstance(value,dict):profile=dict(value)
+    else:raise ValueError('Invalid Steam profile')
+    slug=profile.get('slug');app=profile.get('app_id',profile.get('app'));name=profile.get('name');startup=profile.get('startup')
+    if not isinstance(slug,str) or not re.fullmatch(r'[a-z][a-z0-9_-]{0,31}',slug):raise ValueError('Invalid Steam game type')
+    if not isinstance(app,int) or isinstance(app,bool) or app<1 or app>4294967295:raise ValueError('Invalid Steam App ID')
+    if not isinstance(name,str) or not name.strip() or len(name)>120:raise ValueError('Invalid Steam game name')
+    if not isinstance(startup,str) or not startup.strip() or len(startup)>4096:raise ValueError('Invalid Steam startup command')
+    profile.update(slug=slug,app_id=app,name=name.strip(),startup=startup)
+    return profile
 
-def steam_start(game):
-    if game not in STEAM_GAMES:raise ValueError('Unsupported Steam game')
+def steam_builder(profile,settings):
+    users=settings.setdefault('_provision',{}).setdefault('users',{})
+    name=users.get(profile['slug'])
+    if name:
+        account=pwd.getpwnam(name)
+        if account.pw_uid==0:raise ValueError('Non-root Steam builder required')
+        return account
+    name='gdt_'+hashlib.sha256(profile['slug'].encode()).hexdigest()[:16]
+    try:account=pwd.getpwnam(name)
+    except KeyError:
+        subprocess.run(['/usr/sbin/useradd','--system','--no-create-home','--shell','/usr/sbin/nologin',name],check=True,timeout=30)
+        account=pwd.getpwnam(name)
+    if account.pw_uid==0:raise ValueError('Non-root Steam builder required')
+    users[profile['slug']]=name;atomic(CONFIG,settings)
+    return account
+
+def steam_start(value):
+    profile=steam_profile(value);slug=profile['slug']
     if platform.machine()!='x86_64':raise ValueError('SteamCMD requires x86_64 Linux')
     if not Path('/lib/ld-linux.so.2').exists():raise ValueError('SteamCMD 32-bit runtime missing')
-    settings=cfg();account=pwd.getpwnam(settings['_provision']['users'][game])
-    if account.pw_uid==0:raise ValueError('Non-root Steam builder required')
+    settings=cfg();steam_builder(profile,settings)
     os.makedirs(CACHE,mode=0o700,exist_ok=True)
+    encoded=base64.b64encode(json.dumps(profile,separators=(',',':')).encode()).decode()
     with open(CACHE+'/lock','a') as lock:
         fcntl.flock(lock,fcntl.LOCK_EX);value=catalog()
         if value.get('state')=='running':raise ValueError('Another template installation is running')
-        token=os.urandom(12).hex();value.update(state='running',selection='steam:'+game+':'+token,message=STEAM_GAMES[game]['name']+' szerverfájlok letöltése SteamCMD-vel. Ez hosszabb ideig is tarthat.')
+        token=os.urandom(12).hex();value.update(state='running',selection='steam:'+slug+':'+token,message=profile['name']+' szerverfájlok letöltése SteamCMD-vel. Ez hosszabb ideig is tarthat.')
         atomic(CACHE+'/catalog.json',value)
         try:
             with open(CACHE+'/steam.log','ab') as log:
                 env=rt.environment();env.update({k:v for k,v in os.environ.items() if k.lower() in ('http_proxy','https_proxy','no_proxy','ssl_cert_file')})
-                child=subprocess.Popen(['/usr/bin/python3','-I',SELF,'steam-worker',game,token],stdin=subprocess.DEVNULL,stdout=log,stderr=subprocess.STDOUT,start_new_session=True,env=env)
+                child=subprocess.Popen(['/usr/bin/python3','-I',SELF,'steam-worker',encoded,token],stdin=subprocess.DEVNULL,stdout=log,stderr=subprocess.STDOUT,start_new_session=True,env=env)
             value['worker']=rt.identity(child.pid)
         except Exception:
             value.update(state='failed',message='A SteamCMD letöltési feladat nem indult el.');atomic(CACHE+'/catalog.json',value);raise
@@ -360,51 +389,49 @@ def steam_extract(archive,destination):
             if hasattr(tarfile,'data_filter'):source.extract(member,destination,filter='data')
             else:source.extract(member,destination)
 
-def steam_build(game,stage):
+def steam_build(profile,stage):
     if os.geteuid()==0:raise ValueError('SteamCMD must run as non-root')
-    profile=STEAM_GAMES[game];stage=Path(stage);tools=stage/'steamcmd';tools.mkdir(mode=0o700)
+    profile=steam_profile(profile);stage=Path(stage);tools=stage/'steamcmd';tools.mkdir(mode=0o700)
     archive=stage/'steamcmd.tar.gz'
     download({'url':'https://steamcdn-a.akamaihd.net/client/installer/steamcmd_linux.tar.gz','algorithm':None,'digest':None},str(archive))
     steam_extract(archive,tools);archive.unlink()
     target=stage/'template';target.mkdir(mode=0o755)
     command=[str(tools/'steamcmd.sh'),'+@ShutdownOnFailedCommand','1','+@NoPromptForPassword','1','+force_install_dir',str(target),'+login','anonymous']
-    if profile.get('mod'):command.extend(['+app_set_config',str(profile['app']),'mod',profile['mod']])
-    command.extend(['+app_update',str(profile['app']),'validate','+quit'])
+    if profile.get('mod'):command.extend(['+app_set_config',str(profile['app_id']),'mod',profile['mod']])
+    command.extend(['+app_update',str(profile['app_id']),'validate','+quit'])
     env=rt.environment();env['HOME']=str(stage);env.update({k:v for k,v in os.environ.items() if k.lower() in ('http_proxy','https_proxy','no_proxy','ssl_cert_file')})
-    binary=target/profile['binary']
     def complete():
-        return binary.is_file() and not binary.is_symlink() and os.access(binary,os.X_OK) and all((target/path).is_file() and not (target/path).is_symlink() for path in profile.get('required',[]))
-    # HLDS app 90 can require multiple validated updates before the mod is complete.
-    for attempt in range(3 if profile['app']==90 else 1):
-        build_command(command,str(tools),7000 if profile['app']==90 else 21600,env)
+        if profile.get('binary'):
+            binary=target/profile['binary']
+            return binary.is_file() and not binary.is_symlink() and os.access(binary,os.X_OK) and all((target/path).is_file() and not (target/path).is_symlink() for path in profile.get('required',[]))
+        return any(path.is_file() and path.stat().st_size>0 for path in target.rglob('*') if 'steamapps' not in path.parts)
+    for attempt in range(3 if profile['app_id']==90 else 1):
+        build_command(command,str(tools),7000 if profile['app_id']==90 else 21600,env)
         if complete():break
-    if not complete():raise ValueError('Steam server executable missing or game files incomplete')
-    if game=='cs16':
-        # Instance HOME points at the copied server directory; keep a real SDK file,
-        # never a symlink into the temporary SteamCMD installation.
+    if not complete():raise ValueError('Steam server files incomplete; App ID may not provide anonymous dedicated-server files')
+    if profile['slug']=='cs16':
         client=next((file for file in (target/'steamclient.so',tools/'linux32'/'steamclient.so') if file.is_file() and not file.is_symlink()),None)
         if client is None:raise ValueError('SteamCMD 32-bit Steam client missing')
         sdk=target/'.steam'/'sdk32';sdk.mkdir(parents=True,exist_ok=True);shutil.copy2(client,sdk/'steamclient.so')
-    manifest=target/'steamapps'/('appmanifest_'+str(profile['app'])+'.acf')
+    manifest=target/'steamapps'/('appmanifest_'+str(profile['app_id'])+'.acf')
     build=re.search(r'"buildid"\s+"([0-9]+)"',manifest.read_text())
-    if not build:raise ValueError('Steam build ID missing')
+    if not build:raise ValueError('Steam build ID missing; App ID may not provide anonymous dedicated-server files')
     (stage/'result.json').write_text(json.dumps({'build':build[1]}))
 
-def steam_worker(game,token):
-    if game not in STEAM_GAMES or not re.fullmatch('[a-f0-9]{24}',token):raise ValueError('Invalid Steam job')
-    # Wait until the parent has published the worker identity and released the lock.
+def steam_worker(value,token):
+    profile=steam_profile(value);game=profile['slug']
+    if not re.fullmatch('[a-f0-9]{24}',token):raise ValueError('Invalid Steam job')
     with open(CACHE+'/lock','a') as lock:fcntl.flock(lock,fcntl.LOCK_EX);value=catalog()
-    settings=cfg();root=Path(settings['_provision']['source_root']);account=pwd.getpwnam(settings['_provision']['users'][game])
+    settings=cfg();root=Path(settings['_provision']['source_root']);account=steam_builder(profile,settings)
     stage=None
     try:
-        if account.pw_uid==0:raise ValueError('Non-root Steam builder required')
         public_directory(root/game)
         stage=Path(tempfile.mkdtemp(prefix='.steam-build-',dir=root/game));os.chown(stage,account.pw_uid,account.pw_gid)
         env=rt.environment(account);env.update({k:v for k,v in os.environ.items() if k.lower() in ('http_proxy','https_proxy','no_proxy','ssl_cert_file')})
-        subprocess.run(['/usr/bin/python3','-I',SELF,'steam-build',game,str(stage)],preexec_fn=rt.drop(account),env=env,check=True,timeout=22000)
+        encoded=base64.b64encode(json.dumps(profile,separators=(',',':')).encode()).decode()
+        subprocess.run(['/usr/bin/python3','-I',SELF,'steam-build',encoded,str(stage)],preexec_fn=rt.drop(account),env=env,check=True,timeout=22000)
         build=json.loads((stage/'result.json').read_text())['build']
         if not isinstance(build,str) or not re.fullmatch('[0-9]{1,30}',build):raise ValueError('Invalid Steam build ID')
-        # Publish only regular files/directories; never expose a partial download.
         for directory,dirs,files in os.walk(stage/'template',followlinks=False):
             for name in dirs+files:
                 mode=os.lstat(Path(directory)/name).st_mode
@@ -414,12 +441,11 @@ def steam_worker(game,token):
         final.mkdir(mode=0o755)
         for item in (stage/'template').iterdir():shutil.move(str(item),str(final/item.name))
         os.chmod(final,0o755)
-        profile=STEAM_GAMES[game]
         save_custom({'key':'custom:'+token,'game':game,'name':profile['name'],'version':'Steam build '+build,'path':str(final),'startup':profile['startup'],'minimum_memory_mb':0})
         value.update(state='ready',message=profile['name']+' template elkészült. Steam build: '+build+'. Mappa: '+str(final))
     except Exception as error:
         print(type(error).__name__+': '+str(error),file=sys.stderr)
-        value.update(state='failed',message='A Counter-Strike letöltése sikertelen. Ellenőrizd a szabad helyet, a Steam elérését és a Linux-gép /var/lib/gamedock/minecraft/steam.log naplóját. Csak a kész template használható.')
+        value.update(state='failed',message='A SteamCMD-letöltés sikertelen. Ellenőrizd az App ID anonim szerverfájl-hozzáférését, a szabad helyet és a Steam elérését. Napló: /var/lib/gamedock/minecraft/steam.log.')
     finally:
         if stage is not None and shutil.rmtree.avoids_symlink_attacks:shutil.rmtree(stage)
         with open(CACHE+'/lock','a') as lock:fcntl.flock(lock,fcntl.LOCK_EX);atomic(CACHE+'/catalog.json',value)
@@ -430,7 +456,7 @@ if __name__=='__main__':
         if action=='jdk' and len(sys.argv)==4:
             if os.geteuid()==0:raise ValueError('JDK builder must be non-root')
             row=json.loads(base64.b64decode(sys.argv[2],validate=True));folder=sys.argv[3];archive=os.path.join(folder,'jdk.tar.gz');download(row,archive);extract_jdk(archive,folder);os.unlink(archive)
-        elif action=='steam-build' and len(sys.argv)==4:steam_build(sys.argv[2],sys.argv[3])
+        elif action=='steam-build' and len(sys.argv)==4:steam_build(json.loads(base64.b64decode(sys.argv[2],validate=True)),sys.argv[3])
         elif action=='build' and len(sys.argv)==5:build(json.loads(base64.b64decode(sys.argv[2],validate=True)),sys.argv[3],sys.argv[4])
         elif os.geteuid()!=0:raise ValueError('Root helper required')
         elif action=='catalog':print(json.dumps(all_catalog(),ensure_ascii=False))
@@ -441,8 +467,8 @@ if __name__=='__main__':
             if len(sys.argv[2])>200 or not re.fullmatch(r'(vanilla|paper|forge|bukkit|spigot|purpur|fabric):[0-9A-Za-z._:-]+',sys.argv[2]):raise ValueError('Invalid release')
             sync(sys.argv[2]);print(json.dumps(all_catalog(),ensure_ascii=False))
         elif action=='custom-save' and len(sys.argv)==3 and len(sys.argv[2])<12288:print(json.dumps(save_custom(json.loads(base64.b64decode(sys.argv[2],validate=True))),ensure_ascii=False))
-        elif action=='steam-install' and len(sys.argv)==3:print(json.dumps(steam_start(sys.argv[2]),ensure_ascii=False))
-        elif action=='steam-worker' and len(sys.argv)==4:steam_worker(sys.argv[2],sys.argv[3])
+        elif action=='steam-install' and len(sys.argv)==3 and len(sys.argv[2])<8192:print(json.dumps(steam_start(json.loads(base64.b64decode(sys.argv[2],validate=True))),ensure_ascii=False))
+        elif action=='steam-worker' and len(sys.argv)==4:steam_worker(json.loads(base64.b64decode(sys.argv[2],validate=True)),sys.argv[3])
         elif action=='worker':worker()
         else:raise ValueError('Unknown operation')
     except Exception as error:
