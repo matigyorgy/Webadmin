@@ -4,11 +4,11 @@ import base64,fcntl,hashlib,importlib.util,json,os,pwd,re,shlex,shutil,subproces
 import urllib.request,urllib.parse,xml.etree.ElementTree as XML
 import tarfile,posixpath,platform,signal,stat
 from pathlib import Path
-library=Path(__file__).resolve().parent/'gamedock_runtime.py'
-if not library.is_file():library=Path('/usr/local/libexec/gamedock_runtime.py')
+library=Path(__file__).resolve().parent/'webadmin_runtime.py'
+if not library.is_file():library=Path('/usr/local/libexec/webadmin_runtime.py')
 spec=importlib.util.spec_from_file_location('rt',library);rt=importlib.util.module_from_spec(spec);spec.loader.exec_module(rt)
-CONFIG='/etc/gamedock/servers.json';CACHE='/var/lib/gamedock/minecraft';SELF='/usr/local/sbin/gamedock-templates'
-UA='GameDock/1.0 (+https://github.com/matigyorgy/Webadmin)'
+CONFIG='/etc/webadmin/servers.json';CACHE='/var/lib/webadmin/minecraft';SELF='/usr/local/sbin/webadmin-templates'
+UA='Webadmin/1.0 (+https://github.com/matigyorgy/Webadmin)'
 JAVA_VERSIONS={};RELEASES={}
 
 def public_directory(path):
@@ -216,7 +216,7 @@ def build(row,stage,java):
             jars=list(Path('work/output').glob('spigot*.jar' if row['type']=='spigot' else 'craftbukkit*.jar'))
             if len(jars)!=1:raise ValueError('CraftBukkit output missing')
             shutil.copy2(jars[0],'template/server.jar')
-    Path('template/.gamedock-template.json').write_text(json.dumps({'key':row['key'],'type':row['type'],'version':row['version']}))
+    Path('template/.webadmin-template.json').write_text(json.dumps({'key':row['key'],'type':row['type'],'version':row['version']}))
 def catalog():
     try:
         with open(CACHE+'/catalog.json') as stream:value=json.load(stream)
@@ -273,7 +273,7 @@ def delete_template(key):
         if row.get('path') and Path(row['path']) not in (target,target/row.get('build','')):raise ValueError('Catalog path mismatch')
         if not target.resolve().is_relative_to(root.resolve()) or target.is_symlink():raise ValueError('Template path escapes root')
         for job_id in list(settings.get('_copy_jobs',{}).values())+list(settings.get('_version_jobs',{}).values()):
-            with open('/var/lib/gamedock/provision/jobs/'+job_id+'.json') as stream:job=json.load(stream)
+            with open('/var/lib/webadmin/provision/jobs/'+job_id+'.json') as stream:job=json.load(stream)
             source=job.get('data',{}).get('source') or job.get('source')
             if job.get('state') in ('queued','running') and source==str(target):raise ValueError('Template is in use by an active copy job')
         if target.exists():shutil.rmtree(target)
@@ -468,7 +468,7 @@ def steam_worker(value,token):
         value.update(state='ready',message=profile['name']+' template elkészült. Steam build: '+build+'. Mappa: '+str(final))
     except Exception as error:
         print(type(error).__name__+': '+str(error),file=sys.stderr)
-        value.update(state='failed',message='A SteamCMD-letöltés sikertelen. Ellenőrizd az App ID anonim szerverfájl-hozzáférését, a szabad helyet és a Steam elérését. Napló: /var/lib/gamedock/minecraft/steam.log.')
+        value.update(state='failed',message='A SteamCMD-letöltés sikertelen. Ellenőrizd az App ID anonim szerverfájl-hozzáférését, a szabad helyet és a Steam elérését. Napló: /var/lib/webadmin/minecraft/steam.log.')
     finally:
         if stage is not None and shutil.rmtree.avoids_symlink_attacks:shutil.rmtree(stage)
         with open(CACHE+'/lock','a') as lock:fcntl.flock(lock,fcntl.LOCK_EX);atomic(CACHE+'/catalog.json',value)

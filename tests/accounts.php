@@ -7,13 +7,13 @@ if (!getenv('TEST_MYSQL_HOST')) { echo "Account integration not run: TEST_MYSQL_
 session_start(); $_SESSION=[];
 $host=getenv('TEST_MYSQL_HOST'); $dbPassword=getenv('TEST_MYSQL_PASSWORD');
 $root=new PDO('mysql:host='.$host.';charset=utf8mb4','root',$dbPassword,[PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION]);
-$name='gamedock_accounts_'.bin2hex(random_bytes(5)); $root->exec('CREATE DATABASE `'.$name.'`');
+$name='webadmin_accounts_'.bin2hex(random_bytes(5)); $root->exec('CREATE DATABASE `'.$name.'`');
 putenv('DB_DSN=mysql:host='.$host.';dbname='.$name.';charset=utf8mb4');putenv('DB_USER=root');putenv('DB_PASSWORD='.$dbPassword);
-$db=new GameDock\Database();$auth=new GameDock\AuthService($db);$admin=new GameDock\AdminService($db,static fn(array $node): array=>[25888]);$servers=new GameDock\ServerService($db,new GameDock\SshClient());
+$db=new Webadmin\Database();$auth=new Webadmin\AuthService($db);$admin=new Webadmin\AdminService($db,static fn(array $node): array=>[25888]);$servers=new Webadmin\ServerService($db,new Webadmin\SshClient());
 $prefix=bin2hex(random_bytes(5));$password='A-strong-test-password-123';
 try {
     foreach (explode(';',file_get_contents(dirname(__DIR__).'/database/schema.sql')) as $sql) if (trim($sql)!=='') $db->query($sql);
-    (new GameDock\GameRegistry($db))->seed();
+    (new Webadmin\GameRegistry($db))->seed();
     $db->query("UPDATE game_types SET provider='folder' WHERE slug='minecraft'");
     $email='owner-'.$prefix.'@example.com';
     $db->query('INSERT INTO users(email,password_hash,is_admin) VALUES(?,?,1)',[$email,password_hash($password,PASSWORD_DEFAULT)]);
@@ -21,12 +21,12 @@ try {
     $clientId=$admin->save($owner,'users',['email'=>'alice-'.$prefix.'@example.com','password'=>$password]);
     $otherId=$admin->save($owner,'users',['email'=>'bob-'.$prefix.'@example.com','password'=>$password]);
     $client=['id'=>$clientId,'is_admin'=>0];$other=['id'=>$otherId,'is_admin'=>0];
-    denies(fn()=>(new GameDock\SchemaUpdater($db))->enableStartup($client),'Client schema change allowed');
-    $nodeData=['name'=>'Linux <test>','public_host'=>'games.example.test','ssh_host'=>'127.0.0.1','ssh_port'=>'22','ssh_user'=>'gamedock','ssh_fingerprint'=>'SHA256:'.str_repeat('A',43)];
+    denies(fn()=>(new Webadmin\SchemaUpdater($db))->enableStartup($client),'Client schema change allowed');
+    $nodeData=['name'=>'Linux <test>','public_host'=>'games.example.test','ssh_host'=>'127.0.0.1','ssh_port'=>'22','ssh_user'=>'webadmin','ssh_fingerprint'=>'SHA256:'.str_repeat('A',43)];
     $nodeId=$admin->save($owner,'nodes',$nodeData);
     verify($admin->find($owner,'nodes',$nodeId)['public_host']==='games.example.test','Public game address not persisted');
     $admin->save($owner,'games',['slug'=>'custom','name'=>'My Custom Game','template_path'=>'/home/webadmin/templates/custom','startup_command'=>'python3 server.py --port {port}','provider'=>'folder']);
-    verify(isset((new GameDock\GameRegistry($db))->names()['custom']),'Custom game profile missing');
+    verify(isset((new Webadmin\GameRegistry($db))->names()['custom']),'Custom game profile missing');
     $serverData=['name'=>'Survival <test>','game'=>'minecraft','unit_name'=>'minecraft.service','user_id'=>(string)$clientId,'node_id'=>(string)$nodeId];
     $serverData['port']='25500';
     $serverData['memory_limit_mb']='2048';$serverData['cpu_limit_percent']='150';
@@ -39,10 +39,10 @@ try {
     verify($servers->find($client,$serverId)['provision_state']==='queued','New server did not require template copy');
     denies(fn()=>$servers->perform($client,$serverId,'start'),'Unprovisioned game started');
     $db->query('UPDATE servers SET provision_state=? WHERE id=?',['ready',$serverId]);
-    foreach(GameDock\Validation::GAMES as $game=>$label) {
+    foreach(Webadmin\Validation::GAMES as $game=>$label) {
         $custom=$serverData; $custom['id']=$serverId; $custom['game']=$game; $custom['startup_command']='./start --name="<example>" --port {port}';
         $admin->save($owner,'servers',$custom);
-        verify($servers->find($client,$serverId)['startup_command']===GameDock\StartupCommand::prepare($custom['startup_command'],$custom),'Startup command not saved for '.$game);
+        verify($servers->find($client,$serverId)['startup_command']===Webadmin\StartupCommand::prepare($custom['startup_command'],$custom),'Startup command not saved for '.$game);
         verify(!array_key_exists('startup_command',$servers->listing($client)[0]),'Startup command leaked into client list');
     }
     $serverData['id']=$serverId; $admin->save($owner,'servers',$serverData); unset($serverData['id']);
@@ -61,7 +61,7 @@ try {
     verify($servers->navigation($other)===[],'Other owner server leaked through sidebar');
     denies(fn()=>$servers->find($other,$serverId),'Other owner read allowed');
     denies(fn()=>$servers->read($other,$serverId,'versions'),'Other owner read version catalog');
-    denies(fn()=>(new GameDock\VersionService($db,new GameDock\SshClient()))->request($other,$serverId,'forge:test'),'Other owner version change allowed');
+    denies(fn()=>(new Webadmin\VersionService($db,new Webadmin\SshClient()))->request($other,$serverId,'forge:test'),'Other owner version change allowed');
     $before=$db->query('SELECT COUNT(*) FROM audit_log')->fetchColumn();
     denies(fn()=>$servers->perform($other,$serverId,'start'),'Other owner power allowed');
     verify($before===$db->query('SELECT COUNT(*) FROM audit_log')->fetchColumn(),'Unauthorized action reached audit/SSH');
@@ -90,10 +90,10 @@ try {
     $db->query('ALTER TABLE servers DROP COLUMN startup_command, DROP COLUMN memory_limit_mb, DROP COLUMN cpu_limit_percent');
     $db->query('ALTER TABLE nodes DROP COLUMN public_host');
     $db->query('DROP TABLE server_version_jobs');
-    $updater=new GameDock\SchemaUpdater($db); verify(!$updater->startupEnabled(),'Legacy schema fixture failed');
+    $updater=new Webadmin\SchemaUpdater($db); verify(!$updater->startupEnabled(),'Legacy schema fixture failed');
     $updater->enableStartup($owner); $updater->enableStartup($owner);
     verify($updater->startupEnabled() && $updater->provisionEnabled(),'Resource/startup migration/repeat failed');
-    $limiter=new GameDock\LoginRateLimiter();$rateEmail='rate-'.$prefix.'@example.com';
+    $limiter=new Webadmin\LoginRateLimiter();$rateEmail='rate-'.$prefix.'@example.com';
     for($i=0;$i<10;$i++) $limiter->consume($rateEmail,'rate-test-'.$prefix);
     denies(fn()=>$limiter->consume($rateEmail,'rate-test-'.$prefix),'Account rate limit missing');
     $limiter->clearAccount($rateEmail);$limiter->consume($rateEmail,'rate-test-'.$prefix);

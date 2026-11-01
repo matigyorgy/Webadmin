@@ -1,9 +1,9 @@
 <?php
 declare(strict_types=1);
 require dirname(__DIR__) . '/bootstrap.php';
-GameDock\WebSession::start();
+Webadmin\WebSession::start();
 $root=dirname(__DIR__);
-$installed=GameDock\Config::installed();
+$installed=Webadmin\Config::installed();
 $error=''; $success=null;
 $defaults=['db_host'=>'localhost','db_port'=>'3306','db_name'=>'webadmin','db_user'=>'webadmin','admin_email'=>'',
     'node_name'=>'Linux gép 1','ssh_host'=>'','ssh_port'=>'22','ssh_user'=>'webadmin','ssh_fingerprint'=>'',
@@ -16,7 +16,7 @@ if (!$installed) {
         if (!is_dir($directory)) @mkdir($directory,0770,true);
     }
 }
-$installer=new GameDock\Installer($root);
+$installer=new Webadmin\Installer($root);
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$installed) {
     foreach ($defaults as $name=>$default) $values[$name]=is_string($_POST[$name] ?? null) ? trim($_POST[$name]) : $default;
     try {
@@ -31,11 +31,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$installed) {
 }
 if ($installed && !$success) http_response_code(403);
 try {
-    (new GameDock\SmartyView($root))->render('install.tpl', [
+    (new Webadmin\SmartyView($root))->render('install.tpl', [
         'installed'=>$installed,'success'=>$success,'error'=>$error,'values'=>$values,
         'requirements'=>$installer->requirements(),'csrf'=>$_SESSION['install_csrf'] ?? '',
         'https'=>isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off',
     ]);
 } catch (Throwable $e) {
-    GameDock\BootstrapErrorHandler::exception($e);
+    Webadmin\BootstrapErrorHandler::exception($e);
 }

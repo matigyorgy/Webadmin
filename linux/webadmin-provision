@@ -16,17 +16,17 @@ import subprocess
 import sys
 import tempfile
 
-library=Path(__file__).resolve().parent/'gamedock_runtime.py'
-if not library.is_file():library=Path('/usr/local/libexec/gamedock_runtime.py')
-spec=importlib.util.spec_from_file_location('gamedock_runtime',library);runtime=importlib.util.module_from_spec(spec);spec.loader.exec_module(runtime)
-CONFIG='/etc/gamedock/servers.json'
-JOBS='/var/lib/gamedock/provision/jobs'
-SELF='/usr/local/sbin/gamedock-provision'
+library=Path(__file__).resolve().parent/'webadmin_runtime.py'
+if not library.is_file():library=Path('/usr/local/libexec/webadmin_runtime.py')
+spec=importlib.util.spec_from_file_location('webadmin_runtime',library);runtime=importlib.util.module_from_spec(spec);spec.loader.exec_module(runtime)
+CONFIG='/etc/webadmin/servers.json'
+JOBS='/var/lib/webadmin/provision/jobs'
+SELF='/usr/local/sbin/webadmin-provision'
 GAMES=('minecraft','cs16','cs2','fivem','css')
 
 def storage_module():
-    path=Path(__file__).resolve().parent/'gamedock-storage'
-    if not path.is_file():path=Path('/usr/local/sbin/gamedock-storage')
+    path=Path(__file__).resolve().parent/'webadmin-storage'
+    if not path.is_file():path=Path('/usr/local/sbin/webadmin-storage')
     loader=importlib.machinery.SourceFileLoader('provision_storage',str(path));spec=importlib.util.spec_from_loader(loader.name,loader);module=importlib.util.module_from_spec(spec);loader.exec_module(module);return module
 
 def secure(path, directory=False):
@@ -39,7 +39,7 @@ def config():
     with open(CONFIG,encoding='utf-8') as stream:return json.load(stream)
 
 def atomic(path,value):
-    descriptor,temporary=tempfile.mkstemp(prefix='.gamedock-',dir=os.path.dirname(path))
+    descriptor,temporary=tempfile.mkstemp(prefix='.webadmin-',dir=os.path.dirname(path))
     try:
         with os.fdopen(descriptor,'w',encoding='utf-8') as stream:
             json.dump(value,stream,ensure_ascii=False);stream.flush();os.fsync(stream.fileno())
@@ -110,7 +110,7 @@ def isolated_user(data):
 
 def prepare():
     os.makedirs(JOBS,mode=0o700,exist_ok=True)
-    for path in ('/var/lib/gamedock','/var/lib/gamedock/provision',JOBS):secure(path,True)
+    for path in ('/var/lib/webadmin','/var/lib/webadmin/provision',JOBS):secure(path,True)
 
 def create(payload):
     prepare();lock=locked()
@@ -173,7 +173,7 @@ def configure(folder,settings):
     root=Path(folder)
     # Remember only files which originally contained a port placeholder.
     # Reconfigure as the instance user, preserving every other edited setting.
-    manifest=root/'.gamedock-ports.json'
+    manifest=root/'.webadmin-ports.json'
     previous={}
     if manifest.exists():
         previous=json.loads(manifest.read_text())
@@ -222,7 +222,7 @@ def worker(job_id):
         if data!=job['data']:raise ValueError('Provision policy changed')
         allow_template_traverse(data['gid'])
         job['state']='running';job['message']='A szerverfájlok másolása folyamatban van.';atomic(path,job)
-        stage=os.path.dirname(data['target'])+'/.gamedock-copy-'+job_id
+        stage=os.path.dirname(data['target'])+'/.webadmin-copy-'+job_id
         os.mkdir(stage,0o700);os.chown(stage,data['uid'],data['gid'])
         # No shell and no root copy: template symlinks cannot expose root-only files.
         subprocess.run(['/usr/bin/python3','-I',SELF,'copy',data['source'],stage,base64.b64encode(json.dumps({'game':data['game'],'port':data['port'],'slot_limit':data.get('slot_limit',0),'minecraft':bool(data.get('minecraft_type')),'eula':bool(data.get('eula_accepted'))}).encode()).decode()],check=True,timeout=3600,capture_output=True,start_new_session=True,preexec_fn=runtime.drop(pwd.getpwnam(data['user'])),env=runtime.environment(pwd.getpwnam(data['user'])))

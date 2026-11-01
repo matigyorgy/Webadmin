@@ -1,6 +1,6 @@
 <?php
 // Keep this bootstrap compatible with older PHP so version errors remain readable.
-namespace GameDock;
+namespace Webadmin;
 
 final class BootstrapErrorHandler
 {
@@ -22,12 +22,12 @@ final class BootstrapErrorHandler
     public static function exception($error)
     {
         $reference = substr(hash('sha256', uniqid('', true)), 0, 12);
-        error_log('[GameDock '.$reference.'] '.get_class($error).': '.$error->getMessage().' in '.$error->getFile().':'.$error->getLine());
+        error_log('[Webadmin '.$reference.'] '.get_class($error).': '.$error->getMessage().' in '.$error->getFile().':'.$error->getLine());
         if ($error instanceof SetupException) {
             self::respond($error->getMessage()."\nHibaazonosító: ".$reference);
             return;
         }
-        self::respond("A GameDock indítása nem sikerült. Ellenőrizd a tárhely PHP error_log naplóját.\nHibaazonosító: ".$reference, 500);
+        self::respond("A Webadmin indítása nem sikerült. Ellenőrizd a tárhely PHP error_log naplóját.\nHibaazonosító: ".$reference, 500);
     }
 }
 

@@ -1,6 +1,6 @@
 <?php
 declare(strict_types=1);
-namespace GameDock;
+namespace Webadmin;
 use RuntimeException;
 use phpseclib3\Crypt\PublicKeyLoader;
 final class AdminService

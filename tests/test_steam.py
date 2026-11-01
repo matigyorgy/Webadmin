@@ -3,7 +3,7 @@ import importlib.machinery,importlib.util,io,json,os,subprocess,tarfile,tempfile
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
-loader=importlib.machinery.SourceFileLoader('steam_templates','linux/gamedock-templates')
+loader=importlib.machinery.SourceFileLoader('steam_templates','linux/webadmin-templates')
 spec=importlib.util.spec_from_loader(loader.name,loader);mc=importlib.util.module_from_spec(spec);loader.exec_module(mc)
 
 class SteamTests(unittest.TestCase):

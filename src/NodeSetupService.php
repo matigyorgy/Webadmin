@@ -1,6 +1,6 @@
 <?php
 declare(strict_types=1);
-namespace GameDock;
+namespace Webadmin;
 use RuntimeException;
 use phpseclib3\Net\SFTP;
 use phpseclib3\Crypt\PublicKeyLoader;
@@ -38,9 +38,9 @@ final class NodeSetupService
             }
             return $result;
         }
-        $folder=rtrim((string)$ssh->pwd(),'/').'/.gamedock-install-'.bin2hex(random_bytes(12));
+        $folder=rtrim((string)$ssh->pwd(),'/').'/.webadmin-install-'.bin2hex(random_bytes(12));
         if(!$ssh->mkdir($folder,0700))throw new RuntimeException('A telepítési munkakönyvtár nem hozható létre.');
-        $files=['gamedock-storage','gamedock-ftp','gamedock-automation','install.py','bootstrap.sh','gamedock_runtime.py','gamedock-launch','gamedock-runner','gamedock-provision','gamedock-versions','gamedock-templates'];
+        $files=['webadmin-storage','webadmin-ftp','webadmin-automation','install.py','bootstrap.sh','webadmin_runtime.py','webadmin-launch','webadmin-runner','webadmin-provision','webadmin-versions','webadmin-templates'];
         foreach($files as $file) {
             $contents=file_get_contents(Config::root().'/linux/'.$file);
             if(!$ssh->put($folder.'/'.$file,$contents) || !hash_equals(hash('sha256',$contents),hash('sha256',(string)$ssh->get($folder.'/'.$file))))throw new RuntimeException('A telepítőfájl feltöltésének ellenőrzése sikertelen.');

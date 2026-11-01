@@ -2,10 +2,10 @@
 """Asynchronous server-directory space measurements and display-only limits."""
 import contextlib,ctypes,errno,fcntl,importlib.machinery,importlib.util,json,os,pwd,secrets,stat,struct,subprocess,sys,time
 from pathlib import Path
-path=Path(__file__).resolve().parent/'gamedock-provision'
-if not path.is_file():path=Path('/usr/local/sbin/gamedock-provision')
+path=Path(__file__).resolve().parent/'webadmin-provision'
+if not path.is_file():path=Path('/usr/local/sbin/webadmin-provision')
 loader=importlib.machinery.SourceFileLoader('storage_provision',str(path));spec=importlib.util.spec_from_loader(loader.name,loader);p=importlib.util.module_from_spec(spec);loader.exec_module(p)
-ROOT=Path('/var/lib/gamedock/storage');CONTROL=Path('/run/gamedock-control');SELF='/usr/local/sbin/gamedock-storage';MAX_MB=1073741824
+ROOT=Path('/var/lib/webadmin/storage');CONTROL=Path('/run/webadmin-control');SELF='/usr/local/sbin/webadmin-storage';MAX_MB=1073741824
 GET_ATTR=0x801c581f;SET_ATTR=0x401c5820;INHERIT=0x200
 
 class Quota(ctypes.Structure):

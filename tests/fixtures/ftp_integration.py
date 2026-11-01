@@ -1,11 +1,11 @@
 """Only run inside the disposable SSH/Pure-FTPd fixture, with no public ports."""
 import ftplib,importlib.machinery,importlib.util,io,json,os,pwd,socket,ssl,subprocess,time
 from pathlib import Path
-if not Path('/etc/gamedock/test-fixture').is_file():raise RuntimeError('Disposable fixture required')
-loader=importlib.machinery.SourceFileLoader('ftp','/usr/local/sbin/gamedock-ftp');spec=importlib.util.spec_from_loader(loader.name,loader);f=importlib.util.module_from_spec(spec);loader.exec_module(f)
+if not Path('/etc/webadmin/test-fixture').is_file():raise RuntimeError('Disposable fixture required')
+loader=importlib.machinery.SourceFileLoader('ftp','/usr/local/sbin/webadmin-ftp');spec=importlib.util.spec_from_loader(loader.name,loader);f=importlib.util.module_from_spec(spec);loader.exec_module(f)
 units=['990001','990002']
 for i,unit in enumerate(units):
- target=Path('/home/gamedock')/unit;target.mkdir(mode=0o700)
+ target=Path('/home/webadmin/servers')/unit;target.mkdir(mode=0o700)
  subprocess.run(['useradd','--system','--gid','minecraft','--home-dir',str(target),'--no-create-home','ftp_instance'+str(i)],check=True)
  account=pwd.getpwnam('ftp_instance'+str(i));os.chown(target,account.pw_uid,account.pw_gid)
  with f.p.locked():
@@ -27,7 +27,7 @@ def connect(password=password):
  client=ftplib.FTP(timeout=8);client.connect('localhost',21);client.login('my_server',password);return client
 client=connect();assert next(a for a in f.listing(units[0])['accounts'] if a['username']=='my_server')['last_login'] is not None
 client.storbinary('STOR world.txt',io.BytesIO(b'FTP upload fixture'));download=io.BytesIO();client.retrbinary('RETR world.txt',download.write);assert download.getvalue()==b'FTP upload fixture'
-assert (Path('/home/gamedock')/units[0]/'world.txt').read_bytes()==b'FTP upload fixture'
+assert (Path('/home/webadmin/servers')/units[0]/'world.txt').read_bytes()==b'FTP upload fixture'
 client.cwd('..');assert client.pwd()=='/'
 try:client.retrbinary('RETR /etc/passwd',lambda b:None);raise AssertionError('Chroot escaped')
 except ftplib.error_perm:pass
@@ -37,7 +37,7 @@ try:connect('incorrect-password');raise AssertionError('Bad password accepted')
 except ftplib.error_perm:pass
 assert next(a for a in f.listing(units[0])['accounts'] if a['username']=='my_server')['last_login']==before
 # The same routine is called before snapshot/restore/version replacement.
-folder=Path('/var/lib/gamedock/automation/units')/units[0];folder.mkdir(parents=True,mode=0o700)
+folder=Path('/var/lib/webadmin/automation/units')/units[0];folder.mkdir(parents=True,mode=0o700)
 f.p.atomic(str(folder/'job.json'),{'state':'queued','operation':'backup'})
 f.disconnect_unit(units[0])
 try:connect();raise AssertionError('Login during maintenance accepted')
@@ -54,7 +54,7 @@ while 'my_server' in f.read(f.ROOT/'users.json',{}):
 assert all(a['username']!='my_server' for a in f.listing(units[0])['accounts'])
 try:client.pwd();raise AssertionError('Expired active session survived')
 except (OSError,EOFError,ftplib.Error):pass
-assert (Path('/home/gamedock')/units[0]/'world.txt').exists()
+assert (Path('/home/webadmin/servers')/units[0]/'world.txt').exists()
 try:connect();raise AssertionError('Expired login accepted')
 except ftplib.error_perm:pass
 client.close()

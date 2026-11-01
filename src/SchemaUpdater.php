@@ -1,6 +1,6 @@
 <?php
 declare(strict_types=1);
-namespace GameDock;
+namespace Webadmin;
 use RuntimeException;
 use Throwable;
 final class SchemaUpdater
@@ -84,9 +84,5 @@ final class SchemaUpdater
         $cs16=GameRegistry::defaults()['cs16'];
         if(!(bool)$this->db->query("SHOW COLUMNS FROM game_types LIKE 'steam_app_id'")->fetch())$this->db->query('ALTER TABLE game_types ADD COLUMN steam_app_id INT UNSIGNED NULL');
         $this->db->query('INSERT IGNORE INTO game_types(slug,name,template_path,startup_command,provider,steam_app_id) VALUES(?,?,?,?,?,?)',array_values($cs16));
-        foreach (['game_types'=>['template_path','startup_command'],'servers'=>['install_source','startup_command']] as $table=>$fields) foreach($fields as $field) {
-            $this->db->query("UPDATE $table SET $field=REPLACE($field,?,?) WHERE $field LIKE ?",['/srv/gamedock/templates','/home/webadmin/templates','%/srv/gamedock/templates%']);
-            $this->db->query("UPDATE $table SET $field=REPLACE($field,?,?) WHERE $field LIKE ?",['/home/gamedock/templates','/home/webadmin/templates','%/home/gamedock/templates%']);
-        }
     }
 }

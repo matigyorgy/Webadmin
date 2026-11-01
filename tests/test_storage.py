@@ -2,7 +2,7 @@ import contextlib,errno,importlib.machinery,importlib.util,json,os,tempfile,unit
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
-loader=importlib.machinery.SourceFileLoader('storage','linux/gamedock-storage');spec=importlib.util.spec_from_loader(loader.name,loader);s=importlib.util.module_from_spec(spec);loader.exec_module(s)
+loader=importlib.machinery.SourceFileLoader('storage','linux/webadmin-storage');spec=importlib.util.spec_from_loader(loader.name,loader);s=importlib.util.module_from_spec(spec);loader.exec_module(s)
 class StorageTests(unittest.TestCase):
  def test_unsupported_filesystem_rejected_before_mutation(self):
   for fs,options in [('overlay','rw'),('ext4','rw'),('xfs','rw,pqnoenforce')]:
@@ -30,7 +30,7 @@ class StorageTests(unittest.TestCase):
  def test_limit_zero_does_not_require_quota_filesystem(self):
   with tempfile.TemporaryDirectory() as directory:
    target=Path(directory)/'server';target.mkdir();cfg={'12345678':{'directory':str(target),'disk_limit_mb':0}};launch=SimpleNamespace(metadata=lambda unit:{},active=lambda data,account:False);ftp=SimpleNamespace(disconnect_unit=lambda unit:None)
-   with patch.object(s,'ROOT',Path(directory)/'storage'),patch.object(s,'CONTROL',Path(directory)/'control'),patch.object(s.p,'secure'),patch.object(s,'instance',return_value=(cfg,cfg['12345678'],SimpleNamespace(),target)),patch.object(s,'module',side_effect=lambda name:launch if name=='gamedock-launch' else ftp),patch.object(s,'project_id',side_effect=OSError(errno.ENOTTY,'unsupported')),patch.object(s.p,'locked',return_value=contextlib.nullcontext()),patch.object(s.p,'config',return_value=cfg),patch.object(s.p,'atomic'),patch.object(s,'mount_info') as mount:
+   with patch.object(s,'ROOT',Path(directory)/'storage'),patch.object(s,'CONTROL',Path(directory)/'control'),patch.object(s.p,'secure'),patch.object(s,'instance',return_value=(cfg,cfg['12345678'],SimpleNamespace(),target)),patch.object(s,'module',side_effect=lambda name:launch if name=='webadmin-launch' else ftp),patch.object(s,'project_id',side_effect=OSError(errno.ENOTTY,'unsupported')),patch.object(s.p,'locked',return_value=contextlib.nullcontext()),patch.object(s.p,'config',return_value=cfg),patch.object(s.p,'atomic'),patch.object(s,'mount_info') as mount:
     self.assertEqual(s.apply_limit('12345678',0),{'disk_limit_mb':0,'enforced':False});mount.assert_not_called()
  def test_storage_failure_does_not_zero_cpu_or_other_metrics(self):
   # A failed quota lookup retains the configured cap and reports it as unenforced.

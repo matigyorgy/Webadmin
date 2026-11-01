@@ -1,6 +1,6 @@
 <?php
 declare(strict_types=1);
-namespace GameDock;
+namespace Webadmin;
 use RuntimeException;
 use Throwable;
 final class ServerService
@@ -61,9 +61,9 @@ final class ServerService
             return $result;
         } catch (Throwable $e) {
             $this->db->query('UPDATE audit_log SET outcome=? WHERE id=?',['failed',$audit]);
-            error_log('GameDock SSH action failed: '.get_class($e));
+            error_log('Webadmin SSH action failed: '.get_class($e));
             if (str_contains($e->getMessage(),'cgroup v2')) throw $e;
-            throw new RuntimeException('Az SSH-művelet nem sikerült. Ellenőrizd a Linux-gép elérhetőségét, a hostkulcsot, az SSH-kulcsot és a szolgáltatás jogosultságait.'.(!empty($server['startup_command']) ? ' Saját indítóparancsnál a gamedock-launch telepítése, a Linux-oldali engedélylista és egy nem ütköző unitnév is szükséges.' : ''));
+            throw new RuntimeException('Az SSH-művelet nem sikerült. Ellenőrizd a Linux-gép elérhetőségét, a hostkulcsot, az SSH-kulcsot és a szolgáltatás jogosultságait.'.(!empty($server['startup_command']) ? ' Saját indítóparancsnál a webadmin-launch telepítése, a Linux-oldali engedélylista és egy nem ütköző unitnév is szükséges.' : ''));
         }
     }
     public function audit(array $user, ?int $id=null): array

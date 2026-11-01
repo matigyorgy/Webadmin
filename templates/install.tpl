@@ -2,11 +2,11 @@
 <html lang="hu" data-bs-theme="dark">
 <head>
  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
- <title>GameDock · Telepítés</title>
+ <title>Webadmin · Telepítés</title>
  <link rel="stylesheet" href="/vendor/bootstrap/bootstrap.min.css"><link rel="stylesheet" href="/style.css">
 </head>
 <body><main class="container py-4 py-md-5 installer-container">
- <header class="border-bottom pb-4 mb-4"><span class="brand-label text-success fw-semibold">GAMEDOCK / TELEPÍTŐ</span><h1 class="display-6 fw-bold mt-3">Néhány adat, és indulhat a panel.</h1><p class="text-body-secondary mb-0">Adatbázis, adminfiók és opcionálisan az első Linux-gép. Composer és kézi SQL-import nélkül.</p></header>
+ <header class="border-bottom pb-4 mb-4"><span class="brand-label text-success fw-semibold">WEBADMIN / TELEPÍTŐ</span><h1 class="display-6 fw-bold mt-3">Néhány adat, és indulhat a panel.</h1><p class="text-body-secondary mb-0">Adatbázis, adminfiók és opcionálisan az első Linux-gép. Composer és kézi SQL-import nélkül.</p></header>
  {if $error}<div class="alert alert-danger" role="alert">{$error}</div>{/if}
  {if $success}
  <section class="card rounded-4"><div class="card-body p-4">
@@ -48,5 +48,5 @@
   <button class="btn btn-success btn-lg w-100" type="submit">Telepítés indítása →</button>
  </form>
  {/if}
- <footer class="border-top mt-5 pt-4 small text-body-secondary">GameDock · Webes telepítő</footer>
+ <footer class="border-top mt-5 pt-4 small text-body-secondary">Webadmin · Webes telepítő</footer>
 </main></body></html>

@@ -2,12 +2,12 @@
 """Pure-FTPd external authentication and per-instance, expiring virtual accounts."""
 import contextlib,fcntl,hashlib,hmac,importlib.machinery,importlib.util,json,os,pwd,re,signal,subprocess,sys,time
 from pathlib import Path
-path=Path(__file__).resolve().parent/'gamedock-provision'
-if not path.is_file():path=Path('/usr/local/sbin/gamedock-provision')
+path=Path(__file__).resolve().parent/'webadmin-provision'
+if not path.is_file():path=Path('/usr/local/sbin/webadmin-provision')
 loader=importlib.machinery.SourceFileLoader('ftp_provision',str(path));spec=importlib.util.spec_from_loader(loader.name,loader);p=importlib.util.module_from_spec(spec);loader.exec_module(p)
-ROOT=Path('/etc/gamedock/ftp');RUN=Path('/run/gamedock-ftp');LOG=Path('/var/log/gamedock-ftp.log')
-CONTROL=Path('/run/gamedock-control')
-TTL=15*86400;SELF='/usr/local/sbin/gamedock-ftp'
+ROOT=Path('/etc/webadmin/ftp');RUN=Path('/run/webadmin-ftp');LOG=Path('/var/log/webadmin-ftp.log')
+CONTROL=Path('/run/webadmin-control')
+TTL=15*86400;SELF='/usr/local/sbin/webadmin-ftp'
 
 def read(path,default):
     try:p.secure(str(path));return json.loads(path.read_text())
@@ -34,7 +34,7 @@ def binding(server):return {key:server.get(key) for key in ('user','directory','
 def expires(record):return (record.get('last_login') or record['created_at'])+TTL
 
 def busy(unit):
-    job=read(Path('/var/lib/gamedock/automation/units')/unit/'job.json',{})
+    job=read(Path('/var/lib/webadmin/automation/units')/unit/'job.json',{})
     if job.get('state') in ('queued','running') or (job.get('operation')=='restore' and job.get('state')=='ready' and not job.get('reconciled')):return True
     cfg=p.config();key=cfg.get('_version_jobs',{}).get(unit)
     return bool(key and p.read_job(key).get('state') in ('queued','running'))

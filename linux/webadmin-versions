@@ -2,10 +2,10 @@
 """Offline Minecraft version replacement with a complete instance backup."""
 import base64,fcntl,importlib.machinery,importlib.util,json,os,pwd,re,shutil,subprocess,sys
 from pathlib import Path
-path=Path(__file__).resolve().parent/'gamedock-provision'
-if not path.exists():path=Path('/usr/local/sbin/gamedock-provision')
+path=Path(__file__).resolve().parent/'webadmin-provision'
+if not path.exists():path=Path('/usr/local/sbin/webadmin-provision')
 loader=importlib.machinery.SourceFileLoader('provision',str(path));spec=importlib.util.spec_from_loader(loader.name,loader);p=importlib.util.module_from_spec(spec);loader.exec_module(p)
-SELF='/usr/local/sbin/gamedock-versions';CONTROL='/run/gamedock-control';CATALOG='/var/lib/gamedock/minecraft/catalog.json'
+SELF='/usr/local/sbin/webadmin-versions';CONTROL='/run/webadmin-control';CATALOG='/var/lib/webadmin/minecraft/catalog.json'
 
 def unit_lock(unit,wait=True):
     os.makedirs(CONTROL,mode=0o700,exist_ok=True);p.secure(CONTROL,True)
@@ -39,7 +39,7 @@ def create(payload):
     p.prepare()
     with unit_lock(unit,False),create_lock():
         cfg=p.config();server=cfg[unit];account=pwd.getpwnam(server['user'])
-        maintenance=Path('/var/lib/gamedock/automation/units')/unit/'job.json'
+        maintenance=Path('/var/lib/webadmin/automation/units')/unit/'job.json'
         if maintenance.exists():
             maintenance_job=json.loads(maintenance.read_text())
             if maintenance_job.get('state') in ('queued','running') or (maintenance_job.get('operation')=='restore' and maintenance_job.get('state')=='ready' and not maintenance_job.get('reconciled')):raise ValueError('Backup or restore is running')
@@ -70,12 +70,12 @@ def create(payload):
         if source.is_symlink() or not source.is_dir() or source.resolve()!=source or not source.resolve().is_relative_to(root.resolve()) or str(source)!=row['path']:raise ValueError('Unsafe template path')
         target=Path(server['directory']);base=Path(cfg['_provision']['target_root'])
         if target.parent!=base or target.is_symlink() or not target.is_dir():raise ValueError('Unsafe instance path')
-        backup_base=base/'.gamedock-backups';backup_base.mkdir(mode=0o711,exist_ok=True);p.secure(backup_base,True)
+        backup_base=base/'.webadmin-backups';backup_base.mkdir(mode=0o711,exist_ok=True);p.secure(backup_base,True)
         owner_backup=backup_base/unit;owner_backup.mkdir(mode=0o711,exist_ok=True);p.secure(owner_backup,True)
-        stage=base/('.gamedock-version-'+job_id);stage.mkdir(mode=0o700);os.chown(stage,account.pw_uid,account.pw_gid)
+        stage=base/('.webadmin-version-'+job_id);stage.mkdir(mode=0o700);os.chown(stage,account.pw_uid,account.pw_gid)
         job={'reinstall':reinstall,'settings':{'game':server['game'],'port':server['port'],'minecraft':minecraft,'eula':minecraft},'operation':'version','unit':unit,'source':str(source),'target':str(target),'backup':str(owner_backup/job_id),'stage':str(stage),'user':server['user'],'template':row,'state':'queued','message':'A verzióváltás előkészítése elindult.'}
-        ftp_path=Path(__file__).resolve().parent/'gamedock-ftp'
-        if not ftp_path.exists():ftp_path=Path('/usr/local/sbin/gamedock-ftp')
+        ftp_path=Path(__file__).resolve().parent/'webadmin-ftp'
+        if not ftp_path.exists():ftp_path=Path('/usr/local/sbin/webadmin-ftp')
         ftp_loader=importlib.machinery.SourceFileLoader('version_ftp',str(ftp_path));ftp_spec=importlib.util.spec_from_loader(ftp_loader.name,ftp_loader);ftp=importlib.util.module_from_spec(ftp_spec);ftp_loader.exec_module(ftp);ftp.disconnect_unit(unit)
         p.atomic(p.job_path(job_id),job);cfg.setdefault('_version_jobs',{})[unit]=job_id;p.atomic(p.CONFIG,cfg)
         try:
@@ -92,7 +92,7 @@ def copy(source,current,stage,reinstall=False,settings=None):
         if settings:p.configure(stage,settings)
         return
     p.copy_files(current,stage)
-    preserved={'server.properties','eula.txt','server.cfg','ops.json','whitelist.json','banned-players.json','banned-ips.json','.gamedock-ports.json'}
+    preserved={'server.properties','eula.txt','server.cfg','ops.json','whitelist.json','banned-players.json','banned-ips.json','.webadmin-ports.json'}
     for directory,dirs,files in os.walk(source,followlinks=False):
         for name in dirs+files:
             entry=Path(directory)/name

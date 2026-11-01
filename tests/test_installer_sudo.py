@@ -2,7 +2,7 @@ import importlib.machinery
 import importlib.util
 import unittest
 
-loader=importlib.machinery.SourceFileLoader('gamedock_installer','linux/install.py')
+loader=importlib.machinery.SourceFileLoader('webadmin_installer','linux/install.py')
 spec=importlib.util.spec_from_loader(loader.name,loader)
 installer=importlib.util.module_from_spec(spec);loader.exec_module(installer)
 

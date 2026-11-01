@@ -9,7 +9,7 @@ function rejected(callable $action, string $message): void {
 }
 $input=['db_host'=>'localhost','db_port'=>'3306','db_name'=>'test','db_user'=>'test', 'db_password'=>'',
     'admin_email'=>'owner@example.com','admin_password'=>'A-strong-password-123','admin_password_confirm'=>'A-strong-password-123'];
-$installer=new GameDock\Installer(dirname(__DIR__));
+$installer=new Webadmin\Installer(dirname(__DIR__));
 ensure($installer->validate($input)['node']===null,'Optional node should not be required');
 foreach ([['db_host'=>'x;dbname=other'], ['db_port'=>'65536'], ['db_name'=>'db;host=x'],
     ['admin_email'=>'bad'], ['admin_password_confirm'=>'different'], ['admin_password'=>'short'],
@@ -25,12 +25,12 @@ echo "10 installer validation checks passed.\n";
 if (!getenv('TEST_MYSQL_HOST')) { echo "MySQL integration checks not run (TEST_MYSQL_HOST not set).\n"; exit; }
 $host=getenv('TEST_MYSQL_HOST'); $password=getenv('TEST_MYSQL_PASSWORD');
 $admin=new PDO('mysql:host='.$host.';charset=utf8mb4','root',$password,[PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION]);
-$database='gamedock_test_'.bin2hex(random_bytes(5));
+$database='webadmin_test_'.bin2hex(random_bytes(5));
 $directory=sys_get_temp_dir().'/'.$database;
 mkdir($directory.'/config',0700,true);mkdir($directory.'/var/smarty/compile',0700,true);mkdir($directory.'/database',0700,true);
 copy(dirname(__DIR__).'/database/schema.sql',$directory.'/database/schema.sql');
 $admin->exec('CREATE DATABASE `'.$database.'`');
-$test=new GameDock\Installer($directory);
+$test=new Webadmin\Installer($directory);
 $valid=array_replace($input,$node,['db_host'=>$host,'db_name'=>$database,'db_user'=>'root','db_password'=>$password]);
 try {
     rejected(fn()=>$test->install(array_replace($valid,['db_password'=>'invalid-test-password'])), 'Bad credentials accepted');
@@ -52,7 +52,7 @@ try {
     ensure((int)$user['is_admin']===1 && password_verify($valid['admin_password'],$user['password_hash']),'Admin creation failed');
     ensure((int)$admin->query('SELECT COUNT(*) FROM nodes')->fetchColumn()===1,'First node missing');
     ensure((int)$admin->query('SELECT COUNT(*) FROM servers')->fetchColumn()===0,'Installer should leave server creation to admin');
-    ensure((int)$admin->query('SELECT COUNT(*) FROM game_types')->fetchColumn()===count(GameDock\Validation::GAMES),'Default game profiles missing');
+    ensure((int)$admin->query('SELECT COUNT(*) FROM game_types')->fetchColumn()===count(Webadmin\Validation::GAMES),'Default game profiles missing');
     rejected(fn()=>$test->install($valid),'Reinstallation allowed');
     ensure((int)$admin->query('SELECT COUNT(*) FROM users')->fetchColumn()===1,'Reinstallation changed users');
     // Remove only fixture config to test nonempty database guard.

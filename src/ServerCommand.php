@@ -1,6 +1,6 @@
 <?php
 declare(strict_types=1);
-namespace GameDock;
+namespace Webadmin;
 use RuntimeException;
 final class ServerCommand
 {
@@ -21,7 +21,7 @@ final class ServerCommand
             if (!preg_match('/\A25[0-9]{3}\z/',$port)) throw new RuntimeException('Érvénytelen játékport.');
             $settings['port']=(int)$port;
         }
-        $command='/usr/bin/sudo -n /usr/local/sbin/gamedock-launch '.escapeshellarg($unitName).' '.$action;
+        $command='/usr/bin/sudo -n /usr/local/sbin/webadmin-launch '.escapeshellarg($unitName).' '.$action;
         if (in_array($action,['start','restart'],true)) $command.=' '.escapeshellarg(base64_encode($startup)).' '.escapeshellarg(base64_encode(json_encode($settings,JSON_THROW_ON_ERROR)));
         if ($action==='command') $command.=' '.escapeshellarg(base64_encode($input));
         return $command;

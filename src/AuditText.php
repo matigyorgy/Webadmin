@@ -1,6 +1,6 @@
 <?php
 declare(strict_types=1);
-namespace GameDock;
+namespace Webadmin;
 final class AuditText
 {
     public static function rows(array $rows): array

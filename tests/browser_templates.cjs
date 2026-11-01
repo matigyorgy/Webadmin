@@ -1,7 +1,7 @@
 // Runs only against the isolated 70-template fixture; no upstream game artifacts are downloaded.
 const {chromium}=require('playwright');
 (async()=>{
- const base=process.env.GAMEDOCK_TEST_URL;
+ const base=process.env.WEBADMIN_TEST_URL;
  if(!base || !['127.0.0.1','localhost'].includes(new URL(base).hostname))throw Error('Loopback fixture URL required');
  const browser=await chromium.launch({executablePath:'/usr/bin/chromium',headless:true,args:['--no-sandbox','--disable-dev-shm-usage']});
  const admin=await browser.newPage({viewport:{width:1440,height:1000}}),client=await browser.newPage();
@@ -31,8 +31,8 @@ const {chromium}=require('playwright');
  await client.selectOption('#version-choice','spigot:1.21.8:template-test');await client.locator('#version-form button').click();await client.waitForFunction(()=>document.querySelector('[data-current-version]').textContent.includes('spigot · 1.21.8'),null,{timeout:45000});
  await client.selectOption('#version-choice','paper:1.21.9:template-test');await client.check('[name=confirm_reinstall]');await client.locator('#version-form button').click();await client.waitForFunction(()=>document.querySelector('[data-current-version]').textContent.includes('paper · 1.21.9'),null,{timeout:45000});
  if(!await client.locator('[data-platform-version]').first().textContent().then(t=>t.includes('Paper 1.21.9')))throw Error('Overview version label stale');
- await admin.goto(base+'/admin.php?section=templates&node=1');await admin.screenshot({path:'/tmp/gamedock-template-admin.png',fullPage:true});
- await client.screenshot({path:'/tmp/gamedock-template-client.png',fullPage:true});
+ await admin.goto(base+'/admin.php?section=templates&node=1');await admin.screenshot({path:'/tmp/webadmin-template-admin.png',fullPage:true});
+ await client.screenshot({path:'/tmp/webadmin-template-client.png',fullPage:true});
  if(failures.length)throw Error(failures.join('\n'));
  await browser.close();console.log('Seven categories × ten releases, real online rejection, minimum-memory backend enforcement, confirmation enforcement, cross-type replacement and clean reinstall passed.');
 })().catch(error=>{console.error(error);process.exit(1);});

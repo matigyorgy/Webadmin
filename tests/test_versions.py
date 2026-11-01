@@ -2,7 +2,7 @@ import contextlib,importlib.machinery,importlib.util,json,tempfile,unittest
 from pathlib import Path
 from unittest.mock import patch
 from types import SimpleNamespace
-loader=importlib.machinery.SourceFileLoader('versions_helper','linux/gamedock-versions');spec=importlib.util.spec_from_loader(loader.name,loader);v=importlib.util.module_from_spec(spec);loader.exec_module(v)
+loader=importlib.machinery.SourceFileLoader('versions_helper','linux/webadmin-versions');spec=importlib.util.spec_from_loader(loader.name,loader);v=importlib.util.module_from_spec(spec);loader.exec_module(v)
 
 class VersionTests(unittest.TestCase):
  def test_version_copy_preserves_world_and_configuration(self):

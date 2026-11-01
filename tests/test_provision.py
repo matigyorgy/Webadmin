@@ -7,7 +7,7 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
 
-loader=importlib.machinery.SourceFileLoader('provision_helper','linux/gamedock-provision')
+loader=importlib.machinery.SourceFileLoader('provision_helper','linux/webadmin-provision')
 spec=importlib.util.spec_from_loader(loader.name,loader)
 provision=importlib.util.module_from_spec(spec);loader.exec_module(provision)
 
@@ -104,7 +104,7 @@ class ProvisionTests(unittest.TestCase):
             provision.configure(root,{'game':'fivem','port':25556,'slot_limit':12,'reconfigure':True})
             self.assertIn('sv_maxClients 12',(root/'server.cfg').read_text());self.assertNotIn('sv_maxClients 32',(root/'server.cfg').read_text())
     def test_port_manifest_escape_rejected(self):
-        root=self.root/'instance';root.mkdir();(root/'.gamedock-ports.json').write_text('{"port":25000,"files":["../outside/secret.cfg"]}')
+        root=self.root/'instance';root.mkdir();(root/'.webadmin-ports.json').write_text('{"port":25000,"files":["../outside/secret.cfg"]}')
         with patch.object(provision.os,'geteuid',return_value=1001):
             with self.assertRaises(ValueError):provision.configure(root,{'game':'custom','port':25555,'reconfigure':True})
 

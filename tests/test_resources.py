@@ -20,7 +20,7 @@ class ResourceTests(unittest.TestCase):
         # A regular-file model verifies exact kernel interface values without changing the host.
         with tempfile.TemporaryDirectory() as folder,patch.object(runtime,'CGROUP_ROOT',folder):
             root=Path(folder);(root/'cgroup.controllers').write_text('cpu memory io pids');(root/'cgroup.subtree_control').touch()
-            parent=root/'gamedock';parent.mkdir();(parent/'cgroup.subtree_control').touch()
+            parent=root/'webadmin';parent.mkdir();(parent/'cgroup.subtree_control').touch()
             group=Path(runtime.cgroup_path('test'));group.mkdir()
             for name in ('cgroup.procs','memory.max','memory.swap.max','cpu.max','memory.oom.group'):(group/name).touch()
             real_stat=Path.stat
@@ -46,7 +46,7 @@ class ResourceTests(unittest.TestCase):
             self.assertGreaterEqual(cpu,0);self.assertGreater(memory,0);self.assertFalse(enforced)
             self.assertEqual(runtime.usage_snapshot('test',[dict(record,start='wrong')]),(0,0,False))
     def test_cgroup_name_is_opaque(self):
-        self.assertTrue(runtime.cgroup_path('../../escape').startswith(runtime.CGROUP_ROOT+'/gamedock/'))
+        self.assertTrue(runtime.cgroup_path('../../escape').startswith(runtime.CGROUP_ROOT+'/webadmin/'))
         self.assertNotIn('..',runtime.cgroup_path('../../escape'))
 
 if __name__=='__main__':unittest.main()

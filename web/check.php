@@ -7,7 +7,7 @@ header('X-Content-Type-Options: nosniff');
 $session = @session_start();
 if ($session) session_write_close();
 $root = dirname(__DIR__);
-echo "GameDock — indulási ellenőrzés\n\n";
+echo "Webadmin — indulási ellenőrzés\n\n";
 echo 'Webes PHP-verzió: '.PHP_VERSION."\n";
 echo 'PHP 8.2+: '.(version_compare(PHP_VERSION, '8.2.0', '>=') ? 'OK' : 'HIÁNYZIK')."\n";
 echo 'PDO MySQL: '.(extension_loaded('pdo_mysql') ? 'OK' : 'HIÁNYZIK')."\n";

@@ -1,14 +1,14 @@
 <?php
 declare(strict_types=1);
 require dirname(__DIR__) . '/bootstrap.php';
-GameDock\WebSession::start();
-if (!GameDock\Config::installed()) {
+Webadmin\WebSession::start();
+if (!Webadmin\Config::installed()) {
     header('Location: /install.php');
     exit;
 }
-$controller = new GameDock\PanelController(
-    new GameDock\Database(),
-    new GameDock\SshClient(),
-    new GameDock\SmartyView(dirname(__DIR__))
+$controller = new Webadmin\PanelController(
+    new Webadmin\Database(),
+    new Webadmin\SshClient(),
+    new Webadmin\SmartyView(dirname(__DIR__))
 );
 $controller->handle();

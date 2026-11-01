@@ -38,7 +38,7 @@ CGROUP_ROOT='/sys/fs/cgroup'
 
 def cgroup_path(name):
     import hashlib
-    return os.path.join(CGROUP_ROOT,'gamedock',hashlib.sha256(name.encode()).hexdigest())
+    return os.path.join(CGROUP_ROOT,'webadmin',hashlib.sha256(name.encode()).hexdigest())
 
 def limits_payload(payload):
     import base64
@@ -60,7 +60,7 @@ def prepare_cgroup(name,limits):
     from pathlib import Path
     memory=limits.get('memory_limit_mb',0);cpu=limits.get('cpu_limit_percent',0)
     try:
-        root=Path(CGROUP_ROOT);parent=root/'gamedock'
+        root=Path(CGROUP_ROOT);parent=root/'webadmin'
         available=(root/'cgroup.controllers').read_text().split()
         if not {'cpu','memory'}.issubset(available):raise ValueError('CPU/memory cgroup v2 controllers unavailable')
         # Enable only the two controllers required by the panel.

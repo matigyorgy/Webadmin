@@ -1,6 +1,6 @@
 <?php
 declare(strict_types=1);
-namespace GameDock;
+namespace Webadmin;
 use phpseclib3\Net\SSH2;
 use phpseclib3\Crypt\PublicKeyLoader;
 use RuntimeException;
@@ -55,7 +55,7 @@ PYTHON;
     public function templates(array $node,string $action,string $key=''): array
     {
         if(!in_array($action,['catalog','sync','delete','custom-save','releases','install','steam-install'],true))throw new RuntimeException('Ismeretlen katalógusművelet.');
-        $ssh=$this->connect($node);$ssh->enableQuietMode();if($action==='releases')$ssh->setTimeout(60);$output=$ssh->exec('/usr/bin/sudo -n /usr/local/sbin/gamedock-templates '.$action.(in_array($action,['delete','custom-save','releases','install','steam-install'],true) ? ' '.escapeshellarg($key) : ''));
+        $ssh=$this->connect($node);$ssh->enableQuietMode();if($action==='releases')$ssh->setTimeout(60);$output=$ssh->exec('/usr/bin/sudo -n /usr/local/sbin/webadmin-templates '.$action.(in_array($action,['delete','custom-save','releases','install','steam-install'],true) ? ' '.escapeshellarg($key) : ''));
         return TemplateCommandResult::parse($output,$ssh->getExitStatus(),(string)$ssh->getStdError(),$ssh->isTimeout());
     }
     public function storage(array $server,int $limit): array
@@ -68,7 +68,7 @@ PYTHON;
         if(!in_array($action,['list','create','delete'],true) || !preg_match('/\A[A-Za-z0-9_][A-Za-z0-9_-]*(?:\.service)?\z/',$server['unit_name']))throw new RuntimeException('Érvénytelen FTP-művelet.');
         $ssh=$this->connect($server);$ssh->enableQuietMode();$ssh->setTimeout(20);
         // No PTY; the secret travels only through the SSH channel's stdin, never process arguments.
-        if(!$ssh->exec('/usr/bin/sudo -n /usr/local/sbin/gamedock-ftp '.$action.' '.escapeshellarg($server['unit_name']),false))throw new RuntimeException('Az FTP-segédprogram nem indult el.');
+        if(!$ssh->exec('/usr/bin/sudo -n /usr/local/sbin/webadmin-ftp '.$action.' '.escapeshellarg($server['unit_name']),false))throw new RuntimeException('Az FTP-segédprogram nem indult el.');
         if(in_array($action,['create','delete'],true))$ssh->write(json_encode($payload,JSON_THROW_ON_ERROR),SSH2::CHANNEL_EXEC);
         $ssh->sendEOF(SSH2::CHANNEL_EXEC);$output='';
         while(true){
@@ -80,7 +80,7 @@ PYTHON;
         if($ssh->getExitStatus()!==0){
             $error=(string)$ssh->getStdError();
             foreach(['FTP username already in use'=>'Ez az FTP-felhasználónév ezen a Linux-gépen már foglalt.','FTP setup required'=>'A Linux-gépen még nincs beállítva a Pure-FTPd. Futtasd az Automatikus Linux-telepítést bekapcsolt csomagtelepítéssel.','Invalid FTP username'=>'Érvénytelen FTP-felhasználónév.','Invalid FTP password'=>'Érvénytelen FTP-jelszó.'] as $needle=>$message)if(str_contains($error,$needle))throw new RuntimeException($message);
-            throw new RuntimeException('Az FTP-szolgáltatás nem érhető el. Ellenőrizd a Pure-FTPd telepítését, a Linux-segédprogramot és a gép gamedock-ftp.log naplóját.');
+            throw new RuntimeException('Az FTP-szolgáltatás nem érhető el. Ellenőrizd a Pure-FTPd telepítését, a Linux-segédprogramot és a gép webadmin-ftp.log naplóját.');
         }
         return json_decode($output,true,512,JSON_THROW_ON_ERROR);
     }
@@ -88,7 +88,7 @@ PYTHON;
     {
         if(!in_array($action,['list','schedule_add','schedule_delete','backup','restore','backup_delete','ack_restore','policy','clear_schedules'],true) || !preg_match('/\A[A-Za-z0-9_][A-Za-z0-9_-]*(?:\.service)?\z/',$server['unit_name']))throw new RuntimeException('Érvénytelen időzítési művelet.');
         $ssh=$this->connect($server);$ssh->enableQuietMode();$ssh->setTimeout(20);
-        $output=$ssh->exec('/usr/bin/sudo -n /usr/local/sbin/gamedock-automation '.$action.' '.escapeshellarg($server['unit_name']).' '.escapeshellarg(base64_encode(json_encode($payload,JSON_THROW_ON_ERROR))));
+        $output=$ssh->exec('/usr/bin/sudo -n /usr/local/sbin/webadmin-automation '.$action.' '.escapeshellarg($server['unit_name']).' '.escapeshellarg(base64_encode(json_encode($payload,JSON_THROW_ON_ERROR))));
         if($output===false || $ssh->isTimeout() || $ssh->getExitStatus()!==0){
             $error=(string)$ssh->getStdError();
             foreach(['Cron service is not running'=>'A Linux-gépen nem fut az időzítő szolgáltatás. Az admin indítsa el a cron szolgáltatást vagy futtassa újra a Linux-telepítést.','Restore confirmation required'=>'A visszaállításhoz megerősítés szükséges.','Stop the server before restoring'=>'Visszaállítás előtt állítsd le a szervert.','Another automation job'=>'Ezen a szerveren már fut egy mentési vagy vezérlési feladat.','Version change is running'=>'A verzióváltás befejezése után próbáld újra.','Choose a future time'=>'Válassz jövőbeli időpontot.','daylight saving time'=>'Ez a helyi időpont az óraátállítás miatt nem létezik.','Maximum 100 backups'=>'Elérted a 100 mentéses korlátot. Törölj régi mentéseket.'] as $needle=>$message)if(str_contains($error,$needle))throw new RuntimeException($message);
@@ -101,7 +101,7 @@ PYTHON;
         if(!in_array($action,['create','status'],true) || !preg_match('/\A[a-f0-9]{32}\z/',(string)($payload['job'] ?? ''))) throw new RuntimeException('Érvénytelen verzióváltási művelet.');
         $argument=$action==='status' ? $payload['job'] : base64_encode(json_encode($payload,JSON_THROW_ON_ERROR));
         $ssh=$this->connect($server);$ssh->enableQuietMode();
-        $output=$ssh->exec('/usr/bin/sudo -n /usr/local/sbin/gamedock-versions '.$action.' '.escapeshellarg($argument));
+        $output=$ssh->exec('/usr/bin/sudo -n /usr/local/sbin/webadmin-versions '.$action.' '.escapeshellarg($argument));
         if($output===false || $ssh->isTimeout() || $ssh->getExitStatus()===null) throw new RuntimeException('A verzióváltás Linux-válasza nem igazolt. Ellenőrizd az SSH-kapcsolatot.');
         if($ssh->getExitStatus()!==0) throw new RuntimeException('A Linux-gép elutasította a verzióváltási műveletet. A szerver legyen leállítva, a sablon kész állapotú, és a friss Linux-segédprogramok legyenek telepítve.',422);
         return json_decode($output,true,512,JSON_THROW_ON_ERROR);
@@ -113,7 +113,7 @@ PYTHON;
         if (!preg_match('/\A[a-f0-9]{32}\z/',$job)) throw new RuntimeException('Érvénytelen másolási azonosító.');
         $argument=$action==='status' ? $job : base64_encode(json_encode($payload,JSON_THROW_ON_ERROR));
         $ssh=$this->connect($node);
-        $output=$ssh->exec('/usr/bin/sudo -n /usr/local/sbin/gamedock-provision '.$action.' '.escapeshellarg($argument));
+        $output=$ssh->exec('/usr/bin/sudo -n /usr/local/sbin/webadmin-provision '.$action.' '.escapeshellarg($argument));
         $exit=$ssh->getExitStatus();
         if ($output!==false && is_int($exit) && $exit!==0) {
             $detail=trim((string)$ssh->getStdError());

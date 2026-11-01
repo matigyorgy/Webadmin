@@ -16,14 +16,14 @@ import tempfile
 import signal
 import sys
 
-CONFIG=Path('/etc/gamedock/servers.json')
+CONFIG=Path('/etc/webadmin/servers.json')
 
 def safe(path):
     info=path.lstat()
     if stat.S_ISLNK(info.st_mode) or info.st_uid!=0 or info.st_mode & (stat.S_IWGRP|stat.S_IWOTH):raise ValueError('Unsafe root-owned path: '+str(path))
 
 def save(path,data,mode):
-    descriptor,temporary=tempfile.mkstemp(dir=path.parent,prefix='.gamedock-')
+    descriptor,temporary=tempfile.mkstemp(dir=path.parent,prefix='.webadmin-')
     try:
         with os.fdopen(descriptor,'wb') as stream:stream.write(data)
         os.chmod(temporary,mode);os.replace(temporary,path)
@@ -50,7 +50,7 @@ def install(args):
     if not hasattr(os,'pidfd_open') or not hasattr(signal,'pidfd_send_signal'):raise ValueError('Python 3.9+ and Linux pidfd support required')
     descriptor=os.pidfd_open(os.getpid());os.close(descriptor)
     account=ensure_user(args.ssh_user)
-    for folder in (Path('/etc/gamedock'),Path('/usr/local/libexec'),Path('/usr/local/sbin')):
+    for folder in (Path('/etc/webadmin'),Path('/usr/local/libexec'),Path('/usr/local/sbin')):
         folder.mkdir(parents=True,exist_ok=True);safe(folder)
     with open(str(CONFIG)+'.lock','a') as lock:
         fcntl.flock(lock,fcntl.LOCK_EX)
@@ -66,27 +66,27 @@ def install(args):
         if str(source) in dangerous or str(target) in dangerous:raise ValueError('Choose dedicated game directories, not a system directory')
         previous_source=Path(old.get('source_root',str(source)))
         if previous_source!=source and previous_source.is_dir() and not previous_source.is_symlink():
-            catalog_file=Path('/var/lib/gamedock/minecraft/catalog.json')
+            catalog_file=Path('/var/lib/webadmin/minecraft/catalog.json')
             if catalog_file.exists() and json.loads(catalog_file.read_text()).get('state')=='running':raise ValueError('Wait for Minecraft synchronization before moving templates')
             for job_id in list(cfg.get('_copy_jobs',{}).values())+list(cfg.get('_version_jobs',{}).values()):
-                job_file=Path('/var/lib/gamedock/provision/jobs')/(job_id+'.json')
+                job_file=Path('/var/lib/webadmin/provision/jobs')/(job_id+'.json')
                 if job_file.exists() and json.loads(job_file.read_text()).get('state') in ('queued','running'):raise ValueError('Wait for active server copies/version changes before moving templates')
             safe(previous_source)
             if source.exists():
                 if any(source.iterdir()):raise ValueError('Both old and new template roots contain files; automatic merge would overwrite templates')
                 source.rmdir()
-            if target.exists() and str(target) in ('/home/gamedock','/home/webadmin/servers') and target.stat().st_uid==account.pw_uid:os.chown(target,0,0);os.chmod(target,0o755)
+            if target.exists() and str(target)=='/home/webadmin/servers' and target.stat().st_uid==account.pw_uid:os.chown(target,0,0);os.chmod(target,0o755)
             source.parent.mkdir(parents=True,exist_ok=True)
             shutil.move(str(previous_source),str(source))
             # Existing Java launch paths keep working after the relocation.
             previous_source.symlink_to(source,target_is_directory=True)
-            catalog=Path('/var/lib/gamedock/minecraft/catalog.json')
+            catalog=Path('/var/lib/webadmin/minecraft/catalog.json')
             if catalog.exists():save(catalog,catalog.read_text().replace(str(previous_source),str(source)).encode(),0o600)
         elif previous_source!=source and previous_source.is_symlink() and previous_source.resolve()==source:
             previous_source.unlink()
         for folder in (target,source):
             if not folder.exists():folder.mkdir(parents=True,mode=0o755);os.chmod(folder,0o755)
-            if folder==target and str(folder) in ('/home/gamedock','/home/webadmin/servers') and folder.stat().st_uid==account.pw_uid:
+            if folder==target and str(folder)=='/home/webadmin/servers' and folder.stat().st_uid==account.pw_uid:
                 os.chown(folder,0,0);os.chmod(folder,0o755)
             safe(folder)
         if source.resolve()!=source or target.resolve()!=target or source!=Path('/home/webadmin/templates'):raise ValueError('Templates must use the protected /home/webadmin/templates directory')
@@ -98,13 +98,13 @@ def install(args):
         cfg['_provision']={'source_root':str(source),'target_root':str(target),'users':users,'allow_custom_games':True}
         save(CONFIG,(json.dumps(cfg,indent=2)+'\n').encode(),0o600)
     root=Path(__file__).resolve().parent
-    for name,destination in [('gamedock-storage','/usr/local/sbin/gamedock-storage'),('gamedock-ftp','/usr/local/sbin/gamedock-ftp'),('gamedock-automation','/usr/local/sbin/gamedock-automation'),('gamedock-versions','/usr/local/sbin/gamedock-versions'),('gamedock-provision','/usr/local/sbin/gamedock-provision'),('gamedock-launch','/usr/local/sbin/gamedock-launch'),('gamedock_runtime.py','/usr/local/libexec/gamedock_runtime.py'),('gamedock-templates','/usr/local/sbin/gamedock-templates'),('gamedock-runner','/usr/local/libexec/gamedock-runner')]:
+    for name,destination in [('webadmin-storage','/usr/local/sbin/webadmin-storage'),('webadmin-ftp','/usr/local/sbin/webadmin-ftp'),('webadmin-automation','/usr/local/sbin/webadmin-automation'),('webadmin-versions','/usr/local/sbin/webadmin-versions'),('webadmin-provision','/usr/local/sbin/webadmin-provision'),('webadmin-launch','/usr/local/sbin/webadmin-launch'),('webadmin_runtime.py','/usr/local/libexec/webadmin_runtime.py'),('webadmin-templates','/usr/local/sbin/webadmin-templates'),('webadmin-runner','/usr/local/libexec/webadmin-runner')]:
         save(Path(destination),(root/name).read_bytes(),0o755)
     cron=next((path for path in ('/usr/sbin/cron','/usr/sbin/crond') if Path(path).is_file()),None)
     if not cron or not Path('/usr/sbin/service').is_file():raise ValueError('A running cron service is required; install cron and tzdata before setup')
     cron_dir=Path('/etc/cron.d');cron_dir.mkdir(exist_ok=True);safe(cron_dir)
-    save(cron_dir/'gamedock-automation',b'SHELL=/bin/sh\nPATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\n* * * * * root /usr/bin/python3 -I /usr/local/sbin/gamedock-automation tick >> /var/log/gamedock-automation.log 2>&1\n* * * * * root /usr/bin/python3 -I /usr/local/sbin/gamedock-ftp maintain >> /var/log/gamedock-automation.log 2>&1\n',0o644)
-    log=Path('/var/log/gamedock-automation.log')
+    save(cron_dir/'webadmin-automation',b'SHELL=/bin/sh\nPATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\n* * * * * root /usr/bin/python3 -I /usr/local/sbin/webadmin-automation tick >> /var/log/webadmin-automation.log 2>&1\n* * * * * root /usr/bin/python3 -I /usr/local/sbin/webadmin-ftp maintain >> /var/log/webadmin-automation.log 2>&1\n',0o644)
+    log=Path('/var/log/webadmin-automation.log')
     if not log.exists():
         descriptor=os.open(log,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600);os.close(descriptor)
     subprocess.run(['/usr/sbin/service',Path(cron).name,'start'],check=True,capture_output=True,timeout=20)
@@ -112,24 +112,24 @@ def install(args):
     sudo_info=subprocess.run(['sudo','--version'],capture_output=True,text=True,check=False)
     sudo_version=(sudo_info.stdout or '')+' '+(sudo_info.stderr or '')
     ftp_tag=ftp_sudo_input_tag(sudo_version)
-    sudoers=(args.ssh_user+' ALL=(root) NOPASSWD: /usr/local/sbin/gamedock-versions create *\n'+args.ssh_user+' ALL=(root) NOPASSWD: /usr/local/sbin/gamedock-versions status *\n'+args.ssh_user+' ALL=(root) NOPASSWD: /usr/local/sbin/gamedock-provision create *\n'+
-             args.ssh_user+' ALL=(root) NOPASSWD: /usr/local/sbin/gamedock-provision status *\n'+
-             args.ssh_user+' ALL=(root) NOPASSWD: '+ftp_tag+'/usr/local/sbin/gamedock-ftp list *, /usr/local/sbin/gamedock-ftp create *, /usr/local/sbin/gamedock-ftp delete *\n'+args.ssh_user+' ALL=(root) NOPASSWD: /usr/local/sbin/gamedock-automation list *, /usr/local/sbin/gamedock-automation schedule_add *, /usr/local/sbin/gamedock-automation schedule_delete *, /usr/local/sbin/gamedock-automation backup *, /usr/local/sbin/gamedock-automation restore *, /usr/local/sbin/gamedock-automation backup_delete *, /usr/local/sbin/gamedock-automation ack_restore *, /usr/local/sbin/gamedock-automation policy *, /usr/local/sbin/gamedock-automation clear_schedules *\n'+args.ssh_user+' ALL=(root) NOPASSWD: /usr/local/sbin/gamedock-launch *\n'+args.ssh_user+' ALL=(root) NOPASSWD: /usr/local/sbin/gamedock-templates catalog\n'+args.ssh_user+' ALL=(root) NOPASSWD: /usr/local/sbin/gamedock-templates sync\n'+args.ssh_user+' ALL=(root) NOPASSWD: /usr/local/sbin/gamedock-templates delete *, /usr/local/sbin/gamedock-templates releases *, /usr/local/sbin/gamedock-templates install *, /usr/local/sbin/gamedock-templates custom-save *, /usr/local/sbin/gamedock-templates steam-install *\n')
+    sudoers=(args.ssh_user+' ALL=(root) NOPASSWD: /usr/local/sbin/webadmin-versions create *\n'+args.ssh_user+' ALL=(root) NOPASSWD: /usr/local/sbin/webadmin-versions status *\n'+args.ssh_user+' ALL=(root) NOPASSWD: /usr/local/sbin/webadmin-provision create *\n'+
+             args.ssh_user+' ALL=(root) NOPASSWD: /usr/local/sbin/webadmin-provision status *\n'+
+             args.ssh_user+' ALL=(root) NOPASSWD: '+ftp_tag+'/usr/local/sbin/webadmin-ftp list *, /usr/local/sbin/webadmin-ftp create *, /usr/local/sbin/webadmin-ftp delete *\n'+args.ssh_user+' ALL=(root) NOPASSWD: /usr/local/sbin/webadmin-automation list *, /usr/local/sbin/webadmin-automation schedule_add *, /usr/local/sbin/webadmin-automation schedule_delete *, /usr/local/sbin/webadmin-automation backup *, /usr/local/sbin/webadmin-automation restore *, /usr/local/sbin/webadmin-automation backup_delete *, /usr/local/sbin/webadmin-automation ack_restore *, /usr/local/sbin/webadmin-automation policy *, /usr/local/sbin/webadmin-automation clear_schedules *\n'+args.ssh_user+' ALL=(root) NOPASSWD: /usr/local/sbin/webadmin-launch *\n'+args.ssh_user+' ALL=(root) NOPASSWD: /usr/local/sbin/webadmin-templates catalog\n'+args.ssh_user+' ALL=(root) NOPASSWD: /usr/local/sbin/webadmin-templates sync\n'+args.ssh_user+' ALL=(root) NOPASSWD: /usr/local/sbin/webadmin-templates delete *, /usr/local/sbin/webadmin-templates releases *, /usr/local/sbin/webadmin-templates install *, /usr/local/sbin/webadmin-templates custom-save *, /usr/local/sbin/webadmin-templates steam-install *\n')
     folder=Path('/etc/sudoers.d');folder.mkdir(exist_ok=True);safe(folder)
-    descriptor,temporary=tempfile.mkstemp(dir=folder,prefix='gamedock-check-')
+    descriptor,temporary=tempfile.mkstemp(dir=folder,prefix='webadmin-check-')
     try:
         with os.fdopen(descriptor,'w') as stream:stream.write(sudoers)
         subprocess.run(['visudo','-cf',temporary],check=True,capture_output=True)
-        os.chmod(temporary,0o440);os.replace(temporary,folder/'gamedock-panel')
+        os.chmod(temporary,0o440);os.replace(temporary,folder/'webadmin-panel')
     finally:
         if os.path.exists(temporary):os.unlink(temporary)
     # Syntax alone is insufficient: a later sudoers rule can override this grant.
     try:
-        subprocess.run(['sudo','-n','-l','-U',args.ssh_user,'--','/usr/local/sbin/gamedock-templates','delete','gamedock-policy-check'],check=True,capture_output=True)
+        subprocess.run(['sudo','-n','-l','-U',args.ssh_user,'--','/usr/local/sbin/webadmin-templates','delete','webadmin-policy-check'],check=True,capture_output=True)
     except subprocess.CalledProcessError as error:
-        raise ValueError('The effective sudo policy denies gamedock-templates delete for '+args.ssh_user+'. Check conflicting sudoers rules; the helper has not been executed.') from error
+        raise ValueError('The effective sudo policy denies webadmin-templates delete for '+args.ssh_user+'. Check conflicting sudoers rules; the helper has not been executed.') from error
     if args.setup_ftp:
-        loader=importlib.machinery.SourceFileLoader('ftp_setup',str(root/'gamedock-ftp'));spec=importlib.util.spec_from_loader(loader.name,loader);ftp=importlib.util.module_from_spec(spec);loader.exec_module(ftp);ftp.install(args.ftp_host)
+        loader=importlib.machinery.SourceFileLoader('ftp_setup',str(root/'webadmin-ftp'));spec=importlib.util.spec_from_loader(loader.name,loader);ftp=importlib.util.module_from_spec(spec);loader.exec_module(ftp);ftp.install(args.ftp_host)
     ssh=Path(account.pw_dir)/'.ssh'
     if not ssh.exists():
         ssh.mkdir(mode=0o700);os.chown(ssh,account.pw_uid,account.pw_gid)

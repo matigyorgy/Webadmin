@@ -3,7 +3,7 @@ from types import SimpleNamespace
 import hashlib,importlib.machinery,importlib.util,io,tempfile,unittest,tarfile,os
 from pathlib import Path
 from unittest.mock import patch
-loader=importlib.machinery.SourceFileLoader('mc_templates','linux/gamedock-templates');spec=importlib.util.spec_from_loader(loader.name,loader);mc=importlib.util.module_from_spec(spec);loader.exec_module(mc)
+loader=importlib.machinery.SourceFileLoader('mc_templates','linux/webadmin-templates');spec=importlib.util.spec_from_loader(loader.name,loader);mc=importlib.util.module_from_spec(spec);loader.exec_module(mc)
 class MinecraftTests(unittest.TestCase):
  def test_builder_stage_uses_traversable_system_temp_and_game_owner(self):
   account=SimpleNamespace(pw_uid=1001,pw_gid=1002)

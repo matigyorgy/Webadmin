@@ -1,6 +1,6 @@
 <?php
 declare(strict_types=1);
-namespace GameDock;
+namespace Webadmin;
 use RuntimeException;
 final class ProvisionApiService
 {
@@ -140,7 +140,7 @@ final class ProvisionApiService
             if($server['provision_state']==='queued' && $action==='create')$result=$provision->enqueue($actor,$id);
             else $result=$provision->poll($actor,$id);
             if($result['state']==='ready')return ['status'=>201,'text'=>self::success($server)];
-            if($result['state']==='failed'){$log='/var/lib/gamedock/provision/jobs/'.$server['provision_job'].'.log';return ['status'=>422,'json'=>['state'=>'failed','message'=>($result['message'] ?: 'A Linux-oldali szerverlétrehozás nem sikerült.').' A szerver megmaradt. Frissítsd az érintett Linux-gép segédprogramjait, az adminfelületen nyisd meg ezt a szervert és kattints a „Másolási kérés újrapróbálása” gombra, majd ismételd meg ugyanazt az API-kérést. Részletes napló: '.$log,'server_id'=>$id,'job_id'=>$server['provision_job'],'log'=>$log]];}
+            if($result['state']==='failed'){$log='/var/lib/webadmin/provision/jobs/'.$server['provision_job'].'.log';return ['status'=>422,'json'=>['state'=>'failed','message'=>($result['message'] ?: 'A Linux-oldali szerverlétrehozás nem sikerült.').' A szerver megmaradt. Frissítsd az érintett Linux-gép segédprogramjait, az adminfelületen nyisd meg ezt a szervert és kattints a „Másolási kérés újrapróbálása” gombra, majd ismételd meg ugyanazt az API-kérést. Részletes napló: '.$log,'server_id'=>$id,'job_id'=>$server['provision_job'],'log'=>$log]];}
             return ['status'=>202,'json'=>['state'=>$result['state'],'request_id'=>$key,'message'=>'A szerver létrehozása folyamatban. Az állapot lekéréséhez használd a request_id értéket.']];
         }finally{$this->db->query('SELECT RELEASE_LOCK(?)',[$lock]);}
     }

@@ -6,7 +6,7 @@ STEP='Elokeszites'
 fail() {
  code=$?
  printf '{"state":"failed","message":"A Linux-telepítés nem sikerült. Lépés: %s. Kilépési kód: %s. A részletes napló lent olvasható."}\n' "$STEP" "$code" > setup-state.json
- printf '\nGameDock setup failed: step=%s exit=%s\n' "$STEP" "$code" >&2
+ printf '\nWebadmin setup failed: step=%s exit=%s\n' "$STEP" "$code" >&2
  exit "$code"
 }
 trap fail EXIT

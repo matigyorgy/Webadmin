@@ -19,8 +19,8 @@ def module(name,path):
     spec=importlib.util.spec_from_loader(name,loader)
     result=importlib.util.module_from_spec(spec);loader.exec_module(result);return result
 
-launch=module('launch_helper','linux/gamedock-launch')
-runner=module('game_runner','linux/gamedock-runner')
+launch=module('launch_helper','linux/webadmin-launch')
+runner=module('game_runner','linux/webadmin-runner')
 
 class LaunchTests(unittest.TestCase):
     def test_pid_identity(self):
@@ -46,7 +46,7 @@ class RunnerIntegration(unittest.TestCase):
             import shlex
             command=shlex.join([sys.executable,'-u',str(game)])
             output=open(Path(directory)/'output.log','wb')
-            process=subprocess.Popen([sys.executable,'linux/gamedock-runner','--socket',sock,'--command',base64.b64encode(command.encode()).decode()],stdout=output,stderr=subprocess.STDOUT)
+            process=subprocess.Popen([sys.executable,'linux/webadmin-runner','--socket',sock,'--command',base64.b64encode(command.encode()).decode()],stdout=output,stderr=subprocess.STDOUT)
             try:
                 deadline=time.monotonic()+5
                 while not os.path.exists(sock):

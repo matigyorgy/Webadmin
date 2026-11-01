@@ -1,7 +1,7 @@
 import datetime as dt,importlib.machinery,importlib.util,io,json,os,tarfile,tempfile,unittest
 from pathlib import Path
 from unittest.mock import patch
-loader=importlib.machinery.SourceFileLoader('automation','linux/gamedock-automation');spec=importlib.util.spec_from_loader(loader.name,loader);a=importlib.util.module_from_spec(spec);loader.exec_module(a)
+loader=importlib.machinery.SourceFileLoader('automation','linux/webadmin-automation');spec=importlib.util.spec_from_loader(loader.name,loader);a=importlib.util.module_from_spec(spec);loader.exec_module(a)
 class AutomationTests(unittest.TestCase):
  def test_timezones_and_nonexistent_clock_time(self):
   utc=a.schedule_time('2026-11-01T10:00','UTC');budapest=a.schedule_time('2026-11-01T10:00','Europe/Budapest');self.assertEqual(utc-budapest,3600)
@@ -42,10 +42,10 @@ class AutomationTests(unittest.TestCase):
  def test_schedule_tick_deduplicates_and_skips_overdue(self):
   with tempfile.TemporaryDirectory() as directory:
    root=Path(directory);unit='12345678';location=root/'units'/unit;location.mkdir(parents=True)
-   instance={'user':'game','directory':'/home/gamedock/1','provision_job':'job'}
+   instance={'user':'game','directory':'/home/webadmin/1','provision_job':'job'}
    tasks=[{'id':'a'*32,'operation':'restart','repeat':'once','next_run':1000,'panel':{},'instance':instance},{'id':'b'*32,'operation':'backup','repeat':'once','next_run':100,'panel':{},'instance':instance}]
    path=location/'schedules.json';path.write_text(json.dumps(tasks))
-   with patch.object(a,'ROOT',root),patch.object(a,'BACKUPS',root/'backups'),patch.object(a.p,'secure'),patch.object(a,'server',return_value=({},instance,None,None)),patch.object(a,'recover'),patch.object(a,'request') as request:
+   with patch.object(a,'ROOT',root),patch.object(a,'BACKUPS',root/'backups'),patch.object(a.p,'config',return_value={unit:{'launch':'fixture'}}),patch.object(a.p,'secure'),patch.object(a,'server',return_value=({},instance,None,None)),patch.object(a,'recover'),patch.object(a,'request') as request:
     a.tick(1001);a.tick(1002)
    self.assertEqual(request.call_count,1);saved=json.loads(path.read_text());self.assertIsNone(saved[0]['next_run']);self.assertIn('Kimaradt',saved[1]['last_result'])
  def test_scheduled_power_uses_latest_admin_policy_and_port(self):

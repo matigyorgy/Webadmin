@@ -18,14 +18,14 @@ import subprocess
 import sys
 import time
 
-library=Path(__file__).resolve().parent/'gamedock_runtime.py'
-if not library.is_file():library=Path('/usr/local/libexec/gamedock_runtime.py')
-spec=importlib.util.spec_from_file_location('gamedock_runtime',library);runtime=importlib.util.module_from_spec(spec);spec.loader.exec_module(runtime)
-CONFIG='/etc/gamedock/servers.json'
-CONTROL='/run/gamedock-control'
-RUNTIME='/run/gamedock'
-LOGS='/var/log/gamedock'
-RUNNER='/usr/local/libexec/gamedock-runner'
+library=Path(__file__).resolve().parent/'webadmin_runtime.py'
+if not library.is_file():library=Path('/usr/local/libexec/webadmin_runtime.py')
+spec=importlib.util.spec_from_file_location('webadmin_runtime',library);runtime=importlib.util.module_from_spec(spec);spec.loader.exec_module(runtime)
+CONFIG='/etc/webadmin/servers.json'
+CONTROL='/run/webadmin-control'
+RUNTIME='/run/webadmin'
+LOGS='/var/log/webadmin'
+RUNNER='/usr/local/libexec/webadmin-runner'
 
 def secure_directory(path,mode):
     os.makedirs(path,mode=mode,exist_ok=True)
@@ -80,7 +80,7 @@ def start(name,account,directory,payload,limits=None,server=None):
     group=runtime.prepare_cgroup(name,limits or {})
     if limits and limits.get('port'):
         settings={'game':server.get('game',''),'minecraft':bool(server.get('minecraft_type')),'eula':bool(server.get('minecraft_type')),'port':limits['port'],'previous_port':server.get('port'),'reconfigure':True}
-        subprocess.run(['/usr/bin/python3','-I','/usr/local/sbin/gamedock-provision','reconfigure',directory,base64.b64encode(json.dumps(settings).encode()).decode()],
+        subprocess.run(['/usr/bin/python3','-I','/usr/local/sbin/webadmin-provision','reconfigure',directory,base64.b64encode(json.dumps(settings).encode()).decode()],
             check=True,timeout=20,capture_output=True,preexec_fn=runtime.drop(account),env=runtime.environment(account),cwd=directory)
     secure_directory(RUNTIME,0o711);secure_directory(LOGS,0o700)
     folder=RUNTIME+'/'+name
@@ -133,7 +133,7 @@ def execute(argv,lock_held=False):
     with (contextlib.nullcontext(None) if lock_held else open(CONTROL+'/'+name+'.lock','a')) as lock:
         if lock is not None:fcntl.flock(lock,fcntl.LOCK_EX)
         data=metadata(name);data['_name']=name
-        maintenance=Path('/var/lib/gamedock/automation/units')/name/'job.json'
+        maintenance=Path('/var/lib/webadmin/automation/units')/name/'job.json'
         if not lock_held and action in ('start','restart') and maintenance.exists():
             job=json.loads(maintenance.read_text())
             if job.get('state') in ('queued','running') or (job.get('operation')=='restore' and job.get('state')=='ready' and not job.get('reconciled')):raise ValueError('Backup or restore is running; refresh backup status before starting')
@@ -142,12 +142,12 @@ def execute(argv,lock_held=False):
             with open(CONFIG) as stream:latest=json.load(stream)
             job=latest.get('_version_jobs',{}).get(name)
             if job:
-                with open('/var/lib/gamedock/provision/jobs/'+job+'.json') as stream:version=json.load(stream)
+                with open('/var/lib/webadmin/provision/jobs/'+job+'.json') as stream:version=json.load(stream)
                 if version['state'] in ('queued','running'):raise ValueError('Version change is running; startup is locked')
         if action=='status':print('active' if active(data,account) else 'inactive');return
         if action=='metrics':
-            storage_path=Path(__file__).resolve().parent/'gamedock-storage'
-            if not storage_path.is_file():storage_path=Path('/usr/local/sbin/gamedock-storage')
+            storage_path=Path(__file__).resolve().parent/'webadmin-storage'
+            if not storage_path.is_file():storage_path=Path('/usr/local/sbin/webadmin-storage')
             storage_loader=importlib.machinery.SourceFileLoader('launch_storage',str(storage_path));storage_spec=importlib.util.spec_from_loader(storage_loader.name,storage_loader);storage=importlib.util.module_from_spec(storage_spec);storage_loader.exec_module(storage)
             disk=storage.metrics(name)
             running=active(data,account)

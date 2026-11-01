@@ -6,7 +6,7 @@ if (PHP_VERSION_ID < 80200) {
 }
 spl_autoload_register(static function (string $class): void {
     $prefixes = [
-        'GameDock\\' => __DIR__ . '/src/',
+        'Webadmin\\' => __DIR__ . '/src/',
         'Smarty\\' => __DIR__ . '/lib/smarty/src/',
         'phpseclib3\\' => __DIR__ . '/lib/phpseclib/phpseclib/',
         'ParagonIE\\ConstantTime\\' => __DIR__ . '/lib/constant-time/src/',

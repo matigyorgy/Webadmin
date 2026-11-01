@@ -8,8 +8,8 @@ def load(name):
     path=Path(__file__).resolve().parent/name
     if not path.is_file():path=Path('/usr/local/sbin')/name
     loader=importlib.machinery.SourceFileLoader(name.replace('-','_'),str(path));spec=importlib.util.spec_from_loader(loader.name,loader);module=importlib.util.module_from_spec(spec);loader.exec_module(module);return module
-v=load('gamedock-versions');p=v.p;l=load('gamedock-launch')
-ROOT=Path('/var/lib/gamedock/automation');BACKUPS=Path('/var/lib/gamedock/backups');SELF='/usr/local/sbin/gamedock-automation'
+v=load('webadmin-versions');p=v.p;l=load('webadmin-launch')
+ROOT=Path('/var/lib/webadmin/automation');BACKUPS=Path('/var/lib/webadmin/backups');SELF='/usr/local/sbin/webadmin-automation'
 UTC=dt.timezone.utc
 
 def token(value):
@@ -45,7 +45,7 @@ def version_busy(unit,cfg):
 
 def encode(value):return base64.b64encode(json.dumps(value).encode()).decode()
 def power(unit,action,panel):
-    command=['gamedock-launch',unit,action]
+    command=['webadmin-launch',unit,action]
     if action in ('start','restart'):
         panel=read(folder(unit)/'policy.json',panel)
         startup=panel.get('startup','').replace('{port}',str(panel['limits']['port']))
@@ -209,8 +209,8 @@ def worker(unit,key):
             if operation in ('start','restart','backup') and s.get('template_key') and s.get('template_key')!=panel.get('template_key'):raise ValueError('Template changed; recreate the schedule')
             if operation in ('start','stop','restart'):power(unit,operation,panel)
             else:
-                ftp=load('gamedock-ftp');ftp.disconnect_unit(unit)
-                stage=Path(tempfile.mkdtemp(prefix='.gamedock-maintenance-',dir=target.parent));os.chown(stage,account.pw_uid,account.pw_gid)
+                ftp=load('webadmin-ftp');ftp.disconnect_unit(unit)
+                stage=Path(tempfile.mkdtemp(prefix='.webadmin-maintenance-',dir=target.parent));os.chown(stage,account.pw_uid,account.pw_gid)
                 if operation=='backup':
                     resume=bool(running(unit,account))
                     if resume:power(unit,'stop',panel)
@@ -233,7 +233,7 @@ def worker(unit,key):
                     with open(archive,'rb') as stream:child('extract',[stream.fileno(),stage],account,stream.fileno())
                     # Reconfigure the restored files for the current instance port.
                     child('configure',[stage,encode({'game':s['game'],'port':job['panel']['limits']['port'],'minecraft':bool(record['config'].get('minecraft_type')),'eula':bool(record['config'].get('minecraft_type'))})],account)
-                    rollback=target.parent/('.gamedock-rollback-'+key);job['rollback']=str(rollback);p.atomic(str(path),job)
+                    rollback=target.parent/('.webadmin-rollback-'+key);job['rollback']=str(rollback);p.atomic(str(path),job)
                     os.rename(target,rollback);os.rename(stage,target);stage=None
                     with p.locked():
                         cfg=p.config()
@@ -314,7 +314,7 @@ def api(unit,action,payload):
     if action=='clear_schedules':
         with v.unit_lock(unit,False),schedule_lock(unit):
             if read(folder(unit)/'job.json',{}).get('state') in ('queued','running'):raise ValueError('Another automation job is running')
-            p.atomic(str(folder(unit)/'schedules.json'),[]);load('gamedock-ftp').remove_unit(unit)
+            p.atomic(str(folder(unit)/'schedules.json'),[]);load('webadmin-ftp').remove_unit(unit)
         return {'accepted':True}
     if action=='list':return view(unit)
     if action=='ack_restore':
