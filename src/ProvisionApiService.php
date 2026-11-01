@@ -132,6 +132,12 @@ final class ProvisionApiService
             $server=$this->db->query('SELECT s.*,n.name AS node_name FROM servers s JOIN nodes n ON n.id=s.node_id WHERE s.id=?',[$id])->fetch();
             if(!$server)throw new RuntimeException('Az ehhez a kéréshez tartozó szervert már törölték. Új szerverhez új Idempotency-Key szükséges.',410);
             if(empty($server['provision_job']))throw new RuntimeException('Ehhez a szerverhez nem készült Linux-másolási feladat.',409);
+            if($action==='create' && $server['provision_state']==='failed'){
+                // Reuse the idempotent order and server row, but start a fresh Linux copy job.
+                $job=bin2hex(random_bytes(16));
+                $this->db->query("UPDATE servers SET provision_job=?,provision_state='queued',provision_message=NULL WHERE id=? AND provision_state='failed'",[$job,$id]);
+                $server['provision_job']=$job;$server['provision_state']='queued';$server['provision_message']=null;
+            }
             $provision=new ProvisionService($this->db,$this->ssh);
             if($server['provision_state']==='queued' && $action==='create')$result=$provision->enqueue($actor,$id);
             else $result=$provision->poll($actor,$id);
