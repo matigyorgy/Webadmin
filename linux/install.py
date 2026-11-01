@@ -60,7 +60,7 @@ def install(args):
         old=cfg.get('_provision',{})
         source=Path('/home/webadmin/templates')
         if args.source_root and Path(args.source_root)!=source:raise ValueError('Template root is fixed at /home/webadmin/templates')
-        target=Path(args.target_root or old.get('target_root','/home/gamedock'))
+        target=Path(args.target_root or old.get('target_root','/home/webadmin/servers'))
         if not source.is_absolute() or not target.is_absolute() or source==target:raise ValueError('Distinct absolute source/target roots required')
         dangerous={'/','/etc','/root','/usr','/bin','/sbin','/var','/var/lib','/home','/run','/tmp','/dev','/proc','/sys'}
         if str(source) in dangerous or str(target) in dangerous:raise ValueError('Choose dedicated game directories, not a system directory')
@@ -75,7 +75,7 @@ def install(args):
             if source.exists():
                 if any(source.iterdir()):raise ValueError('Both old and new template roots contain files; automatic merge would overwrite templates')
                 source.rmdir()
-            if target.exists() and str(target)=='/home/gamedock' and target.stat().st_uid==account.pw_uid:os.chown(target,0,0);os.chmod(target,0o755)
+            if target.exists() and str(target) in ('/home/gamedock','/home/webadmin/servers') and target.stat().st_uid==account.pw_uid:os.chown(target,0,0);os.chmod(target,0o755)
             source.parent.mkdir(parents=True,exist_ok=True)
             shutil.move(str(previous_source),str(source))
             # Existing Java launch paths keep working after the relocation.
@@ -86,7 +86,7 @@ def install(args):
             previous_source.unlink()
         for folder in (target,source):
             if not folder.exists():folder.mkdir(parents=True,mode=0o755);os.chmod(folder,0o755)
-            if folder==target and str(folder)=='/home/gamedock' and folder.stat().st_uid==account.pw_uid:
+            if folder==target and str(folder) in ('/home/gamedock','/home/webadmin/servers') and folder.stat().st_uid==account.pw_uid:
                 os.chown(folder,0,0);os.chmod(folder,0o755)
             safe(folder)
         if source.resolve()!=source or target.resolve()!=target or source!=Path('/home/webadmin/templates'):raise ValueError('Templates must use the protected /home/webadmin/templates directory')

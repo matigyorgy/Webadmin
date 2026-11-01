@@ -1,7 +1,7 @@
 {
   "_provision": {
     "source_root": "/home/webadmin/templates",
-    "target_root": "/home/gamedock",
+    "target_root": "/home/webadmin/servers",
     "allow_custom_games": true,
     "users": {
       "minecraft": "minecraft",

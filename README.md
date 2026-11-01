@@ -23,7 +23,7 @@ Példa a tárhelyre:
 
 ## Linux-gép automatikus beállítása a weben
 
-Az admin Linux-gépek menüjében add meg a címet, SSH-portot és a panel használatára szánt fiókot (alapból `gamedock`). A **Hostkulcs lekérése** gomb megadja az ujjlenyomatot; első alkalommal vesd össze a szolgáltató megbízható adataival. Mentsd a gépet, nyisd meg a szerkesztést, majd az **Automatikus Linux-telepítés** résznél add meg egyszer a telepítési SSH-hozzáférést.
+Az admin Linux-gépek menüjében add meg a címet, SSH-portot és a panel használatára szánt fiókot (alapból `webadmin`). A **Hostkulcs lekérése** gomb megadja az ujjlenyomatot; első alkalommal vesd össze a szolgáltató megbízható adataival. Mentsd a gépet, nyisd meg a szerkesztést, majd az **Automatikus Linux-telepítés** résznél add meg egyszer a telepítési SSH-hozzáférést.
 
 - A telepítési fiók root vagy jelszó nélküli sudo-jogú admin legyen. Jelszóval vagy privát kulccsal hitelesíthető; a privát kulcs passphrase is megadható.
 - A telepítési jelszó/privát kulcs nem kerül adatbázisba, szerveroldali munkamenetbe vagy mentett konfigurációba. A folyamat állapotkéréseihez a böngésző memóriájában marad, majd törlődik. Ha bezárod a lapot, a háttérfeladat folytatódik; állapotának folytatásához ismét megadható a hozzáférés.
@@ -35,10 +35,10 @@ Az admin Linux-gépek menüjében add meg a címet, SSH-portot és a panel haszn
 Nem kell kézzel SSH-val belépni vagy sudoers-/indítószkripteket szerkeszteni a normál webes munkafolyamathoz. A háttérben futó installert a panel végzi. Opcionális CLI-alternatíva:
 
 ```sh
-sudo python3 linux/install.py --source-root /home/webadmin/templates --target-root /home/gamedock --ssh-user webadmin
+sudo python3 linux/install.py --source-root /home/webadmin/templates --ssh-user webadmin
 ```
 
-A Linux-oldali feltétel Python 3.9+ és pidfd-t támogató Linux-kernel. Az installer nem igényel systemd-t, tmuxot vagy screen-t. Az SSH-fiók meglévő kulcsai és a meglévő szerverbejegyzések megmaradnak. A `/home/gamedock` felső könyvtár root tulajdonú lesz; a benne lévő SSH-kulcsok tulajdonosát nem változtatja meg, a példányok saját alkönyvtárat kapnak.
+Új telepítésnél a játékszerverek gyökere `/home/webadmin/servers`; egy már telepített gép a korábban konfigurált gyökeret használja tovább. A Linux-oldali feltétel Python 3.9+ és pidfd-t támogató Linux-kernel. Az installer nem igényel systemd-t, tmuxot vagy screen-t. Az SSH-fiók meglévő kulcsai és a meglévő szerverbejegyzések megmaradnak. A `/home/webadmin/servers` felső könyvtár root tulajdonú lesz, a példányok külön alkönyvtárat és Linux-felhasználót kapnak.
 
 ## Tetszőleges játéktípusok
 
@@ -122,7 +122,7 @@ Az indítás, leállítás, újraindítás és állapot gomb **AJAX-os**, oldalf
 
 A template-ek gyökere mindig **`/home/webadmin/templates/`**. A webes Linux-telepítő ezt rögzítetten állítja be, játékprofilonként ez alatti almappát lehet választani. Frissítéskor a korábbi template-gyökeret automatikusan átköltözteti, és a régi Java-elérési utak működéséhez kompatibilitási hivatkozást hagy. Aktív másolás/verzióváltás alatt nem költöztet; két külön, már tartalmas régi és új mappát nem egyesít felülírással.
 
-Új példány létrehozásakor a cél **`/home/gamedock/<adatbázisbeli-szerver-ID>/`**, például `/home/gamedock/42/`. A célmappát nem kell és nem lehet kézzel megválasztani. Meglévő célmappát a másoló nem ír felül. Minden példány külön nologin Linux-felhasználót és privát, 0700 jogosultságú könyvtárat kap.
+Új példány létrehozásakor a cél **`/home/webadmin/servers/<adatbázisbeli-szerver-ID>/`**, például `/home/webadmin/servers/42/`. A célmappát nem kell és nem lehet kézzel megválasztani. Meglévő célmappát a másoló nem ír felül. Minden példány külön nologin Linux-felhasználót és privát, 0700 jogosultságú könyvtárat kap.
 
 Létrehozáskor a portmező **üresen hagyható a véletlen kiosztáshoz**, vagy kézzel kitölthető. Az admin később is módosíthatja; az új érték a következő indításkor/újraindításkor kerül a konfigurációba. Minecraftnál a `server-port` és `query.port`, FiveM-nél mindkét endpoint frissül. Egyedi játékoknál a korábban `{{PORT}}` helyőrzővel létrehozott konfigurációkat egy fájllista alapján frissítjük, a többi kézi módosítás megőrzésével.
 
@@ -215,7 +215,7 @@ A telepített template minden verziójánál külön menthető a **minimum memó
 
 Az ügyfél a **Verzióváltás** eszközben a már telepített templatek közül választhat típusonként csoportosítva; a nem elegendő memóriájú választás letiltott. Minecraftnál más típusra (például Vanilla → Paper) is válthat. **Csak offline állapotban** indítható: ezt PHP és a Linux-segédprogram is ellenőrzi, a folyamat idejére a Linux-oldali indítás zárolt.
 
-Ha az admin újratelepítést ír elő, az ügyfél külön jelölőnégyzettel erősíti meg a fájlok cseréjét; enélkül az API is elutasítja a műveletet. Először teljes mentés készül a `/home/gamedock/.gamedock-backups/<szerverazonosító>/<feladatazonosító>/` alatt, majd tiszta template-másolat kerül a példány helyére. A játékport és a szükséges konfiguráció automatikusan beállítódik. Újratelepítés nélkül a korábbi világ és konfiguráció megmarad; a játéktípusok/verziók közötti világ- és modkompatibilitás nem garantálható.
+Ha az admin újratelepítést ír elő, az ügyfél külön jelölőnégyzettel erősíti meg a fájlok cseréjét; enélkül az API is elutasítja a műveletet. Először teljes mentés készül a `/home/webadmin/servers/.gamedock-backups/<szerverazonosító>/<feladatazonosító>/` alatt, majd tiszta template-másolat kerül a példány helyére. A játékport és a szükséges konfiguráció automatikusan beállítódik. Újratelepítés nélkül a korábbi világ és konfiguráció megmarad; a játéktípusok/verziók közötti világ- és modkompatibilitás nem garantálható.
 
 **Meglévő telepítés frissítése:** töltsd fel a friss panelt, az admin Játékszerverek oldalán kattints az **Új szerverfunkciók engedélyezése** gombra, majd az érintett Linux-gépeknél futtasd az **Automatikus Linux-telepítés** műveletet. Ez felveszi a template-szabályok tábláját, a verziómetaadat-oszlopokat és frissíti a letöltési/újratelepítési segédprogramokat, sudo-jogokat. A meglévő szerverek megmaradnak.
 

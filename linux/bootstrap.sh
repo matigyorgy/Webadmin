@@ -34,7 +34,7 @@ if [ "$3" = "1" ]; then
  fi
 fi
 STEP='Linux-fajlok, fiokok, SSH-kulcs es jogosultsagok beallitasa'
-python3 install.py --source-root "$1" --target-root /home/gamedock --ssh-user "$2" --panel-public-key-file panel.pub --setup-ftp --ftp-host "${5:-}"
+python3 install.py --source-root "$1" --ssh-user "$2" --panel-public-key-file panel.pub --setup-ftp --ftp-host "${5:-}"
 STEP='UFW jatekportok beallitasa'
 if [ "${4:-0}" = "1" ] && command -v ufw >/dev/null 2>&1 && ufw status | grep -q '^Status: active'; then
  ufw allow 25000:25999/tcp
