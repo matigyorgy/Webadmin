@@ -96,7 +96,7 @@ class TemplateDeletionTests(unittest.TestCase):
    root=Path(directory);cache=root/'cache';cache.mkdir();templates=root/'templates'/'minecraft';target=templates/'paper'/'1.21.1'/'1';target.mkdir(parents=True);(target/'server.jar').write_text('jar');keep=templates/'keep';keep.mkdir()
    value={'state':'ready','templates':[{'key':'paper:1.21.1:1','type':'paper','version':'1.21.1','build':'1','path':str(target),'state':'ready'}]}
    with patch.object(mc,'CACHE',str(cache)),patch.object(mc,'CONFIG',str(root/'servers.json')),patch.object(mc,'catalog',return_value=value),patch.object(mc,'cfg',return_value={'_provision':{'source_root':str(root/'templates')}}):result=mc.delete_template('paper:1.21.1:1')
-   self.assertFalse(target.exists());self.assertTrue(keep.exists());self.assertEqual(result['templates'],[])
+   self.assertFalse(target.exists());self.assertTrue(keep.exists());self.assertEqual(result['templates'],[]);self.assertEqual(result['message'],'A kiválasztott template törölve')
  def test_delete_rejects_catalog_escape(self):
   with tempfile.TemporaryDirectory() as directory:
    root=Path(directory);cache=root/'cache';cache.mkdir();outside=root/'keep';outside.mkdir()

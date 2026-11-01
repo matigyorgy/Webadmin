@@ -272,7 +272,7 @@ def delete_template(key):
             if job.get('state') in ('queued','running') and source==str(target):raise ValueError('Template is in use by an active copy job')
         if target.exists():shutil.rmtree(target)
         value['templates']=[entry for entry in value['templates'] if entry['key']!=key]
-        value['message']='A kiválasztott Minecraft-template törölve. A következő szinkronizálás újra letöltheti.'
+        value['message']='A kiválasztott template törölve'
         atomic(CACHE+'/catalog.json',value);return value
 def sync(selection=None):
     os.makedirs(CACHE,mode=0o700,exist_ok=True)
