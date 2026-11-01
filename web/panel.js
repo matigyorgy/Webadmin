@@ -198,9 +198,9 @@ if (resources) {
             const formatStorage=bytes=>bytes>=1073741824 ? (bytes/1073741824).toFixed(2)+' GiB' : bytes>=1048576 ? (bytes/1048576).toFixed(1)+' MiB' : bytes>=1024 ? (bytes/1024).toFixed(1)+' KiB' : bytes+' B';
             const maximum=diskLimit>0 ? formatStorage(diskLimit*1048576) : 'Korlátlan';
             resources.querySelector('[data-disk]').textContent=(diskKnown ? formatStorage(result.disk_bytes) : diskState==='measuring' ? 'Mérés folyamatban…' : 'Nem érhető el')+' / '+maximum;
-            resources.querySelector('[data-disk-limit]').textContent=maximum;
-            resources.querySelector('[data-disk-message]').classList.toggle('text-danger',diskState==='unsupported');
-            resources.querySelector('[data-disk-message]').textContent=diskState==='unsupported' ? 'A megadott Linux-tárhelykorlát nem érvényesül. Az admin ellenőrizze a projektkvótát.' : diskState==='missing' ? 'A tárhelyméréshez frissítsd a Linux-segédprogramokat.' : diskState==='failed' ? 'A tárhely nem mérhető; ellenőrizd a szervermappa jogosultságait.' : '';
+            resources.querySelector('[data-disk-limit]').textContent=diskLimit>0 ? maximum : 'Nincs megadva';
+            resources.querySelector('[data-disk-message]').classList.remove('text-danger');
+            resources.querySelector('[data-disk-message]').textContent=diskState==='missing' ? 'A tárhelyméréshez frissítsd a Linux-segédprogramokat.' : diskState==='failed' ? 'A tárhely nem mérhető; ellenőrizd a szervermappa jogosultságait.' : '';
             for (const [selector, value] of [['[data-cpu-progress]', Number(result.cpu_percent)], ['[data-memory-progress]', memoryLimit > 0 ? memoryMiB / memoryLimit * 100 : 0], ['[data-disk-progress]', diskKnown && diskLimit>0 ? result.disk_bytes/(diskLimit*1048576)*100 : 0]]) {
                 const progress = resources.querySelector(selector);
                 if (progress) {

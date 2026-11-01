@@ -1,5 +1,5 @@
 #!/usr/bin/python3 -I
-"""Per-directory ext4/XFS project quotas and asynchronous allocated-space measurements."""
+"""Asynchronous server-directory space measurements and display-only limits."""
 import contextlib,ctypes,errno,fcntl,importlib.machinery,importlib.util,json,os,pwd,secrets,stat,struct,subprocess,sys,time
 from pathlib import Path
 path=Path(__file__).resolve().parent/'gamedock-provision'
@@ -159,31 +159,10 @@ def apply_limit(unit,limit):
     validate_mb(limit)
     with unit_lock(unit):
         cfg,server,account,target=instance(unit)
-        launch=module('gamedock-launch')
-        metadata=launch.metadata(unit);metadata['_name']=unit
-        if launch.active(metadata,account):raise ValueError('Stop the server before changing its disk limit')
-        job=read(Path('/var/lib/gamedock/automation/units')/unit/'job.json',{})
-        if job.get('state') in ('queued','running'):raise ValueError('A backup or restore is running')
-        version=cfg.get('_version_jobs',{}).get(unit)
-        if version and p.read_job(version).get('state') in ('queued','running'):raise ValueError('Version change is running')
-        module('gamedock-ftp').disconnect_unit(unit)
-        current=0
-        try:current=project_id(target)
-        except OSError:
-            if limit:raise ValueError('Project quota support required on the server filesystem')
-        if current and owned(target,current,unit):
-            mount=mount_info(target);quota_info(mount)
-            if limit and not initialized(target,current):tag_tree(target,current,unit)
-            value=get_quota(mount,current)
-            if limit and value.space>limit*1024**2:raise ValueError('Disk limit is smaller than occupied storage')
-            set_quota(mount,current,limit)
-            if limit:mark_initialized(target,current)
-        elif limit:
-            attach(unit,target,limit)
         with p.locked():
             cfg=p.config();cfg[unit]['disk_limit_mb']=limit;p.atomic(p.CONFIG,cfg)
         (ROOT/'usage'/(unit+'.json')).unlink(missing_ok=True)
-        return {'disk_limit_mb':limit,'enforced':bool(limit)}
+        return {'disk_limit_mb':limit,'enforced':False}
 
 def usage_worker(unit):
     prepare();path=ROOT/'usage'/(unit_name(unit)+'.json')
@@ -200,15 +179,6 @@ def usage_worker(unit):
 
 def metrics(unit):
     prepare();cfg,server,account,target=instance(unit);limit=server.get('disk_limit_mb',0);path=ROOT/'usage'/(unit+'.json');value=read(path,{})
-    enforced=False;error=''
-    try:
-        project=project_id(target)
-        if project and owned(target,project,unit):
-            mount=mount_info(target);quota_info(mount);quota=get_quota(mount,project)
-            return {'disk_bytes':int(quota.space),'disk_limit_mb':int(quota.hard//1024),'disk_enforced':bool(quota.hard),'disk_state':'ready'}
-        if limit:error='Project quota is not active'
-    except (OSError,ValueError,subprocess.SubprocessError,KeyError):
-        if limit:error='Project quota is not active'
     if value.get('inode')!=os.stat(target).st_ino:value={}
     running=p.runtime.alive(value.get('worker'),0)
     if not running and time.time()-value.get('measured_at',0)>=30:
@@ -220,7 +190,7 @@ def metrics(unit):
                 if not p.runtime.alive(latest.get('worker'),0):
                     with open(ROOT/'usage'/(unit+'.log'),'ab') as output:child=subprocess.Popen(['/usr/bin/python3','-I',SELF,'usage-worker',unit],stdin=subprocess.DEVNULL,stdout=output,stderr=output,start_new_session=True,env=p.runtime.environment())
                     latest.update(worker=p.runtime.identity(child.pid),inode=os.stat(target).st_ino);p.atomic(str(path),latest)
-    return {'disk_bytes':value.get('bytes'),'disk_limit_mb':limit,'disk_enforced':enforced,'disk_state':'unsupported' if error else value.get('state','measuring')}
+    return {'disk_bytes':value.get('bytes'),'disk_limit_mb':limit,'disk_enforced':False,'disk_state':'unsupported' if limit else value.get('state','measuring')}
 
 if __name__=='__main__':
     os.umask(0o077)

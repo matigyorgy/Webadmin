@@ -14,8 +14,7 @@ final class StorageService
     public function apply(array $actor,int $id,int $limit): void
     {
         if(!$this->db->query('SELECT is_admin FROM users WHERE id=?',[$actor['id']])->fetchColumn())throw new RuntimeException('Tárhelylimitet csak adminisztrátor állíthat be.');
-        $server=(new ServerService($this->db,$this->ssh))->find($actor,$id);
-        if(($server['provision_state'] ?? 'ready')!=='ready')return;
-        $this->ssh->storage($server,self::limit($limit));
+        (new ServerService($this->db,$this->ssh))->find($actor,$id);
+        self::limit($limit);
     }
 }

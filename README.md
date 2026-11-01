@@ -100,11 +100,11 @@ Mentéskor az indítóparancsba az `export GAMEDOCK_MEMORY_MB=… GAMEDOCK_CPU_P
 
 A segédprogram indításkor automatikusan beállítja a saját root-tulajdonú **cgroup v2** csoportját és a CPU/memory vezérlőket. A runner és minden gyermekfolyamata ebbe kerül még a játékfelhasználóra váltás előtt; systemd-szolgáltatás nem kell. A játék nem írhatja felül a limitjeit. A memória-limit mellett a swap limitje 0. Korlátozás kérésekor írhatatlan/hiányzó cgroup v2 vezérlő esetén az indítás hibával leáll: korlátozás nélkül nem indul el. Konténeres/VPS tárhelyen ezt a gazdagépnek is támogatnia kell. Korlátlan futtatás cgroup nélkül is működik; ilyenkor a folyamatfa CPU-idejéből és RSS memóriájából számítjuk a használatot, ami becslés (megosztott lapok többször számíthatnak).
 
-### Tárhelyhasználat és tárhelykorlát
+### Tárhelyhasználat és megjelenített tárhely
 
 A kliens **Szerver áttekintés** oldalán a foglalt tárhely látható. Adminisztráció → **Játékszerverek** alatt szerverenként megadható a maximális méret MiB-ban; **0 = korlátlan**. A mérés az aktív szervermappa lemezfoglalását mutatja, ezért nem a fájlok logikai méretét méri. A leállított szerverre vonatkozó mérés legfeljebb 30 másodpercenként frissül. A tömörített mentések és a template-ek a korláton kívül maradnak.
 
-A valódi kemény korláthoz a Linux-gép szerverkönyvtárát tartalmazó ext4 vagy XFS fájlrendszert projektkvótákkal kell csatolni (`prjquota`/`pquota`). Ezt a rendszergazdának kell előzetesen beállítania és ellenőriznie; a GameDock nem csatol újra fájlrendszert és nem változtat rendszerindítási beállítást. Kvótatámogatás nélkül a panel továbbra is megjeleníti a mért használatot, de jelzi, hogy a pozitív korlát nem érvényesíthető, és elutasítja annak beállítását. Kvótán kívüli vagy nem megfelelő fájlrendszeren a korlátozás tényleges betartása nem garantálható.
+Az adminfelületen beállítható tárhelyérték kizárólag tájékoztató megjelenítés. Nem állít be Linux-fájlrendszer kvótát, és nem akadályozza a fájlok létrehozását vagy feltöltését. A tényleges foglalást a Linux-gépen `du` méri; a mentések és template-ek a szervermappán kívül maradnak.
 
 A korlát módosításakor állítsd le a szervert. A beállítás nem lehet kisebb a már használt tárhelynél; FTP-kapcsolatok a módosítás idejére megszakadnak. Újratelepítés, verzióváltás és mentés-visszaállítás külön átmeneti korlátot kap, hogy fájlcserekor se lehessen a beállított méretet megkerülni. A feladatnapló és a biztonsági mentések a játékmappán kívül vannak. Linux-segédprogram frissítéséhez futtasd újra az admin **Automatikus Linux-telepítés** műveletét; az adatbázis oszlopát az **Új szerverfunkciók engedélyezése** művelet frissíti.
 
@@ -184,7 +184,7 @@ Mivel a GET címsor tartalmaz API-kulcsot és ügyféljelszót, azok bekerülhet
 
 `feladat=szolg_letrehozas` rendelést indít. `email_cim`, `felhasznalonev` és `jelszo` szükséges; új e-mail-címhez panel-fiókot készít, létező fióknál nem cseréli le a jelszót. A `rendeles_id` nem szükséges; az API azonos rendelési adatokból képez ismétlésvédelmi kulcsot. `premium=true` a Prémiumként megjelölt Linux-gépek közül választ (a legkevesebb szerverrel rendelkezőt); `false` a többi gépet választja. A `szolg_type` az admin játéktípus azonosítója, opcionálisan `premium_`/`basic_` előtaggal; `fivm` alias is elfogadott. Minecraftnál a `version` alakja `vanilla_26.1.2`, a kért template-nek már telepítve kell lennie a kiválasztott gépen.
 
-`slot` 1–1000 játékos férőhelyet állít be az ismert Minecraft, CS1.6, CS2, CS:S és FiveM beállításokban. `hdd` GB-ban érkezik, és MiB-ra váltva tároljuk/korlátozzuk; tényleges kvótához a korábban leírt ext4/XFS projektkvóta szükséges. `memory` MiB. `lejar` jövőbeli Unix időbélyeg; a Linux-gép cron feladata percenként ellenőrzi, leállítja a lejárt szervert, és a panel nem engedi újraindítani. `type` kiegészítő csomagcímke; a gépválasztást a `premium` mező végzi.
+`slot` 1–1000 játékos férőhelyet állít be az ismert Minecraft, CS1.6, CS2, CS:S és FiveM beállításokban. `hdd` GB-ban érkezik, és MiB-ra váltva kizárólag megjelenítési értékként tároljuk; Linuxon nem érvényesítünk tárhelykvótát. `memory` MiB. `lejar` jövőbeli Unix időbélyeg; a Linux-gép cron feladata percenként ellenőrzi, leállítja a lejárt szervert, és a panel nem engedi újraindítani. `type` kiegészítő csomagcímke; a gépválasztást a `premium` mező végzi.
 
 ```sh
 curl 'https://dev.vgh.hu/provision_api.php' \

@@ -22,8 +22,6 @@ final class TemplateCommandResult
                 'catalog path mismatch'=>'A katalógus még a korábbi template-mappára hivatkozik. Futtasd a friss panel webes Linux-telepítését a /home/gamedock/templates/ mappára költöztetéshez.',
                 'unsafe template publication directory'=>'A Minecraft-template könyvtár tulajdonosa vagy jogosultsága nem megfelelő.'.$repair,
                 'unsafe config'=>'A Linux-oldali /etc/gamedock/servers.json tulajdonosa vagy jogosultsága nem megfelelő.'.$repair,
-                'no space left on device'=>'Elfogyott a szabad hely vagy az inode a Linux-gépen. A szinkronizálás előtt szabadíts fel helyet; a helper újratelepítése ezt nem oldja meg.',
-                'disk quota exceeded'=>'A Linux-gépen elfogyott a lemezkvóta. A szinkronizálás előtt szabadíts fel helyet vagy növeld a kvótát.',
                 'read-only file system'=>'A Linux-gép érintett fájlrendszere csak olvasható. Ellenőrizd a kötet állapotát; a helper újratelepítése ezt nem oldja meg.',
             ];
             foreach($known as $needle=>$message) if(str_contains($error,$needle)) throw new RuntimeException($message);

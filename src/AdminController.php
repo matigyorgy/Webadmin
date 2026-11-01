@@ -44,7 +44,6 @@ final class AdminController
                     $created=$section==='servers' && empty($_POST['id']);
                     $previousServer=$section==='servers' && !empty($_POST['id']) ? $service->find($user,'servers',Validation::id($_POST['id'])) : null;
                     $savedId=$service->save($user,$section,$_POST,function(int $id)use($section,$previousServer,$user){
-                        if($section==='servers' && $previousServer!==null && array_key_exists('disk_limit_mb',$_POST) && (int)($previousServer['disk_limit_mb'] ?? 0)!==StorageService::limit($_POST['disk_limit_mb'] ?? 0))(new StorageService($this->db,$this->ssh))->apply($user,$id,StorageService::limit($_POST['disk_limit_mb'] ?? 0));
                         if($section==='servers' && $previousServer!==null && ($previousServer['provision_state'] ?? 'ready')==='ready' && (int)$previousServer['user_id']!==(int)($_POST['user_id'] ?? 0))(new FtpService($this->db,$this->ssh))->perform($user,$id,'ftp_delete');
                     }); $_SESSION['admin_notice']='A bejegyzést elmentettük.';
                     $savedServer=$section==='servers' ? $service->find($user,'servers',$savedId) : null;
