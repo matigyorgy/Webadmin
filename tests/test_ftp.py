@@ -9,6 +9,10 @@ class FtpTests(unittest.TestCase):
   return {'username':'server_user','unit':'12345678','created_at':1000,'last_login':None,'binding':{'user':'game','directory':'/home/webadmin/1','provision_job':'job'},'salt':salt.hex(),'hash':hashlib.scrypt(password.encode(),salt=salt,n=16384,r=8,p=1,dklen=32).hex()}
  def test_expiry_uses_successful_login_or_creation(self):
   record=self.record();self.assertEqual(f.expires(record),1000+15*86400);record['last_login']=9000;self.assertEqual(f.expires(record),9000+15*86400)
+ def test_setup_uses_dedicated_port_without_rebinding_package_port(self):
+  with tempfile.TemporaryDirectory() as directory,patch.object(f,'ROOT',Path(directory)),patch.object(f,'prepare'),patch.object(f.Path,'is_file',return_value=True),patch.object(f,'read',side_effect=[{'port':21,'passive_min':50000,'passive_max':50100,'public_host':''},{},{}]),patch.object(f.p,'atomic') as atomic,patch.object(f,'locked',return_value=contextlib.nullcontext()),patch.object(f,'disconnect_names'),patch.object(f.p.runtime,'alive',return_value=False),patch.object(f,'start') as start:
+   f.install()
+  self.assertEqual(atomic.call_args.args[1]['port'],2121);start.assert_called_once()
  def test_clean_deletes_at_exact_boundary_and_preserves_fresh_accounts(self):
   first=self.record();second=copy.deepcopy(first);second['created_at']=2000;rows={'old':first,'fresh':second}
   with patch.object(f,'instance',return_value=(second['binding'],None,None)):

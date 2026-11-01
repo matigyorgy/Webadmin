@@ -48,7 +48,7 @@ php tests/fixtures/ftp.php > /tmp/webadmin-ftp.html
 node tests/browser_ftp.cjs /tmp/webadmin-ftp.html
 ```
 
-For the real FTP fixture, install the official `pure-ftpd` and `openssl` Debian packages in a derivative of the disposable SSH image, then copy/install the current Linux helpers (without `--setup-ftp` during the Docker build). At runtime the test configures its dedicated Pure-FTPd instance on port 21. FTP is unencrypted by request, so credentials and file traffic are visible to anyone who can observe the network. The package requires two extra capabilities inside Docker:
+For the real FTP fixture, install the official `pure-ftpd` and `openssl` Debian packages in a derivative of the disposable SSH image, then copy/install the current Linux helpers (without `--setup-ftp` during the Docker build). At runtime the test configures its dedicated Pure-FTPd instance on port 2121. FTP is unencrypted by request, so credentials and file traffic are visible to anyone who can observe the network. The package requires two extra capabilities inside Docker:
 
 ```sh
 docker run --rm --cap-add SYS_NICE --cap-add DAC_READ_SEARCH --entrypoint /usr/bin/python3 -v "$PWD/tests:/tests:ro" webadmin-ftp-test /tests/fixtures/ftp_integration.py

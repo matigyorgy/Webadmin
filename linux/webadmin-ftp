@@ -8,6 +8,7 @@ loader=importlib.machinery.SourceFileLoader('ftp_provision',str(path));spec=impo
 ROOT=Path('/etc/webadmin/ftp');RUN=Path('/run/webadmin-ftp');LOG=Path('/var/log/webadmin-ftp.log')
 CONTROL=Path('/run/webadmin-control')
 TTL=15*86400;SELF='/usr/local/sbin/webadmin-ftp'
+FTP_PORT=2121
 
 def read(path,default):
     try:p.secure(str(path));return json.loads(path.read_text())
@@ -114,7 +115,10 @@ def start():
         if config.get('public_host'):command.extend(['-P',config['public_host']])
         with open(LOG,'ab') as output:child=subprocess.Popen(command,stdin=subprocess.DEVNULL,stdout=output,stderr=output,start_new_session=True,env=p.runtime.environment())
         time.sleep(.2)
-        if child.poll() is not None:raise ValueError('Pure-FTPd failed; check FTP service log and required capabilities')
+        if child.poll() is not None:
+            try:detail=' '.join(LOG.read_text(errors='replace').split())[-1200:]
+            except OSError:detail='FTP service log unavailable'
+            raise ValueError('Pure-FTPd failed to bind/start on port '+str(config['port'])+': '+detail)
         state['server']=p.runtime.identity(child.pid);p.atomic(str(RUN/'processes.json'),state)
 
 def maintain():
@@ -127,8 +131,8 @@ def install(public_host=None):
     for binary in ('/usr/sbin/pure-ftpd','/usr/sbin/pure-authd','/usr/sbin/pure-ftpwho'):
         if not Path(binary).is_file():raise ValueError('Pure-FTPd packages required')
     if public_host and (len(public_host)>253 or not re.fullmatch(r'[A-Za-z0-9_.:-]+',public_host)):raise ValueError('Invalid FTP public host')
-    current=read(ROOT/'settings.json',{'port':21,'passive_min':50000,'passive_max':50100,'public_host':''})
-    current['port']=21
+    current=read(ROOT/'settings.json',{'port':FTP_PORT,'passive_min':50000,'passive_max':50100,'public_host':''})
+    current['port']=FTP_PORT
     if public_host:current['public_host']=public_host
     p.atomic(str(ROOT/'settings.json'),current)
     # Restart only our tracked dedicated instance when configuration was refreshed.

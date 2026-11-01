@@ -24,7 +24,7 @@ assert (f.ROOT/'users.json').stat().st_mode&0o777==0o600
 try:f.create(units[1],{'username':'my_server','password':password});raise AssertionError('Other instance account overwritten')
 except ValueError as error:assert 'already in use' in str(error)
 def connect(password=password):
- client=ftplib.FTP(timeout=8);client.connect('localhost',21);client.login('my_server',password);return client
+ client=ftplib.FTP(timeout=8);client.connect('localhost',f.settings()['port']);client.login('my_server',password);return client
 client=connect();assert next(a for a in f.listing(units[0])['accounts'] if a['username']=='my_server')['last_login'] is not None
 client.storbinary('STOR world.txt',io.BytesIO(b'FTP upload fixture'));download=io.BytesIO();client.retrbinary('RETR world.txt',download.write);assert download.getvalue()==b'FTP upload fixture'
 assert (Path('/home/webadmin/servers')/units[0]/'world.txt').read_bytes()==b'FTP upload fixture'
@@ -61,4 +61,4 @@ client.close()
 f.create(units[0],{'username':'replacement','password':password});f.remove_unit(units[0]);assert f.listing(units[0])['accounts']==[]
 # Repeated setup keeps account state and does not replace the global FTP configuration.
 f.install('localhost');assert len(f.listing(units[0])['accounts'])==0
-print('Pure-FTPd integration passed: verified plain FTP upload/download on port 21, chroot, custom credentials, three-account limit, hashed storage, username isolation, successful-login tracking, session revocation, actual cron-based 15-day expiry and repeatable setup.')
+print('Pure-FTPd integration passed: verified plain FTP upload/download on port '+str(f.settings()['port'])+', chroot, custom credentials, three-account limit, hashed storage, username isolation, successful-login tracking, session revocation, actual cron-based 15-day expiry and repeatable setup.')
