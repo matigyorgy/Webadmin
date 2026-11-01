@@ -170,9 +170,9 @@ A Linux-telepítés hibaüzenete most a sikertelen lépést és a kilépési kó
 
 ## Külső szerverlétrehozási API
 
-Adminbeállítás: `/api_settings.php`. Itt készíthető vagy visszavonható az API-kulcs, a szükséges ismétlésvédelmi tábla automatikusan létrejön. A kulcs csak egyszer látható, a panel kizárólag SHA-256 lenyomatát tárolja a webgyökéren kívül. Az API az őt létrehozó adminhoz kötődik; az adminjog visszavonása az API-hozzáférést is megszünteti.
+Adminbeállítás: `/api_settings.php`. Itt készíthető vagy visszavonható az API-kulcs; az aszinkron telepítések állapotának követéséhez az API-kérésazonosítók táblája automatikusan létrejön. A kulcs csak egyszer látható, a panel kizárólag SHA-256 lenyomatát tárolja a webgyökéren kívül. Az API az őt létrehozó adminhoz kötődik; az adminjog visszavonása az API-hozzáférést is megszünteti.
 
-Végpont: **`https://dev.vgh.hu/provision_api.php`**, más telepítésnél a saját domainnel. Az ajánlott formátum `POST application/json`, `Authorization: Bearer <kulcs>` és kötelező, rendelésenként egyedi, 8–128 karakteres `Idempotency-Key` fejléccel. Nginx/FastCGI továbbítsa az Authorization fejlécet PHP-nak (`fastcgi_param HTTP_AUTHORIZATION $http_authorization;`), amennyiben ezt a tárhely nem teszi meg alapból.
+Végpont: **`https://dev.vgh.hu/provision_api.php`**, más telepítésnél a saját domainnel. Az ajánlott formátum `POST application/json` és `Authorization: Bearer <kulcs>` fejléc. Minden create kérés új szervert hoz létre; az azonos tartalmú kérések sem kerülnek összevonásra. Nginx/FastCGI továbbítsa az Authorization fejlécet PHP-nak (`fastcgi_param HTTP_AUTHORIZATION $http_authorization;`), amennyiben ezt a tárhely nem teszi meg alapból.
 
 Meglévő rendelési rendszerhez a végpont a régi GET-paraméteres formátumot és `application/x-www-form-urlencoded` POST törzset is fogadja. A GET-es példa:
 
@@ -182,21 +182,20 @@ https://dev.vgh.hu/provision_api.php?key=API-KULCS&premium=true&slot=10&hdd=100&
 
 Mivel a GET címsor tartalmaz API-kulcsot és ügyféljelszót, azok bekerülhetnek a proxy-, webszerver- és böngészőnaplókba. HTTPS kötelező. A rendelési szolgáltatás POST támogatásával inkább a mezőket a POST törzsében, az API-kulcsot `Authorization: Bearer …` fejlécben küldje. A végpont mindkét formátumot ugyanazzal a jogosultság-ellenőrzéssel kezeli.
 
-`feladat=szolg_letrehozas` rendelést indít. `email_cim`, `felhasznalonev` és `jelszo` szükséges; új e-mail-címhez panel-fiókot készít, létező fióknál nem cseréli le a jelszót. A `rendeles_id` nem szükséges; az API azonos rendelési adatokból képez ismétlésvédelmi kulcsot. `premium=true` a Prémiumként megjelölt Linux-gépek közül választ (a legkevesebb szerverrel rendelkezőt); `false` a többi gépet választja. A `szolg_type` az admin játéktípus azonosítója, opcionálisan `premium_`/`basic_` előtaggal; `fivm` alias is elfogadott. Minecraftnál a `version` alakja `vanilla_26.1.2`, a kért template-nek már telepítve kell lennie a kiválasztott gépen.
+`feladat=szolg_letrehozas` rendelést indít. `email_cim`, `felhasznalonev` és `jelszo` szükséges; új e-mail-címhez panel-fiókot készít, létező fióknál nem cseréli le a jelszót. A `rendeles_id` opcionális tájékoztató rendelésazonosító, ismételt API-hívásokat nem szűr ki. `premium=true` a Prémiumként megjelölt Linux-gépek közül választ (a legkevesebb szerverrel rendelkezőt); `false` a többi gépet választja. A `szolg_type` az admin játéktípus azonosítója, opcionálisan `premium_`/`basic_` előtaggal; `fivm` alias is elfogadott. Minecraftnál a `version` alakja `vanilla_26.1.2`, a kért template-nek már telepítve kell lennie a kiválasztott gépen.
 
 `slot` 1–1000 játékos férőhelyet állít be az ismert Minecraft, CS1.6, CS2, CS:S és FiveM beállításokban. `hdd` GB-ban érkezik, és MiB-ra váltva kizárólag megjelenítési értékként tároljuk; Linuxon nem érvényesítünk tárhelykvótát. `memory` MiB. `lejar` jövőbeli Unix időbélyeg; a Linux-gép cron feladata percenként ellenőrzi, leállítja a lejárt szervert, és a panel nem engedi újraindítani. `type` kiegészítő csomagcímke; a gépválasztást a `premium` mező végzi.
 
 ```sh
 curl 'https://dev.vgh.hu/provision_api.php' \
   -H "Authorization: Bearer $GAMEDOCK_API_KEY" \
-  -H 'Idempotency-Key: rendeles-20261029-001' \
   -H 'Content-Type: application/json' \
   --data '{"action":"create","user_id":1731,"node_id":1,"game":"cs2","memory_limit_mb":4096,"cpu_limit_percent":200}'
 ```
 
 A JSON API `user_id` mezője meglévő ügyfél számos adatbázis-azonosítója; `node_id` a Linux-gép adatbázis-azonosítója; `game` az admin játéktípus-azonosítója. A kompatibilitási rendelési API ezzel szemben `email_cim`, `felhasznalonev` és `jelszo` alapján automatikusan létrehozza a még hiányzó ügyfélfiókot. A JSON API további mezői: `port` (25000–25999, elhagyva véletlen), `install_source`, `startup_command`, `memory_limit_mb`, `cpu_limit_percent`, Minecraftnál a már letöltött `minecraft_template` kulcs. A template és indítóparancs alapból a játéktípus beállításából jön. A node neve például `node_s1` legyen (betű/szám/pont/kötőjel/aláhúzás).
 
-A `202` válasz JSON-ban jelzi a folyamatban lévő másolást. Azonos `Idempotency-Key` fejléccel, `{"action":"status"}` törzzsel kérdezd le 3 másodpercenként. Ha a létrehozási kérés hálózati hibával megszakad, az eredeti `create` kérés biztonságosan megismételhető ugyanazzal a kulccsal. Egy kulcs mindig az elsőként mentett rendeléshez tartozik: az ismételt kérés eltérő mezőit az API figyelmen kívül hagyja, és nem készít második szervert. Sikertelen másolás után az API új feladatot indít ugyanahhoz az eredeti rendeléshez. Új rendeléshez mindig új `Idempotency-Key` szükséges. A szerver későbbi törlése után ugyanaz a kulcs nem használható újra.
+A `202` válasz JSON-ban jelzi a folyamatban lévő másolást, és `request_id` mezőben visszaadja az állapotkövető azonosítót. JSON státuszlekérés: `{"action":"status","request_id":"..."}`. Régi GET-es integrációnál: `feladat=szolg_allapot&request_id=...&key=API-KULCS`. Minden `create` kérés új szervert hoz létre, ezért hálózati hiba után ne ismételd meg automatikusan a létrehozást, ha nem akarsz újabb szervert; előbb az előző kérés `request_id` értékével kérdezd le az állapotát.
 
 **Csak a Linux-oldali másolás sikeres befejezése után** érkezik `201`, `text/plain; charset=UTF-8` válasz, pontosan ebben a formában, sortörés nélkül:
 

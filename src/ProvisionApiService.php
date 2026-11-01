@@ -54,9 +54,8 @@ final class ProvisionApiService
         if(!$schema->orderFieldsEnabled() || !$schema->provisionEnabled())$schema->enableStartup($actor);
         if(!$schema->orderFieldsEnabled())throw new RuntimeException('Az adatbázis rendelési mezői nem frissültek. Futtasd az adminfelületen az Új szerverfunkciók engedélyezése műveletet, és ellenőrizd, hogy a panel adatbázis-felhasználójának van ALTER TABLE jogosultsága.',409);
         if(!$schema->provisionEnabled())throw new RuntimeException('Az adatbázis szerverlétrehozási sémája nem frissült. Futtasd az adminfelületen az Új szerverfunkciók engedélyezése műveletet, majd próbáld újra.',409);
-            $key=$order['order_id']!=='' ? 'order:'.$order['order_id'] : 'order:'.hash('sha256',json_encode([$order['email'],$order['username'],$order['game'],$order['template'],$order['premium'],$order['slot_limit'],$order['memory_limit_mb'],$order['disk_limit_mb'],$order['expires_at']],JSON_THROW_ON_ERROR));
-            $prior=$this->db->query('SELECT r.server_id,s.user_id,s.node_id,s.game,s.template_key,s.template_version,s.minecraft_type,s.memory_limit_mb,s.disk_limit_mb,s.slot_limit,s.expires_at,u.email,u.username,n.premium FROM provision_api_requests r JOIN servers s ON s.id=r.server_id JOIN users u ON u.id=s.user_id JOIN nodes n ON n.id=s.node_id WHERE r.request_hash=?',[hash('sha256',$key)])->fetch();
-            if($prior){if(strtolower($prior['email'])!==$order['email']||strcasecmp((string)$prior['username'],$order['username'])!==0||$prior['game']!==$order['game']||(int)$prior['premium']!==(int)$order['premium']||(int)$prior['memory_limit_mb']!==$order['memory_limit_mb']||(int)$prior['disk_limit_mb']!==$order['disk_limit_mb']||(int)$prior['slot_limit']!==$order['slot_limit']||(int)$prior['expires_at']!==$order['expires_at']||($order['game']==='minecraft'&&($prior['minecraft_type'].':'.$prior['template_version']!==$order['template'])))throw new RuntimeException('Ehhez a rendelésazonosítóhoz már más adatok tartoznak.',409);$input=['action'=>'create','user_id'=>(int)$prior['user_id'],'node_id'=>(int)$prior['node_id'],'game'=>$prior['game'],'memory_limit_mb'=>(int)$prior['memory_limit_mb'],'disk_limit_mb'=>(int)$prior['disk_limit_mb'],'slot_limit'=>(int)$prior['slot_limit'],'expires_at'=>(int)$prior['expires_at']];if($prior['template_key'])$input['minecraft_template']=$prior['template_key'];return $this->orderResult($actor,$key,$input);}
+            // Every create call is a new order. This random internal ID is only for polling its job.
+            $key=bin2hex(random_bytes(24));
             $nodes=$this->db->query('SELECT n.id,n.premium,(SELECT COUNT(*) FROM servers s WHERE s.node_id=n.id) AS used FROM nodes n WHERE n.premium=? ORDER BY used,n.id',[$order['premium']?1:0])->fetchAll();
             if(!$nodes)throw new RuntimeException($order['premium']?'Nincs prémiumként megjelölt Linux-gép.':'Nincs normál Linux-gép.',409);
             $node=$nodes[0];$templateKey=null;
@@ -92,7 +91,7 @@ final class ProvisionApiService
     private function orderResult(array $actor,string $key,array $input): array
     {
         $result=$this->run($actor,$key,$input);
-        if(($result['status']??0)===202)$result['json']['message']='A szerver létrehozása folyamatban van. '.(str_contains((string)($result['json']['message']??''),'Az eredeti rendelés beállításait használtuk')?'Az eredeti rendelés beállításait használtuk; az újraküldött eltérő mezőket nem alkalmaztuk. ':'').'Ismételd meg ugyanazt a rendelési URL-t vagy POST-kérést az állapot lekéréséhez.';
+        if(($result['status']??0)===202)$result['json']['message']='A szerver létrehozása folyamatban van. Az állapot lekéréséhez használd a visszakapott request_id értéket.';
         return $result;
     }
     public static function success(array $server): string
@@ -106,7 +105,7 @@ final class ProvisionApiService
     }
     public function run(array $actor,string $key,array $data): array
     {
-        if(!preg_match('/\A[A-Za-z0-9_.:-]{8,128}\z/',$key))throw new RuntimeException('Adj meg 8–128 karakteres egyedi Idempotency-Key fejlécet.',400);
+        if(!preg_match('/\A[A-Za-z0-9_.:-]{8,128}\z/',$key))throw new RuntimeException('Érvényes API-kérésazonosító szükséges.',400);
         if(!$this->db->query('SELECT is_admin FROM users WHERE id=?',[$actor['id']])->fetchColumn())throw new RuntimeException('Adminisztrátori jogosultság szükséges.',403);
         $action=$data['action'] ?? 'create';
         if(!in_array($action,['create','status'],true))throw new RuntimeException('Ismeretlen API-művelet.',400);
@@ -114,14 +113,8 @@ final class ProvisionApiService
         if(!(int)$this->db->query('SELECT GET_LOCK(?,0)',[$lock])->fetchColumn())throw new RuntimeException('Ez a kérés már feldolgozás alatt áll. Próbáld újra.',409);
         try{
             $request=$this->db->query('SELECT * FROM provision_api_requests WHERE request_hash=?',[$hash])->fetch();
-            $payloadMismatch=false;
             if($action==='create'){
                 $input=self::input($data);$payload=hash('sha256',json_encode($input,JSON_THROW_ON_ERROR));
-                if($request && !hash_equals($request['payload_hash'],$payload)){
-                    $payloadMismatch=true;
-                    // An idempotency key always points to the first saved order. Ignore changed
-                    // payload fields for every retry; failed copies get a new job for that same order.
-                }
                 if(!$request){
                     $node=$this->db->query('SELECT name FROM nodes WHERE id=?',[$input['node_id']])->fetchColumn();
                     if(!$node || !preg_match('/\A[A-Za-z0-9_.-]{1,120}\z/',$node))throw new RuntimeException('Válassz létező Linux-gépet, amelynek neve például node_s1.',400);
@@ -135,10 +128,10 @@ final class ProvisionApiService
             if(!$request)throw new RuntimeException('Nincs ilyen API-kérés.',404);
             $id=(int)$request['server_id'];
             $server=$this->db->query('SELECT s.*,n.name AS node_name FROM servers s JOIN nodes n ON n.id=s.node_id WHERE s.id=?',[$id])->fetch();
-            if(!$server)throw new RuntimeException('Az ehhez a kéréshez tartozó szervert már törölték. Új szerverhez új Idempotency-Key szükséges.',410);
+            if(!$server)throw new RuntimeException('Az ehhez a request_id értékhez tartozó szervert már törölték.',410);
             if(empty($server['provision_job']))throw new RuntimeException('Ehhez a szerverhez nem készült Linux-másolási feladat.',409);
             if($action==='create' && $server['provision_state']==='failed'){
-                // Reuse the idempotent order and server row, but start a fresh Linux copy job.
+                // Retry this request's failed Linux copy job without creating another row.
                 $job=bin2hex(random_bytes(16));
                 $this->db->query("UPDATE servers SET provision_job=?,provision_state='queued',provision_message=NULL WHERE id=? AND provision_state='failed'",[$job,$id]);
                 $server['provision_job']=$job;$server['provision_state']='queued';$server['provision_message']=null;
@@ -148,7 +141,7 @@ final class ProvisionApiService
             else $result=$provision->poll($actor,$id);
             if($result['state']==='ready')return ['status'=>201,'text'=>self::success($server)];
             if($result['state']==='failed'){$log='/var/lib/gamedock/provision/jobs/'.$server['provision_job'].'.log';return ['status'=>422,'json'=>['state'=>'failed','message'=>($result['message'] ?: 'A Linux-oldali szerverlétrehozás nem sikerült.').' A szerver megmaradt. Frissítsd az érintett Linux-gép segédprogramjait, az adminfelületen nyisd meg ezt a szervert és kattints a „Másolási kérés újrapróbálása” gombra, majd ismételd meg ugyanazt az API-kérést. Részletes napló: '.$log,'server_id'=>$id,'job_id'=>$server['provision_job'],'log'=>$log]];}
-            return ['status'=>202,'json'=>['state'=>$result['state'],'message'=>'A szerver létrehozása folyamatban. '.($payloadMismatch?'Az eredeti rendelés beállításait használtuk; az újraküldött eltérő mezőket nem alkalmaztuk. ':'').'Azonos Idempotency-Key fejléccel kérdezd le az állapotot.']];
+            return ['status'=>202,'json'=>['state'=>$result['state'],'request_id'=>$key,'message'=>'A szerver létrehozása folyamatban. Az állapot lekéréséhez használd a request_id értéket.']];
         }finally{$this->db->query('SELECT RELEASE_LOCK(?)',[$lock]);}
     }
 }

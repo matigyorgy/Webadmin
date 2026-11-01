@@ -17,7 +17,10 @@ try{
     }
     $actor=GameDock\ProvisionApiCredentials::authenticate($db,$authorization);
     $service=new GameDock\ProvisionApiService($db,new GameDock\SshClient());
-    if($method==='GET'){$result=$service->runOrder($actor,GameDock\ProvisionApiService::order($_GET));}
+    if($method==='GET'){
+        if(($_GET['feladat']??'')==='szolg_allapot')$result=$service->run($actor,(string)($_GET['request_id']??''),['action'=>'status']);
+        else $result=$service->runOrder($actor,GameDock\ProvisionApiService::order($_GET));
+    }
     else{
         $contentType=strtolower($_SERVER['CONTENT_TYPE'] ?? '');
         if(str_starts_with($contentType,'application/json')){
@@ -25,10 +28,12 @@ try{
             if(strlen($raw)>16384)throw new RuntimeException('Túl nagy API-kérés.',413);
             try{$data=json_decode($raw,true,16,JSON_THROW_ON_ERROR);}catch(JsonException $e){throw new RuntimeException('Hibás JSON-kérés.',400);}
             if(!is_array($data) || !str_starts_with(ltrim($raw),'{'))throw new RuntimeException('JSON-objektum szükséges.',400);
-            $result=$service->run($actor,(string)($_SERVER['HTTP_IDEMPOTENCY_KEY'] ?? ''),$data);
+            $requestId=(string)($data['request_id']??'');unset($data['request_id']);
+            if(($data['action']??'create')==='status')$result=$service->run($actor,$requestId,$data);
+            else $result=$service->run($actor,bin2hex(random_bytes(24)),$data);
         }elseif(str_starts_with($contentType,'application/x-www-form-urlencoded')){
-            if(($_POST['feladat'] ?? '')!=='szolg_letrehozas')throw new RuntimeException('Hibás rendelési feladat.',400);
-            $result=$service->runOrder($actor,GameDock\ProvisionApiService::order($_POST));
+            if(($_POST['action']??'')==='status')$result=$service->run($actor,(string)($_POST['request_id']??''),['action'=>'status']);
+            else {if(($_POST['feladat'] ?? '')!=='szolg_letrehozas')throw new RuntimeException('Hibás rendelési feladat.',400);$result=$service->runOrder($actor,GameDock\ProvisionApiService::order($_POST));}
         }else throw new RuntimeException('application/json vagy application/x-www-form-urlencoded tartalomtípus szükséges.',415);
     }
     http_response_code($result['status']);
@@ -39,5 +44,5 @@ try{
     http_response_code($status);
     if($status===401)header('WWW-Authenticate: Bearer');
     if($status===500)error_log('GameDock provisioning API: '.get_class($e));
-    echo json_encode(['error'=>$status===500 ? 'Az API-művelet nem sikerült. Ellenőrizd a panel beállításait, a Linux-kapcsolatot és az adminfelületen a szerver állapotát. Azonos Idempotency-Key értékkel folytasd a kérést.' : $e->getMessage()],JSON_UNESCAPED_UNICODE|JSON_INVALID_UTF8_SUBSTITUTE);
+    echo json_encode(['error'=>$status===500 ? 'Az API-művelet nem sikerült. Ellenőrizd a panel beállításait, a Linux-kapcsolatot és az adminfelületen a szerver állapotát.' : $e->getMessage()],JSON_UNESCAPED_UNICODE|JSON_INVALID_UTF8_SUBSTITUTE);
 }

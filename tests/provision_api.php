@@ -62,5 +62,5 @@ try{
     $limited=(new GameDock\AdminService($db,static fn(array $node):array=>[]))->save($actor,'servers',['user_id'=>'2','node_id'=>'1','game'=>'cs16','memory_limit_mb'=>'512','cpu_limit_percent'=>'0','disk_limit_mb'=>'0','slot_limit'=>'10','expires_at'=>(string)(time()+3600)]);
     $limitedRow=$db->query('SELECT startup_command,slot_limit,expires_at FROM servers WHERE id=?',[$limited])->fetch();
     apiCheck(str_contains($limitedRow['startup_command'],'+maxplayers 10')&&(int)$limitedRow['slot_limit']===10&&(int)$limitedRow['expires_at']>time(),'A férőhely/lejárat limit nem került a szerverre.');$db->query('DELETE FROM servers WHERE id=?',[$limited]);
-    echo "MySQL: tranzakciós visszagörgetés, adminjog, ismétlésvédelem, hibás/törölt szerver ellenőrizve.\n";
+    echo "MySQL: tranzakciós visszagörgetés, adminjog, API-kérés állapotkövetés és hibás/törölt szerver ellenőrizve.\n";
 }finally{$root->exec('DROP DATABASE `'.$name.'`');}
