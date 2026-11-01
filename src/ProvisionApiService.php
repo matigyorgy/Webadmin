@@ -92,7 +92,7 @@ final class ProvisionApiService
     private function orderResult(array $actor,string $key,array $input): array
     {
         $result=$this->run($actor,$key,$input);
-        if(($result['status']??0)===202)$result['json']['message']='A szerver létrehozása folyamatban van. Ismételd meg ugyanazt a rendelési URL-t vagy POST-kérést az állapot lekéréséhez.';
+        if(($result['status']??0)===202)$result['json']['message']='A szerver létrehozása folyamatban van. '.(str_contains((string)($result['json']['message']??''),'Az eredeti rendelés beállításait használtuk')?'Az eredeti rendelés beállításait használtuk; az újraküldött eltérő mezőket nem alkalmaztuk. ':'').'Ismételd meg ugyanazt a rendelési URL-t vagy POST-kérést az állapot lekéréséhez.';
         return $result;
     }
     public static function success(array $server): string
@@ -114,9 +114,16 @@ final class ProvisionApiService
         if(!(int)$this->db->query('SELECT GET_LOCK(?,0)',[$lock])->fetchColumn())throw new RuntimeException('Ez a kérés már feldolgozás alatt áll. Próbáld újra.',409);
         try{
             $request=$this->db->query('SELECT * FROM provision_api_requests WHERE request_hash=?',[$hash])->fetch();
+            $retryExistingFailedOrder=false;
             if($action==='create'){
                 $input=self::input($data);$payload=hash('sha256',json_encode($input,JSON_THROW_ON_ERROR));
-                if($request && !hash_equals($request['payload_hash'],$payload))throw new RuntimeException('Ehhez az Idempotency-Key értékhez már más paraméterek tartoznak.',409);
+                if($request && !hash_equals($request['payload_hash'],$payload)){
+                    $state=$this->db->query('SELECT provision_state FROM servers WHERE id=?',[$request['server_id']])->fetchColumn();
+                    if($state!=='failed')throw new RuntimeException('Ehhez az Idempotency-Key értékhez már más paraméterek tartoznak.',409);
+                    // A failed request is a retry of its original order: retain the saved server settings
+                    // and ignore changed retry payload fields, rather than mutating or duplicating it.
+                    $retryExistingFailedOrder=true;
+                }
                 if(!$request){
                     $node=$this->db->query('SELECT name FROM nodes WHERE id=?',[$input['node_id']])->fetchColumn();
                     if(!$node || !preg_match('/\A[A-Za-z0-9_.-]{1,120}\z/',$node))throw new RuntimeException('Válassz létező Linux-gépet, amelynek neve például node_s1.',400);
@@ -143,7 +150,7 @@ final class ProvisionApiService
             else $result=$provision->poll($actor,$id);
             if($result['state']==='ready')return ['status'=>201,'text'=>self::success($server)];
             if($result['state']==='failed'){$log='/var/lib/gamedock/provision/jobs/'.$server['provision_job'].'.log';return ['status'=>422,'json'=>['state'=>'failed','message'=>($result['message'] ?: 'A Linux-oldali szerverlétrehozás nem sikerült.').' A szerver megmaradt. Frissítsd az érintett Linux-gép segédprogramjait, az adminfelületen nyisd meg ezt a szervert és kattints a „Másolási kérés újrapróbálása” gombra, majd ismételd meg ugyanazt az API-kérést. Részletes napló: '.$log,'server_id'=>$id,'job_id'=>$server['provision_job'],'log'=>$log]];}
-            return ['status'=>202,'json'=>['state'=>$result['state'],'message'=>'A szerver létrehozása folyamatban. Azonos Idempotency-Key fejléccel kérdezd le az állapotot.']];
+            return ['status'=>202,'json'=>['state'=>$result['state'],'message'=>'A szerver létrehozása folyamatban. '.($retryExistingFailedOrder?'Az eredeti rendelés beállításait használtuk; az újraküldött eltérő mezőket nem alkalmaztuk. ':'').'Azonos Idempotency-Key fejléccel kérdezd le az állapotot.']];
         }finally{$this->db->query('SELECT RELEASE_LOCK(?)',[$lock]);}
     }
 }

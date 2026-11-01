@@ -54,8 +54,8 @@ try{
     apiReject(fn()=>$service->run($actor,'unknown-order-123',['action'=>'status']),404);
     $db->query("UPDATE servers SET provision_state='failed' WHERE id=1");
     $failed=$service->run($actor,$key,['action'=>'status']);apiCheck($failed['status']===422 && $failed['json']['server_id']===1 && $failed['json']['job_id']===str_repeat('a',32) && str_contains($failed['json']['log'],str_repeat('a',32).'.log') && str_contains($failed['json']['message'],'Másolási kérés újrapróbálása'),'Hibás másolás sikert jelez vagy hiányzik a retry/log útmutató.');
-    try{$service->run($actor,$key,$input);}catch(Throwable){}
-    $retried=$db->query('SELECT provision_job,provision_state FROM servers WHERE id=1')->fetch();apiCheck($retried['provision_state']==='queued' && $retried['provision_job']!==str_repeat('a',32),'Az azonos API-rendelés nem indított új Linux-feladatot vagy megkettőzte a szervert.');
+    try{$service->run($actor,$key,array_replace($input,['memory_limit_mb'=>2048]));}catch(Throwable){}
+    $retried=$db->query('SELECT provision_job,provision_state,memory_limit_mb FROM servers WHERE id=1')->fetch();apiCheck($retried['provision_state']==='queued' && $retried['provision_job']!==str_repeat('a',32) && (int)$retried['memory_limit_mb']===0 && (int)$db->query('SELECT COUNT(*) FROM servers')->fetchColumn()===1,'A failed rendelés eltérő retry-payloadja módosította az eredeti szervert vagy duplikátumot hozott létre.');
     $db->query('DELETE FROM servers WHERE id=1');apiReject(fn()=>$service->run($actor,$key,$input),410);
     apiCheck((int)$db->query('SELECT COUNT(*) FROM servers')->fetchColumn()===0,'A törölt példány újra létrejött.');
     (new GameDock\GameRegistry($db))->seed();
