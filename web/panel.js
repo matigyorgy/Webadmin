@@ -324,6 +324,16 @@ if (versionPanel) {
     if(!versionPanel.hidden)reveal();
 }
 
+const gameSlug=document.getElementById('game-slug');
+if(gameSlug){
+    const path=document.getElementById('game-template-path'),startup=document.getElementById('game-startup-command');
+    const existing=document.querySelector('[name=existing_slug]')?.value;
+    if(!existing){
+        if(!startup.value.trim())startup.value='./start.sh --port {port}';
+        const updatePath=()=>{path.value=/^[a-z][a-z0-9_-]{0,31}$/.test(gameSlug.value) ? `/home/webadmin/templates/${gameSlug.value}` : '';};
+        gameSlug.addEventListener('input',updatePath);updatePath();
+    }
+}
 const templateGame=document.getElementById('template-game');
 const releaseCatalog=document.querySelector('[data-release-catalog]');
 if(releaseCatalog){
